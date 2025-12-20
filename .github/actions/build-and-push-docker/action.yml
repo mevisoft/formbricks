@@ -270,23 +270,24 @@ runs:
 
     - name: Build and push Docker image
       id: build
-      uses: depot/build-push-action@636daae76684e38c301daa0c5eca1c095b24e780 # v1.14.0
+      uses: docker/build-push-action@4f58ea79222b3b9dc2c8bbdd6debcef730109a75 # v6.9.0
       with:
-        project: tw0fqmsx3c
-        token: ${{ env.DEPOT_PROJECT_TOKEN }}
         context: ${{ inputs.context }}
         file: ${{ inputs.dockerfile }}
         platforms: linux/amd64,linux/arm64
         push: ${{ github.event_name != 'pull_request' }}
         tags: ${{ inputs.registry_type == 'ecr' && steps.ecr-tags.outputs.tags || (inputs.registry_type == 'ghcr' && inputs.experimental_mode == 'true' && steps.ghcr-meta-experimental.outputs.tags) || (inputs.registry_type == 'ghcr' && inputs.experimental_mode == 'false' && steps.ghcr-extra-tags.outputs.tags) || (inputs.registry_type == 'ghcr' && format('ghcr.io/{0}:{1}', inputs.ghcr_image_name, steps.version.outputs.version)) || (inputs.registry_type == 'ecr' && format('{0}/{1}:{2}', inputs.ecr_registry, inputs.ecr_repository, steps.version.outputs.version)) }}
         labels: ${{ inputs.registry_type == 'ghcr' && inputs.experimental_mode == 'true' && steps.ghcr-meta-experimental.outputs.labels || '' }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+        provenance: mode=max
+        sbom: true
         secrets: |
           database_url=${{ env.DUMMY_DATABASE_URL }}
           encryption_key=${{ env.DUMMY_ENCRYPTION_KEY }}
           redis_url=${{ env.DUMMY_REDIS_URL }}
           sentry_auth_token=${{ env.SENTRY_AUTH_TOKEN }}
       env:
-        DEPOT_PROJECT_TOKEN: ${{ env.DEPOT_PROJECT_TOKEN }}
         DUMMY_DATABASE_URL: ${{ env.DUMMY_DATABASE_URL }}
         DUMMY_ENCRYPTION_KEY: ${{ env.DUMMY_ENCRYPTION_KEY }}
         DUMMY_REDIS_URL: ${{ env.DUMMY_REDIS_URL }}
