@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
   push:
     branches:
-      - main
+      - ml
   pull_request:
     types: [opened, synchronize, reopened]
   merge_group:

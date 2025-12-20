@@ -3,10 +3,10 @@ name: Docker Build Validation
 on:
   pull_request:
     branches:
-      - main
+      - ml
   merge_group:
     branches:
-      - main
+      - ml
   workflow_dispatch:
 
 permissions:
