@@ -184,13 +184,13 @@ export const EmailCustomizationSettings = ({
       text: isFormbricksCloud ? t("common.start_free_trial") : t("common.request_trial_license"),
       href: isFormbricksCloud
         ? `/environments/${environmentId}/settings/billing`
-        : "https://formbricks.com/upgrade-self-hosting-license",
+        : "#domain/upgrade-self-hosting-license",
     },
     {
       text: t("common.learn_more"),
       href: isFormbricksCloud
         ? `/environments/${environmentId}/settings/billing`
-        : "https://formbricks.com/learn-more-self-hosting-license",
+        : "#domain/learn-more-self-hosting-license",
     },
   ];
 

@@ -588,7 +588,7 @@ describe("Response Utils", () => {
           data: {},
           meta: {
             userAgent: { browser: "Chrome", device: "desktop" },
-            url: "https://formbricks.com/dashboard",
+            url: "#domain/dashboard",
             country: "US",
           },
         },
@@ -597,7 +597,7 @@ describe("Response Utils", () => {
           data: {},
           meta: {
             userAgent: { browser: "Safari", device: "mobile" },
-            url: "https://formbricks.com/surveys/123",
+            url: "#domain/surveys/123",
             country: "UK",
           },
         },

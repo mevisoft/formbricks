@@ -238,13 +238,13 @@ export const MultiLanguageCard: FC<MultiLanguageCardProps> = ({
                       : t("common.request_trial_license"),
                     href: isFormbricksCloud
                       ? `/environments/${environmentId}/settings/billing`
-                      : "https://formbricks.com/docs/self-hosting/license#30-day-trial-license-request",
+                      : "#domain/docs/self-hosting/license#30-day-trial-license-request",
                   },
                   {
                     text: t("common.learn_more"),
                     href: isFormbricksCloud
                       ? `/environments/${environmentId}/settings/billing`
-                      : "https://formbricks.com/learn-more-self-hosting-license",
+                      : "#domain/learn-more-self-hosting-license",
                   },
                 ]}
               />
