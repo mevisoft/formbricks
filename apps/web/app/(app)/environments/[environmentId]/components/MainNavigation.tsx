@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  ArrowUpRightIcon,
   ChevronRightIcon,
   Cog,
   LogOutIcon,
@@ -126,7 +125,7 @@ export const MainNavigation = ({
       label: t("common.account"),
       href: `/environments/${environment.id}/settings/profile`,
       icon: UserCircleIcon,
-    },
+      target: 'self'    },
   ];
 
   useEffect(() => {

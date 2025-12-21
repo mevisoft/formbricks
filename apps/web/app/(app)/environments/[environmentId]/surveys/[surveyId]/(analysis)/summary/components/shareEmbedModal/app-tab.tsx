@@ -19,7 +19,7 @@ import { Alert, AlertButton, AlertDescription, AlertTitle } from "@/modules/ui/c
 import { H4, InlineSmall, Small } from "@/modules/ui/components/typography";
 import { DocumentationLinksSection } from "./documentation-links-section";
 
-const createDocumentationLinks = (t: ReturnType<typeof useTranslation>["t"]) => [];
+const createDocumentationLinks = () => [];
 
 const createNoCodeConfigType = (t: ReturnType<typeof useTranslation>["t"]) => ({
   click: t("environments.actions.click"),
@@ -69,7 +69,7 @@ export const AppTab = () => {
   const { environment, project } = useEnvironment();
   const { survey } = useSurvey();
 
-  const documentationLinks = useMemo(() => createDocumentationLinks(t), [t]);
+  const documentationLinks = useMemo(() => createDocumentationLinks(), [t]);
   const noCodeConfigType = useMemo(() => createNoCodeConfigType(t), [t]);
 
   const waitTime = () => {

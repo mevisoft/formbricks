@@ -51,7 +51,6 @@ export const ProjectBreadcrumb = ({
   isOwnerOrManager,
   organizationProjectsLimit,
   isFormbricksCloud,
-  isLicenseActive,
   currentOrganizationId,
   currentEnvironmentId,
   isAccessControlAllowed,
@@ -178,6 +177,10 @@ export const ProjectBreadcrumb = ({
     }
 
     return [
+      {
+        text: t("environments.settings.billing.upgrade"),
+        href: '#',
+      },
       {
         text: t("common.cancel"),
         onClick: () => setOpenLimitModal(false),
