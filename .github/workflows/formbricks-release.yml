@@ -91,17 +91,17 @@ jobs:
       IS_PRERELEASE: ${{ github.event.release.prerelease }}
       MAKE_LATEST: ${{ needs.check-latest-release.outputs.is_latest == 'true' }}
 
-  helm-chart-release:
-    name: Release Helm Chart
-    permissions:
-      contents: read
-      packages: write
-    uses: ./.github/workflows/release-helm-chart.yml
-    secrets: inherit
-    needs:
-      - docker-build-community
-    with:
-      VERSION: ${{ needs.docker-build-community.outputs.VERSION }}
+#  helm-chart-release:
+#    name: Release Helm Chart
+#    permissions:
+#      contents: read
+#      packages: write
+#    uses: ./.github/workflows/release-helm-chart.yml
+#    secrets: inherit
+#    needs:
+#      - docker-build-community
+#    with:
+#      VERSION: ${{ needs.docker-build-community.outputs.VERSION }}
 
   move-stable-tag:
     name: Move stable tag to release
