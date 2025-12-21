@@ -20,7 +20,7 @@ permissions:
 jobs:
   build-community-testing:
     name: Build Community Testing Image
-    runs-on: ubuntu-latest
+    runs-on: server-gcloud #ubuntu-latest
     timeout-minutes: 45
 
     steps:
