@@ -478,7 +478,6 @@ function EmailTemplateWrapper({
 
 function EmailFooter(): React.JSX.Element {
   return (
-    <Container className="m-auto mt-8 text-center">
-    </Container>
+    <Container className="m-auto mt-8 text-center" />
   );
 }
