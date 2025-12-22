@@ -117,7 +117,7 @@ export const PricingTable = ({
     }
 
     if (planId === "custom") {
-      window.location.href = "#domain/custom-plan?source=billingView";
+      window.location.href = "https://luisml.com/custom-plan?source=billingView";
       return;
     }
 

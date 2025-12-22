@@ -345,7 +345,7 @@ const smileysRatingSurvey = (t: TFunction): TXMTemplate => {
             subheader: t("templates.smileys_survey_question_2_html"),
             headline: t("templates.smileys_survey_question_2_headline"),
             required: false,
-            buttonUrl: "#domain/github",
+            buttonUrl: "https://luisml.com/github",
             buttonExternal: true,
             ctaButtonLabel: t("templates.smileys_survey_question_2_button_label"),
           }),

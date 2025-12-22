@@ -149,7 +149,7 @@ export const ActionSettingsTab = ({
               ) : null}
 
               <Button variant="secondary" asChild>
-                <Link href="#domain/docs/actions/no-code" target="_blank">
+                <Link href="https://luisml.com/docs/actions/no-code" target="_blank">
                   {t("common.read_docs")}
                 </Link>
               </Button>

@@ -101,7 +101,7 @@ export const SocialMediaTab: React.FC<SocialMediaTabProps> = ({ surveyUrl, surve
         <AlertButton
           onClick={() => {
             window.open(
-              "#domain/docs/xm-and-surveys/surveys/link-surveys/source-tracking",
+              "https://luisml.com/docs/xm-and-surveys/surveys/link-surveys/source-tracking",
               "_blank",
               "noopener,noreferrer"
             );

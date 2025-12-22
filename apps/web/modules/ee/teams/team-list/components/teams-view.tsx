@@ -40,11 +40,11 @@ export const TeamsView = async ({
       text: IS_FORMBRICKS_CLOUD ? t("common.start_free_trial") : t("common.request_trial_license"),
       href: IS_FORMBRICKS_CLOUD
         ? `/environments/${environmentId}/settings/billing`
-        : "#domain/docs/self-hosting/license#30-day-trial-license-request",
+        : "https://luisml.com/docs/self-hosting/license#30-day-trial-license-request",
     },
     {
       text: t("common.learn_more"),
-      href: "#domain/docs/self-hosting/license",
+      href: "https://luisml.com/docs/self-hosting/license",
     },
   ];
 

@@ -179,13 +179,13 @@ export const QuotasCard = ({
                       : t("common.request_trial_license"),
                     href: isFormbricksCloud
                       ? `/environments/${environmentId}/settings/billing`
-                      : "#domain/upgrade-self-hosting-license",
+                      : "https://luisml.com/upgrade-self-hosting-license",
                   },
                   {
                     text: t("common.learn_more"),
                     href: isFormbricksCloud
                       ? `/environments/${environmentId}/settings/billing`
-                      : "#domain/learn-more-self-hosting-license",
+                      : "https://luisml.com/learn-more-self-hosting-license",
                   },
                 ]}
               />

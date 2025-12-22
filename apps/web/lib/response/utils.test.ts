@@ -588,7 +588,7 @@ describe("Response Utils", () => {
           data: {},
           meta: {
             userAgent: { browser: "Chrome", device: "desktop" },
-            url: "#domain/dashboard",
+            url: "https://luisml.com/dashboard",
             country: "US",
           },
         },
@@ -597,7 +597,7 @@ describe("Response Utils", () => {
           data: {},
           meta: {
             userAgent: { browser: "Safari", device: "mobile" },
-            url: "#domain/surveys/123",
+            url: "https://luisml.com/surveys/123",
             country: "UK",
           },
         },

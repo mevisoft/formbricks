@@ -183,7 +183,7 @@ export const IndividualInviteTab = ({
                 href={
                   isFormbricksCloud
                     ? `/environments/${environmentId}/settings/billing`
-                    : "#domain/upgrade-self-hosting-license"
+                    : "https://luisml.com/upgrade-self-hosting-license"
                 }>
                 {t("common.start_free_trial")}
               </Link>

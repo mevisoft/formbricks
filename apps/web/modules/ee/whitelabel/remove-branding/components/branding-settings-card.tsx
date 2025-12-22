@@ -26,13 +26,13 @@ export const BrandingSettingsCard = async ({
       text: IS_FORMBRICKS_CLOUD ? t("common.start_free_trial") : t("common.request_trial_license"),
       href: IS_FORMBRICKS_CLOUD
         ? `/environments/${environmentId}/settings/billing`
-        : "#domain/upgrade-self-hosting-license",
+        : "https://luisml.com/upgrade-self-hosting-license",
     },
     {
       text: t("common.learn_more"),
       href: IS_FORMBRICKS_CLOUD
         ? `/environments/${environmentId}/settings/billing`
-        : "#domain/learn-more-self-hosting-license",
+        : "https://luisml.com/learn-more-self-hosting-license",
     },
   ];
 

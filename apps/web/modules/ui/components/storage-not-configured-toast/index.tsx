@@ -6,7 +6,7 @@ export const StorageNotConfiguredToast = () => {
       <span className="text-slate-900">File storage not set up</span>
       <a
         className="text-slate-900 underline"
-        href="#domain/docs/self-hosting/configuration/file-uploads"
+        href="https://luisml.com/docs/self-hosting/configuration/file-uploads"
         target="_blank"
         rel="noopener noreferrer">
         Learn more

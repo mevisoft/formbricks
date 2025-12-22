@@ -227,7 +227,7 @@ export const WebhookSettingsTab = ({ webhook, surveys, setOpen, isReadOnly }: We
             )}
 
             <Button variant="secondary" asChild>
-              <Link href="#domain/docs/api/management/webhooks" target="_blank">
+              <Link href="https://luisml.com/docs/api/management/webhooks" target="_blank">
                 {t("common.read_docs")}
               </Link>
             </Button>

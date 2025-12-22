@@ -62,7 +62,7 @@ export const AppConnectionPage = async ({ params }: { params: Promise<{ environm
                   </AlertDescription>
                   <AlertButton asChild>
                     <Link
-                      href="#domain/docs/xm-and-surveys/surveys/website-app-surveys/framework-guides"
+                      href="https://luisml.com/docs/xm-and-surveys/surveys/website-app-surveys/framework-guides"
                       target="_blank"
                       rel="noopener noreferrer">
                       {t("common.learn_more")}
