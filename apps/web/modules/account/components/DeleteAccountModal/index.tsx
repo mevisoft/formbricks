@@ -22,7 +22,6 @@ export const DeleteAccountModal = ({
   setOpen,
   open,
   user,
-  isFormbricksCloud,
   organizationsWithSingleOwner,
 }: DeleteAccountModalProps) => {
   const { t } = useTranslation();
