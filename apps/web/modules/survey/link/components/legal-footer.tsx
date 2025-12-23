@@ -14,7 +14,6 @@ export const LegalFooter = ({
   IMPRINT_URL,
   PRIVACY_URL,
   IS_FORMBRICKS_CLOUD,
-  surveyUrl,
 }: LegalFooterProps) => {
   const { t } = useTranslation();
   if (!IMPRINT_URL && !PRIVACY_URL && !IS_FORMBRICKS_CLOUD) return null;
