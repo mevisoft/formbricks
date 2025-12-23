@@ -69,7 +69,7 @@ export const AppTab = () => {
   const { environment, project } = useEnvironment();
   const { survey } = useSurvey();
 
-  const documentationLinks = useMemo(() => createDocumentationLinks(), [t]);
+  const documentationLinks = useMemo(() => createDocumentationLinks(), []);
   const noCodeConfigType = useMemo(() => createNoCodeConfigType(t), [t]);
 
   const waitTime = () => {
