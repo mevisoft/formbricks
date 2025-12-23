@@ -126,7 +126,7 @@ export const MainNavigation = ({
       label: t("common.account"),
       href: `/environments/${environment.id}/settings/profile`,
       icon: UserCircleIcon,
-      target: undefined,
+      target: "self",
     },
   ];
 
