@@ -101,7 +101,7 @@ export function LogicEditor({
           <div className="flex w-10 shrink-0 items-center justify-end">
             <ArrowRightIcon className="h-4 w-4 text-slate-500" />
           </div>
-          <p className="text-nowrap font-medium text-slate-900">
+          <p className="font-medium text-nowrap text-slate-900">
             {t("environments.surveys.edit.all_other_answers_will_continue_to")}
           </p>
           <Select

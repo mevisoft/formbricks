@@ -10,7 +10,7 @@ export const SignupWithoutVerificationSuccessPage = async ({ searchParams }) => 
 
   return (
     <FormWrapper>
-      <h1 className="leading-2 mb-4 text-center font-bold">
+      <h1 className="mb-4 text-center leading-2 font-bold">
         {t("auth.signup_without_verification_success.user_successfully_created")}
       </h1>
       <p className="text-center text-sm">

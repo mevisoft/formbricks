@@ -23,7 +23,6 @@ export const DynamicPopupTab = ({ environmentId, surveyId }: DynamicPopupTabProp
           </Link>
         </AlertButton>
       </Alert>
-
     </div>
   );
 };

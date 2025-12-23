@@ -36,13 +36,13 @@ const Loading = async () => {
                   </div>
                 </div>
               </div>
-              <div className="col-span-1 my-auto whitespace-nowrap text-center text-sm text-slate-500">
+              <div className="col-span-1 my-auto text-center text-sm whitespace-nowrap text-slate-500">
                 <div className="m-4 h-4 animate-pulse rounded-full bg-slate-200"></div>
               </div>
               <div className="whitespace-wrap col-span-1 my-auto text-center text-sm text-slate-500">
                 <div className="m-4 h-4 animate-pulse rounded-full bg-slate-200"></div>
               </div>
-              <div className="col-span-1 my-auto whitespace-normal text-center text-sm text-slate-500">
+              <div className="col-span-1 my-auto text-center text-sm whitespace-normal text-slate-500">
                 <div className="m-4 h-4 animate-pulse rounded-full bg-slate-200"></div>
               </div>
             </div>

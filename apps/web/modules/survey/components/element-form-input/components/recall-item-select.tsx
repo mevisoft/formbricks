@@ -183,7 +183,7 @@ export const RecallItemSelect = ({
             }
           }}
         />
-        <div className="max-h-72 overflow-y-auto overflow-x-hidden">
+        <div className="max-h-72 overflow-x-hidden overflow-y-auto">
           {filteredRecallItems.map((recallItem, index) => {
             const IconComponent = getRecallItemIcon(recallItem);
             return (
@@ -207,7 +207,7 @@ export const RecallItemSelect = ({
                   }
                 }}>
                 <div>{IconComponent && <IconComponent className="mr-2 w-4" />}</div>
-                <p className="max-w-full overflow-hidden text-ellipsis whitespace-nowrap text-sm">
+                <p className="max-w-full overflow-hidden text-sm text-ellipsis whitespace-nowrap">
                   {getTextContentWithRecallTruncated(recallItem.label)}
                 </p>
               </DropdownMenuItem>

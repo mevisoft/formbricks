@@ -80,7 +80,7 @@ export const MultipleChoiceSummary = ({
           ) : undefined
         }
       />
-      <div className="px-4 pb-6 pt-4 text-sm md:px-6 md:text-base">
+      <div className="px-4 pt-4 pb-6 text-sm md:px-6 md:text-base">
         <div className="space-y-5">
           {results.map((result) => {
             const choiceId = getChoiceIdByValue(result.value, elementSummary.element);

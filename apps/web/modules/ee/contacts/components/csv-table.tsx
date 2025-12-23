@@ -19,7 +19,7 @@ export const CsvTable = ({ data }: CsvTableProps) => {
         {columns.map((header, index) => (
           <span
             key={index}
-            className="overflow-hidden text-ellipsis whitespace-nowrap text-xs font-semibold capitalize leading-tight">
+            className="overflow-hidden text-xs leading-tight font-semibold text-ellipsis whitespace-nowrap capitalize">
             {header.replace(/_/g, " ")}
           </span>
         ))}
@@ -31,7 +31,7 @@ export const CsvTable = ({ data }: CsvTableProps) => {
           className="grid gap-2 border-b border-gray-200 bg-white px-3 py-2 text-left leading-tight last:border-b-0"
           style={{ gridTemplateColumns: `repeat(${columns.length}, minmax(100px, 1fr))` }}>
           {columns.map((header, colIndex) => (
-            <span key={colIndex} className="overflow-hidden text-ellipsis whitespace-nowrap text-xs">
+            <span key={colIndex} className="overflow-hidden text-xs text-ellipsis whitespace-nowrap">
               {row[header]}
             </span>
           ))}

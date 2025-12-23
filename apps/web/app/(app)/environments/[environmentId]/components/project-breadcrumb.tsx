@@ -179,7 +179,7 @@ export const ProjectBreadcrumb = ({
     return [
       {
         text: t("environments.settings.billing.upgrade"),
-        href: '#',
+        href: "#",
       },
       {
         text: t("common.cancel"),

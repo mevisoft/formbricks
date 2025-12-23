@@ -140,7 +140,7 @@ export const PricingCard = ({
             id={plan.id}
             className={cn(
               plan.featured ? "text-slate-900" : "text-slate-800",
-              "text-sm font-semibold leading-6"
+              "text-sm leading-6 font-semibold"
             )}>
             {plan.name}
           </h2>

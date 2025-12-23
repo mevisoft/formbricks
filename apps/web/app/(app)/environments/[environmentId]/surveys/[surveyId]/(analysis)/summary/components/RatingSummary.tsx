@@ -77,7 +77,7 @@ export const RatingSummary = ({ elementSummary, survey, setFilter }: RatingSumma
         </div>
 
         <TabsContent value="aggregated" className="mt-4">
-          <div className="px-4 pb-6 pt-4 md:px-6">
+          <div className="px-4 pt-4 pb-6 md:px-6">
             {elementSummary.responseCount === 0 ? (
               <>
                 <EmptyState text={t("environments.surveys.summary.no_responses_found")} variant="simple" />
@@ -165,7 +165,7 @@ export const RatingSummary = ({ elementSummary, survey, setFilter }: RatingSumma
         </TabsContent>
 
         <TabsContent value="individual" className="mt-4">
-          <div className="px-4 pb-6 pt-4 md:px-6">
+          <div className="px-4 pt-4 pb-6 md:px-6">
             <div className="space-y-5 text-sm md:text-base">
               {elementSummary.choices.map((result) => (
                 <div key={result.rating}>

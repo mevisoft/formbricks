@@ -111,7 +111,7 @@ export function ConditionsEditor({
             </div>
 
             {condition.conditions.length > 1 && (
-              <div className="absolute right-3 top-3">
+              <div className="absolute top-3 right-3">
                 <DropdownMenu>
                   <DropdownMenuTrigger>
                     <Button
@@ -279,7 +279,7 @@ export function ConditionsEditor({
             <SelectTrigger className="w-auto bg-white">
               <SelectValue />
             </SelectTrigger>
-            <SelectContent className="flex min-w-fit max-w-fit items-center justify-between">
+            <SelectContent className="flex max-w-fit min-w-fit items-center justify-between">
               <SelectItem value="and">all are true</SelectItem>
               <SelectItem value="or">any is true</SelectItem>
             </SelectContent>

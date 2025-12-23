@@ -86,7 +86,7 @@ export const TagsCombobox = ({
                   ? t("environments.project.tags.add_tag")
                   : t("environments.project.tags.search_tags")
               }
-              className="border-b border-none border-transparent shadow-none outline-0 ring-offset-transparent focus:border-none focus:border-transparent focus:shadow-none focus:outline-0 focus:ring-offset-transparent"
+              className="border-b border-none border-transparent shadow-none ring-offset-transparent outline-0 focus:border-none focus:border-transparent focus:shadow-none focus:ring-offset-transparent focus:outline-0"
               value={searchValue}
               onValueChange={(search) => setSearchValue(search)}
               onKeyDown={(e) => {

@@ -57,7 +57,7 @@ export const SurveyStatusDropdown = ({
     <>
       {survey.status === "draft" ? (
         <div className="flex items-center">
-          <p className="text-sm italic text-slate-600">{t("common.draft")}</p>
+          <p className="text-sm text-slate-600 italic">{t("common.draft")}</p>
         </div>
       ) : (
         <Select

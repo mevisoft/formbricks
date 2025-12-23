@@ -83,7 +83,7 @@ export const CTAElementForm = ({
           description={t("environments.surveys.edit.button_external_description")}
           childBorder
           customContainerClass="p-0 mt-4">
-          <div className="flex flex-1 flex-col gap-2 px-4 pb-4 pt-1">
+          <div className="flex flex-1 flex-col gap-2 px-4 pt-1 pb-4">
             <ElementFormInput
               id="ctaButtonLabel"
               value={element.ctaButtonLabel}

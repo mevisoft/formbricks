@@ -110,7 +110,7 @@ function TabsTrigger({
       className={cn(tabsTriggerVariants({ variant, size, layout }), "h-full min-w-max", className)}
       {...props}>
       {showIcon && icon}
-      <span className="text-center text-sm font-medium leading-5">{children}</span>
+      <span className="text-center text-sm leading-5 font-medium">{children}</span>
     </TabsPrimitive.Trigger>
   );
 }

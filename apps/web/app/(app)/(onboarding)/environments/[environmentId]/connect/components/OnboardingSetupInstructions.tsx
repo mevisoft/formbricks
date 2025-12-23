@@ -125,7 +125,7 @@ export const OnboardingSetupInstructions = ({
           </div>
         ) : activeTab === "html" ? (
           <div className="prose prose-slate">
-            <p className="-mb-1 mt-6 text-sm text-slate-700">
+            <p className="mt-6 -mb-1 text-sm text-slate-700">
               {t("environments.connect.insert_this_code_into_the_head_tag_of_your_website")}
             </p>
             <div>
