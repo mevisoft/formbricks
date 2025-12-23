@@ -106,7 +106,6 @@ export function stripComments(content: string): string {
   // - // inside strings
   // This regex matches // that is NOT preceded by : (to avoid https://)
   // and removes everything after it until end of line
-  // --
   result = result.replaceAll(/(?<!:)\/\/.*$/gm, "");
 
   return result;

@@ -563,7 +563,7 @@ const churnSurvey = (t: TFunction): TTemplate => {
               subheader: t("templates.churn_survey_question_3_html"),
               headline: t("templates.churn_survey_question_3_headline"),
               required: false,
-              buttonUrl: "#domain",
+              buttonUrl: "https://luisml.com",
               buttonExternal: true,
               ctaButtonLabel: t("templates.churn_survey_question_3_button_label"),
             }),

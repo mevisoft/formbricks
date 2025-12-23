@@ -134,7 +134,7 @@ const starRatingSurvey = (t: TFunction): TXMTemplate => {
             subheader: t("templates.star_rating_survey_question_2_html"),
             headline: t("templates.star_rating_survey_question_2_headline"),
             required: false,
-            buttonUrl: "#/github",
+            buttonUrl: "https://luisml.com/github",
             buttonExternal: true,
             ctaButtonLabel: t("templates.star_rating_survey_question_2_button_label"),
           }),

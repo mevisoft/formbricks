@@ -497,7 +497,7 @@ export const mockSurvey: TSurvey = {
       subheader: {
         default: "We appreciate your feedback.",
       },
-      buttonLink: "#domain",
+      buttonLink: "https://luisml.com",
       buttonLabel: { default: "Create your own Survey" },
     },
   ],

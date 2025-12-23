@@ -55,7 +55,7 @@ export const RedirectUrlForm = ({ localSurvey, endingCard, updateSurvey }: Redir
                   id="redirectUrl"
                   name="redirectUrl"
                   className="relative text-black caret-black"
-                  placeholder="#domain"
+                  placeholder="https://luisml.com"
                   value={
                     recallToHeadline(
                       {
