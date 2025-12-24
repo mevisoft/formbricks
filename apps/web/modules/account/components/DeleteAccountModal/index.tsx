@@ -22,6 +22,7 @@ export const DeleteAccountModal = ({
   setOpen,
   open,
   user,
+  isFormbricksCloud,
   organizationsWithSingleOwner,
 }: DeleteAccountModalProps) => {
   const { t } = useTranslation();
@@ -45,7 +46,11 @@ export const DeleteAccountModal = ({
       });
 
       // Manual redirect after signOut completes
-      window.location.replace("/auth/login");
+      if (isFormbricksCloud) {
+        window.location.replace("https://app.formbricks.com/s/clri52y3z8f221225wjdhsoo2");
+      } else {
+        window.location.replace("/auth/login");
+      }
     } catch (error) {
       toast.error("Something went wrong");
     } finally {

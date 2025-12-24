@@ -3,7 +3,7 @@ import { TEmailTemplateLegalProps } from "../types/email";
 import { TFunction } from "../types/translations";
 
 const fbLogoUrl = "https://app.formbricks.com/logo-transparent.png";
-const logoLink = "https://luisml.com?utm_source=email_header&utm_medium=email";
+const logoLink = "https://formbricks.com?utm_source=email_header&utm_medium=email";
 
 interface EmailTemplateProps extends TEmailTemplateLegalProps {
   readonly children: React.ReactNode;
@@ -50,7 +50,7 @@ export function EmailTemplate({
           <Section className="mt-4 text-center text-sm">
             <Link
               className="m-0 text-sm font-normal text-slate-500"
-              href="https://luisml.com/?utm_source=email_header&utm_medium=email"
+              href="https://formbricks.com/?utm_source=email_header&utm_medium=email"
               target="_blank"
               rel="noopener noreferrer">
               {t("emails.email_template_text_1")}

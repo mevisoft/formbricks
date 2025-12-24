@@ -247,7 +247,7 @@ export const mockEndings = [
     subheader: {
       default: "We appreciate your feedback.",
     },
-    buttonLink: "https://luisml.com",
+    buttonLink: "https://formbricks.com",
     buttonLabel: { default: "Create your own Survey" },
   } as TSurveyEndScreenCard,
 ];
@@ -286,7 +286,7 @@ export const mockSurvey: TSurvey = {
       subheader: {
         default: "We appreciate your feedback.",
       },
-      buttonLink: "https://luisml.com",
+      buttonLink: "https://formbricks.com",
       buttonLabel: { default: "Create your own Survey" },
     },
   ],

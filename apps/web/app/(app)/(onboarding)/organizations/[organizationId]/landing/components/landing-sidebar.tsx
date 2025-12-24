@@ -33,7 +33,7 @@ export const LandingSidebar = ({ user, organization }: LandingSidebarProps) => {
   const dropdownNavigation = [
     {
       label: t("common.documentation"),
-      href: "https://luisml.com/docs",
+      href: "https://formbricks.com/docs",
       target: "_blank",
       icon: ArrowUpRightIcon,
     },

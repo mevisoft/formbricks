@@ -1,6 +1,5 @@
 import { Metadata } from "next";
 import React from "react";
-import { I18nKeepAlive } from "@/app/I18nKeepAlive";
 import { SentryProvider } from "@/app/sentry/SentryProvider";
 import {
   DEFAULT_LOCALE,
@@ -33,7 +32,6 @@ const RootLayout = async ({ children }: { children: React.ReactNode }) => {
           sentryEnvironment={SENTRY_ENVIRONMENT}
           isEnabled={IS_PRODUCTION}>
           <I18nProvider language={locale} defaultLanguage={DEFAULT_LOCALE}>
-            <I18nKeepAlive />
             {children}
           </I18nProvider>
         </SentryProvider>

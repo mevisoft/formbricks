@@ -9,6 +9,7 @@ import { TSurvey } from "@formbricks/types/surveys/types";
 import { TUserLocale } from "@formbricks/types/user";
 import { updateSingleUseLinksAction } from "@/app/(app)/environments/[environmentId]/surveys/[surveyId]/(analysis)/summary/actions";
 import { DisableLinkModal } from "@/app/(app)/environments/[environmentId]/surveys/[surveyId]/(analysis)/summary/components/shareEmbedModal/disable-link-modal";
+import { DocumentationLinks } from "@/app/(app)/environments/[environmentId]/surveys/[surveyId]/(analysis)/summary/components/shareEmbedModal/documentation-links";
 import { ShareSurveyLink } from "@/modules/analysis/components/ShareSurveyLink";
 import { generateSingleUseIdsAction } from "@/modules/survey/list/actions";
 import { AdvancedOptionToggle } from "@/modules/ui/components/advanced-option-toggle";
@@ -325,6 +326,27 @@ export const AnonymousLinksTab = ({
             </div>
           </AdvancedOptionToggle>
         </div>
+
+        <DocumentationLinks
+          links={[
+            {
+              title: t("environments.surveys.share.anonymous_links.single_use_links"),
+              href: "https://formbricks.com/docs/xm-and-surveys/surveys/link-surveys/single-use-links",
+            },
+            {
+              title: t("environments.surveys.share.anonymous_links.data_prefilling"),
+              href: "https://formbricks.com/docs/xm-and-surveys/surveys/link-surveys/data-prefilling",
+            },
+            {
+              title: t("environments.surveys.share.anonymous_links.source_tracking"),
+              href: "https://formbricks.com/docs/xm-and-surveys/surveys/link-surveys/source-tracking",
+            },
+            {
+              title: t("environments.surveys.share.anonymous_links.custom_start_point"),
+              href: "https://formbricks.com/docs/xm-and-surveys/surveys/link-surveys/start-at-question",
+            },
+          ]}
+        />
       </div>
       {disableLinkModal && (
         <DisableLinkModal

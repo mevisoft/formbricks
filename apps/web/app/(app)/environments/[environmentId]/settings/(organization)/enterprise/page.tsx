@@ -1,10 +1,12 @@
 import { CheckIcon } from "lucide-react";
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { OrganizationSettingsNavbar } from "@/app/(app)/environments/[environmentId]/settings/(organization)/components/OrganizationSettingsNavbar";
 import { IS_FORMBRICKS_CLOUD } from "@/lib/constants";
 import { getTranslate } from "@/lingodotdev/server";
 import { getEnterpriseLicense } from "@/modules/ee/license-check/lib/license";
 import { getEnvironmentAuth } from "@/modules/environments/lib/utils";
+import { Button } from "@/modules/ui/components/button";
 import { PageContentWrapper } from "@/modules/ui/components/page-content-wrapper";
 import { PageHeader } from "@/modules/ui/components/page-header";
 
@@ -104,8 +106,8 @@ const Page = async (props) => {
               </div>
               <p className="text-sm text-slate-500">
                 {t("environments.settings.enterprise.questions_please_reach_out_to")}{" "}
-                <a className="font-semibold underline" href="mailto:hola@example.com">
-                  hola@example.com
+                <a className="font-semibold underline" href="mailto:hola@formbricks.com">
+                  hola@formbricks.com
                 </a>
               </p>
             </div>
@@ -175,6 +177,15 @@ const Page = async (props) => {
                   "environments.settings.enterprise.no_call_needed_no_strings_attached_request_a_free_30_day_trial_license_to_test_all_features_by_filling_out_this_form"
                 )}
               </p>
+              <Button asChild>
+                <Link
+                  href="https://app.formbricks.com/s/clvupq3y205i5yrm3sm9v1xt5"
+                  target="_blank"
+                  rel="noopener noreferrer nofollow"
+                  referrerPolicy="no-referrer">
+                  {t("environments.settings.enterprise.request_30_day_trial_license")}
+                </Link>
+              </Button>
               <p className="mt-2 text-xs text-slate-500">
                 {t("environments.settings.enterprise.no_credit_card_no_sales_call_just_test_it")}
               </p>

@@ -19,7 +19,28 @@ import { Alert, AlertButton, AlertDescription, AlertTitle } from "@/modules/ui/c
 import { H4, InlineSmall, Small } from "@/modules/ui/components/typography";
 import { DocumentationLinksSection } from "./documentation-links-section";
 
-const createDocumentationLinks = () => [];
+const createDocumentationLinks = (t: ReturnType<typeof useTranslation>["t"]) => [
+  {
+    href: "https://formbricks.com/docs/xm-and-surveys/surveys/website-app-surveys/framework-guides#html",
+    title: t("environments.surveys.summary.in_app.html_embed"),
+  },
+  {
+    href: "https://formbricks.com/docs/xm-and-surveys/surveys/website-app-surveys/framework-guides#react-js",
+    title: t("environments.surveys.summary.in_app.javascript_sdk"),
+  },
+  {
+    href: "https://formbricks.com/docs/xm-and-surveys/surveys/website-app-surveys/framework-guides#swift",
+    title: t("environments.surveys.summary.in_app.ios_sdk"),
+  },
+  {
+    href: "https://formbricks.com/docs/xm-and-surveys/surveys/website-app-surveys/framework-guides#android",
+    title: t("environments.surveys.summary.in_app.kotlin_sdk"),
+  },
+  {
+    href: "https://formbricks.com/docs/xm-and-surveys/surveys/website-app-surveys/framework-guides#react-native",
+    title: t("environments.surveys.summary.in_app.react_native_sdk"),
+  },
+];
 
 const createNoCodeConfigType = (t: ReturnType<typeof useTranslation>["t"]) => ({
   click: t("environments.actions.click"),
@@ -69,7 +90,7 @@ export const AppTab = () => {
   const { environment, project } = useEnvironment();
   const { survey } = useSurvey();
 
-  const documentationLinks = useMemo(() => createDocumentationLinks(), []);
+  const documentationLinks = useMemo(() => createDocumentationLinks(t), [t]);
   const noCodeConfigType = useMemo(() => createNoCodeConfigType(t), [t]);
 
   const waitTime = () => {
