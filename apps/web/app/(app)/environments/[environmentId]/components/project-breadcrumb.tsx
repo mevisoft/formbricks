@@ -179,9 +179,7 @@ export const ProjectBreadcrumb = ({
     return [
       {
         text: t("environments.settings.billing.upgrade"),
-        href: isLicenseActive
-          ? `/environments/${currentEnvironmentId}/settings/enterprise`
-          : "https://luisml.com/upgrade-self-hosted-license",
+        href: `/environments/${currentEnvironmentId}/settings/enterprise`,
       },
       {
         text: t("common.cancel"),
