@@ -1,9 +1,8 @@
 #!/bin/sh
-
 # Load environment variables from .env files
 if [ -f .env ]; then
   set -a
-  . /mnt/e/proyectos/luisml/formbricks.luisml/.env
+  . ./.env
   set +a
 fi
 
