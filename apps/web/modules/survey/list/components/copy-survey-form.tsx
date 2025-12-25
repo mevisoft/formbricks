@@ -51,11 +51,11 @@ function EnvironmentCheckbox({
               type="button"
               checked={fieldValue.includes(environmentId)}
               onCheckedChange={handleCheckedChange}
-              className="mr-2 h-4 w-4 appearance-none border-slate-300 checked:border-transparent checked:bg-slate-500 checked:after:bg-slate-500 checked:hover:bg-slate-500 focus:ring-2 focus:ring-slate-500 focus:ring-opacity-50"
+              className="focus:ring-opacity-50 mr-2 h-4 w-4 appearance-none border-slate-300 checked:border-transparent checked:bg-slate-500 checked:after:bg-slate-500 checked:hover:bg-slate-500 focus:ring-2 focus:ring-slate-500"
               id={environmentId}
             />
             <Label htmlFor={environmentId}>
-              <p className="text-sm font-medium capitalize text-slate-900">{environmentType}</p>
+              <p className="text-sm font-medium text-slate-900 capitalize">{environmentType}</p>
             </Label>
           </div>
         </FormControl>
