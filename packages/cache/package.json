@@ -35,7 +35,7 @@
     "test:coverage": "vitest run --coverage",
     "go": "vite build --watch --mode dev"
   },
-  "author": "Formbricks <hola@formbricks.com>",
+  "author": "Formbricks <hola@example.com>",
   "dependencies": {
     "@formbricks/logger": "workspace:*",
     "redis": "5.8.1",

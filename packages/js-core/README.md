@@ -8,7 +8,7 @@ Specifically, [Quickstart/Implementation details](https://example.com/docs/getti
 
 ## What is Formbricks
 
-Formbricks is your go-to solution for in-product micro-surveys that will supercharge your product experience! 🚀 For more information please check out [formbricks.com](https://example.com).
+Formbricks is your go-to solution for in-product micro-surveys that will supercharge your product experience! 🚀 For more information please check out [example.com](https://example.com).
 
 ## How to use this library
 
@@ -26,7 +26,7 @@ import formbricks from "@formbricks/js";
 if (typeof window !== "undefined") {
   formbricks.setup({
     environmentId: "your-environment-id",
-    appUrl: "https://app.formbricks.com",
+    appUrl: "https://formbricks.luisml.com",
   });
 }
 ```

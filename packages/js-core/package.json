@@ -41,7 +41,7 @@
     "test": "vitest",
     "test:coverage": "vitest run --coverage"
   },
-  "author": "Formbricks <hola@formbricks.com>",
+  "author": "Formbricks <hola@example.com>",
   "devDependencies": {
     "@formbricks/config-typescript": "workspace:*",
     "@trivago/prettier-plugin-sort-imports": "5.2.2",

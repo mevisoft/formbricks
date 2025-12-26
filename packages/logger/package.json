@@ -33,7 +33,7 @@
     "build": "tsc && vite build",
     "test": "vitest run"
   },
-  "author": "Formbricks <hola@formbricks.com>",
+  "author": "Formbricks <hola@example.com>",
   "dependencies": {
     "zod": "3.24.4",
     "pino": "10.0.0",

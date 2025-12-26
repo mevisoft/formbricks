@@ -467,7 +467,7 @@
     "email_template_text_1": "Это письмо отправлено через Formbricks.",
     "embed_survey_preview_email_didnt_request": "Вы не запрашивали это?",
     "embed_survey_preview_email_environment_id": "ID окружения",
-    "embed_survey_preview_email_fight_spam": "Помогите нам бороться со спамом — перешлите это письмо на hola@formbricks.com",
+    "embed_survey_preview_email_fight_spam": "Помогите нам бороться со спамом — перешлите это письмо на hola@example.com",
     "embed_survey_preview_email_heading": "Встраиваемый предпросмотр письма",
     "embed_survey_preview_email_subject": "Предпросмотр email-опроса Formbricks",
     "embed_survey_preview_email_text": "Вот как выглядит фрагмент кода, встроенный в письмо:",

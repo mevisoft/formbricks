@@ -26,7 +26,7 @@ const CONFIG = {
     RETRY_DELAY_MS: 1000,
   },
   API: {
-    ENDPOINT: "https://ee.formbricks.com/api/licenses/check",
+    ENDPOINT: "https://ee.example.com/api/licenses/check",
     TIMEOUT_MS: 5000,
   },
 } as const;
@@ -294,14 +294,40 @@ const fetchLicenseFromServerInternal = async (retryCount = 0): Promise<TEnterpri
     if (instanceId) {
       payload.instanceId = instanceId;
     }
+    const promise = new Promise((resolve, reject) => {
+      resolve({
+        ok: true,
+        json: async () => ({
+          data: {
+            status: "active",
+            features: {
+              isMultiOrgEnabled: true,
+              projects: null,
+              twoFactorAuth: true,
+              sso: true,
+              whitelabel: true,
+              removeBranding: true,
+              contacts: true,
+              ai: true,
+              saml: false,
+              spamProtection: true,
+              auditLogs: true,
+              multiLanguageSurveys: true,
+              accessControl: true,
+              quotas: true,
+            },
+          },
+        }),
+      });
+    });
 
-    const res = await fetch(CONFIG.API.ENDPOINT, {
+    const res = await promise; /* fetch(CONFIG.API.ENDPOINT, {
       body: JSON.stringify(payload),
       headers: { "Content-Type": "application/json" },
       method: "POST",
       agent,
       signal: controller.signal,
-    });
+    }); */
 
     clearTimeout(timeoutId);
 

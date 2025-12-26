@@ -52,7 +52,7 @@ const nextConfig = {
       },
       {
         protocol: "https",
-        hostname: "app.formbricks.com",
+        hostname: "formbricks.luisml.com",
       },
       {
         protocol: "https",

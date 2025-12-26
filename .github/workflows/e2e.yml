@@ -49,7 +49,7 @@ jobs:
         with:
           egress-policy: audit
           allowed-endpoints: |
-            ee.formbricks.com:443
+            ee.example.com:443
             registry-1.docker.io:443
             docker.io:443
 

@@ -2,7 +2,7 @@ import { Body, Container, Html, Img, Link, Section, Tailwind, Text } from "@reac
 import { TEmailTemplateLegalProps } from "../types/email";
 import { TFunction } from "../types/translations";
 
-const fbLogoUrl = "https://app.formbricks.com/logo-transparent.png";
+const fbLogoUrl = "https://formbricks.luisml.com/logo-transparent.png";
 const logoLink = "https://example.com?utm_source=email_header&utm_medium=email";
 
 interface EmailTemplateProps extends TEmailTemplateLegalProps {
