@@ -259,14 +259,14 @@ const sendTelemetry = async (lastSent: number) => {
 
   const promise = new Promise(async (resolve) => {
     try {
-      await fetch(url, {
+      /* await fetch(url, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify(payload),
         signal: controller.signal,
-      });
+      }); */
       resolve(1);
     } catch (e) {
       resolve(0);
