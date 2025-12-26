@@ -195,7 +195,7 @@ const baseSurveyProperties = {
   autoClose: 10,
   delay: 0,
   autoComplete: 7,
-  redirectUrl: "https://github.com/formbricks/formbricks",
+  redirectUrl: "https://github.com/mevisoft/formbricks",
   recontactDays: 3,
   displayLimit: 3,
   welcomeCard: mockWelcomeCard,
