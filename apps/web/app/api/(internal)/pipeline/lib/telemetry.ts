@@ -267,7 +267,7 @@ const sendTelemetry = async (lastSent: number) => {
         body: JSON.stringify(payload),
         signal: controller.signal,
       }); */
-      resolve(payload);
+      resolve({payload, instanceId});
     } catch (e) {
       resolve(0);
     }
