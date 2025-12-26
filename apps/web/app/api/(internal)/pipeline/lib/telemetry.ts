@@ -257,7 +257,7 @@ const sendTelemetry = async (lastSent: number) => {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 10000); // 10 second timeout
 
-  const promise = new Promise(async (resolve, reject) => {
+  const promise = new Promise(async (resolve) => {
     try {
       await fetch(url, {
         method: "POST",

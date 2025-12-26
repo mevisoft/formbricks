@@ -294,7 +294,7 @@ const fetchLicenseFromServerInternal = async (retryCount = 0): Promise<TEnterpri
     if (instanceId) {
       payload.instanceId = instanceId;
     }
-    const promise = new Promise((resolve, reject) => {
+    const promise = new Promise((resolve) => {
       resolve({
         ok: true,
         json: async () => ({
