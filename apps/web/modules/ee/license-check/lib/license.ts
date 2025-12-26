@@ -1,6 +1,6 @@
 import "server-only";
 import { HttpsProxyAgent } from "https-proxy-agent";
-import fetch from "node-fetch";
+// import fetch from "node-fetch";
 import { cache as reactCache } from "react";
 import { z } from "zod";
 import { createCacheKey } from "@formbricks/cache";
