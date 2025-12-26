@@ -4,7 +4,7 @@
 
 A Helm chart for Formbricks with PostgreSQL, Redis
 
-**Homepage:** <https://formbricks.com/docs/self-hosting/setup/kubernetes>
+**Homepage:** <https://example.com/docs/self-hosting/setup/kubernetes>
 
 ## Maintainers
 

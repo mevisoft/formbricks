@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "version": "0.1.0",
-  "homepage": "https://formbricks.com",
+  "homepage": "https://example.com",
   "description": "Storage Controller for Formbricks",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

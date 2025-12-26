@@ -129,7 +129,7 @@ export const MainNavigation = ({
     },
     {
       label: t("common.documentation"),
-      href: "https://formbricks.com/docs",
+      href: "https://example.com/docs",
       target: "_blank",
       icon: ArrowUpRightIcon,
     },

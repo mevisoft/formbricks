@@ -3,12 +3,12 @@
 [![npm package](https://img.shields.io/npm/v/@formbricks/js?style=flat-square)](https://www.npmjs.com/package/@formbricks/js)
 [![MIT License](https://img.shields.io/badge/License-MIT-red.svg?style=flat-square)](https://opensource.org/licenses/MIT)
 
-Please see [Formbricks Docs](https://formbricks.com/docs).
-Specifically, [Quickstart/Implementation details](https://formbricks.com/docs/getting-started/quickstart-in-app-survey).
+Please see [Formbricks Docs](https://example.com/docs).
+Specifically, [Quickstart/Implementation details](https://example.com/docs/getting-started/quickstart-in-app-survey).
 
 ## What is Formbricks
 
-Formbricks is your go-to solution for in-product micro-surveys that will supercharge your product experience! 🚀 For more information please check out [formbricks.com](https://formbricks.com).
+Formbricks is your go-to solution for in-product micro-surveys that will supercharge your product experience! 🚀 For more information please check out [formbricks.com](https://example.com).
 
 ## How to use this library
 
@@ -33,4 +33,4 @@ if (typeof window !== "undefined") {
 
 Replace your-environment-id with your actual environment ID. You can find your environment ID in the **Setup Checklist** in the Formbricks settings.
 
-For more detailed guides for different frameworks, check out our [Framework Guides](https://formbricks.com/docs/getting-started/framework-guides).
+For more detailed guides for different frameworks, check out our [Framework Guides](https://example.com/docs/getting-started/framework-guides).

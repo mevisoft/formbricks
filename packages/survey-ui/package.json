@@ -3,7 +3,7 @@
   "license": "MIT",
   "version": "1.0.4",
   "description": "React UI components for building surveys and forms - includes NPS, rating scales, multi-select, file upload, and more. Built with Radix UI and Tailwind CSS.",
-  "homepage": "https://formbricks.com",
+  "homepage": "https://example.com",
   "type": "module",
   "keywords": [
     "react",
@@ -22,7 +22,7 @@
   ],
   "author": {
     "name": "Formbricks",
-    "url": "https://formbricks.com"
+    "url": "https://example.com"
   },
   "repository": {
     "type": "git",

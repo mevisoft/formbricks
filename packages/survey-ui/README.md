@@ -222,4 +222,4 @@ import {
 
 ## License
 
-MIT — [Formbricks](https://formbricks.com)
+MIT — [Formbricks](https://example.com)

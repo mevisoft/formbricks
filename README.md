@@ -4,7 +4,7 @@
 
 <p align="center">
 
-<a href="https://formbricks.com">
+<a href="https://example.com">
 
 <img width="120" alt="Open Source Privacy First Experience Management Solution Qualtrics Alternative Logo" src="https://github.com/formbricks/formbricks/assets/72809645/0086704f-bee7-4d38-9cc8-fa42ee59e004">
 
@@ -15,7 +15,7 @@
 <p align="center">
 The Open Source Qualtrics Alternative
 <br />
-<a href="https://formbricks.com/">Website</a>
+<a href="https://example.com/">Website</a>
 </p>
 </p>
 
@@ -131,7 +131,7 @@ If you opt for self-hosting Formbricks, here are a few options to consider:
 
 #### Docker
 
-To get started with self-hosting with Docker, take a look at our [self-hosting docs](https://formbricks.com/docs/self-hosting/deployment).
+To get started with self-hosting with Docker, take a look at our [self-hosting docs](https://example.com/docs/self-hosting/deployment).
 
 #### Community-managed One Click Hosting
 
@@ -169,7 +169,7 @@ Here is what you need to be able to run Formbricks:
 
 ### Local Setup
 
-To get started locally, we've got a [guide to help you](https://formbricks.com/docs/developer-docs/contributing/get-started#local-machine-setup).
+To get started locally, we've got a [guide to help you](https://example.com/docs/developer-docs/contributing/get-started#local-machine-setup).
 
 ### Gitpod Setup
 
@@ -237,7 +237,7 @@ The Formbricks core application is licensed under the [AGPLv3 Open Source Licens
 
 ### The Enterprise Edition
 
-Additional to the AGPL licensed Formbricks core, this repository contains code licensed under an Enterprise license. The [code](https://github.com/formbricks/formbricks/tree/main/apps/web/modules/ee) and [license](https://github.com/formbricks/formbricks/blob/main/apps/web/modules/ee/LICENSE) for the enterprise functionality can be found in the `/apps/web/modules/ee` folder of this repository. This additional functionality is not part of the AGPLv3 licensed Formbricks core and is designed to meet the needs of larger teams and enterprises. This advanced functionality is already included in the Docker images, but you need an [Enterprise License Key](https://formbricks.com/docs/self-hosting/enterprise) to unlock it.
+Additional to the AGPL licensed Formbricks core, this repository contains code licensed under an Enterprise license. The [code](https://github.com/formbricks/formbricks/tree/main/apps/web/modules/ee) and [license](https://github.com/formbricks/formbricks/blob/main/apps/web/modules/ee/LICENSE) for the enterprise functionality can be found in the `/apps/web/modules/ee` folder of this repository. This additional functionality is not part of the AGPLv3 licensed Formbricks core and is designed to meet the needs of larger teams and enterprises. This advanced functionality is already included in the Docker images, but you need an [Enterprise License Key](https://example.com/docs/self-hosting/enterprise) to unlock it.
 
 ### White-Labeling Formbricks and Other Licensing Needs
 

@@ -173,9 +173,9 @@ export const exampleData = {
   },
 
   legalProps: {
-    privacyUrl: "https://formbricks.com/privacy",
-    termsUrl: "https://formbricks.com/terms",
-    imprintUrl: "https://formbricks.com/imprint",
+    privacyUrl: "https://example.com/privacy",
+    termsUrl: "https://example.com/terms",
+    imprintUrl: "https://example.com/imprint",
     imprintAddress: "Formbricks GmbH, Example Street 123, 12345 Berlin, Germany",
   },
 };

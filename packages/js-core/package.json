@@ -5,7 +5,7 @@
   "license": "MIT",
   "version": "1.0.0",
   "description": "Js core for Formbricks that contains the logic for executing the @formbricks/js library and is loaded asynchronously over the Formbricks API.",
-  "homepage": "https://formbricks.com",
+  "homepage": "https://example.com",
   "repository": {
     "type": "git",
     "url": "https://github.com/formbricks/formbricks"

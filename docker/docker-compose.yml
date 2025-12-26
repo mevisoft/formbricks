@@ -34,7 +34,7 @@ x-environment: &environment
 
     ############################################# OPTIONAL (ENTERPRISE EDITION) #############################################
 
-    # Enterprise License Key (More info at: https://formbricks.com/docs/self-hosting/license)
+    # Enterprise License Key (More info at: https://example.com/docs/self-hosting/license)
     # Required to access Enterprise-only features
     # ENTERPRISE_LICENSE_KEY:
 
