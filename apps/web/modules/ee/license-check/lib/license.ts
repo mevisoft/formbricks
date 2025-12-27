@@ -1,6 +1,4 @@
 import "server-only";
-import { HttpsProxyAgent } from "https-proxy-agent";
-// import fetch from "node-fetch";
 import { cache as reactCache } from "react";
 import { z } from "zod";
 import { createCacheKey } from "@formbricks/cache";
@@ -121,9 +119,6 @@ const DEFAULT_FEATURES: TEnterpriseLicenseFeatures = {
   quotas: false,
 };
 
-// Helper functions
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-
 const validateConfig = () => {
   const errors: string[] = [];
   if (CONFIG.CACHE.GRACE_PERIOD_MS >= CONFIG.CACHE.PREVIOUS_RESULT_TTL_MS) {
@@ -191,17 +186,6 @@ const trackFallbackUsage = (level: FallbackLevel) => {
       timestamp: new Date().toISOString(),
     },
     `Using license fallback level: ${level}`
-  );
-};
-
-const trackApiError = (error: LicenseApiError) => {
-  logger.error(
-    {
-      status: error.status,
-      code: error.code,
-      timestamp: new Date().toISOString(),
-    },
-    `License API error: ${error.message}`
   );
 };
 
@@ -280,12 +264,6 @@ const fetchLicenseFromServerInternal = async (retryCount = 0): Promise<TEnterpri
     // (skip this check during E2E tests as we intentionally use null)
     if (!E2E_TESTING && !instanceId) return null;
 
-    const proxyUrl = env.HTTPS_PROXY ?? env.HTTP_PROXY;
-    const agent = proxyUrl ? new HttpsProxyAgent(proxyUrl) : undefined;
-
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), CONFIG.API.TIMEOUT_MS);
-
     const payload: Record<string, unknown> = {
       licenseKey: env.ENTERPRISE_LICENSE_KEY,
       usage: { responseCount },
@@ -294,58 +272,26 @@ const fetchLicenseFromServerInternal = async (retryCount = 0): Promise<TEnterpri
     if (instanceId) {
       payload.instanceId = instanceId;
     }
-    const promise = new Promise((resolve) => {
-      resolve({
-        ok: true,
-        json: async () => ({
-          data: {
-            status: "active",
-            features: {
-              isMultiOrgEnabled: true,
-              projects: null,
-              twoFactorAuth: true,
-              sso: true,
-              whitelabel: true,
-              removeBranding: true,
-              contacts: true,
-              ai: true,
-              saml: false,
-              spamProtection: true,
-              auditLogs: true,
-              multiLanguageSurveys: true,
-              accessControl: true,
-              quotas: true,
-            },
-          },
-        }),
-      });
+
+    return validateLicenseDetails({
+      status: "active",
+      features: {
+        isMultiOrgEnabled: true,
+        projects: null,
+        twoFactorAuth: true,
+        sso: true,
+        whitelabel: true,
+        removeBranding: true,
+        contacts: true,
+        ai: true,
+        saml: false,
+        spamProtection: true,
+        auditLogs: true,
+        multiLanguageSurveys: true,
+        accessControl: true,
+        quotas: true,
+      },
     });
-
-    const res = await promise; /* fetch(CONFIG.API.ENDPOINT, {
-      body: JSON.stringify(payload),
-      headers: { "Content-Type": "application/json" },
-      method: "POST",
-      agent,
-      signal: controller.signal,
-    }); */
-
-    clearTimeout(timeoutId);
-
-    if (res.ok) {
-      const responseJson = (await res.json()) as { data: unknown };
-      return validateLicenseDetails(responseJson.data);
-    }
-
-    const error = new LicenseApiError(`License check API responded with status: ${res.status}`, res.status);
-    trackApiError(error);
-
-    // Retry on specific status codes
-    if (retryCount < CONFIG.CACHE.MAX_RETRIES && [429, 502, 503, 504].includes(res.status)) {
-      await sleep(CONFIG.CACHE.RETRY_DELAY_MS * Math.pow(2, retryCount));
-      return fetchLicenseFromServerInternal(retryCount + 1);
-    }
-
-    return null;
   } catch (error) {
     if (error instanceof LicenseApiError) {
       throw error;
