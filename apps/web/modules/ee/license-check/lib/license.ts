@@ -296,7 +296,7 @@ const fetchLicenseFromServerInternal = async (retryCount = 0): Promise<TEnterpri
     if (error instanceof LicenseApiError) {
       throw error;
     }
-    logger.error(error, "Error while fetching license from server");
+    logger.error(error, `Error while fetching license from server, ${retryCount}`);
     return null;
   }
 };
