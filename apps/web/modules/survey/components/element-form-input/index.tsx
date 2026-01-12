@@ -308,14 +308,6 @@ export const ElementFormInput = ({
   const setFirstRender = externalSetFirstRender ?? setInternalFirstRender;
 
   const renderRemoveDescriptionButton = () => {
-    if (
-      currentElement &&
-      (currentElement.type === TSurveyElementTypeEnum.CTA ||
-        currentElement.type === TSurveyElementTypeEnum.Consent)
-    ) {
-      return false;
-    }
-
     if (id === "subheader") {
       return !!currentElement?.subheader || (endingCard?.type === "endScreen" && !!endingCard?.subheader);
     }

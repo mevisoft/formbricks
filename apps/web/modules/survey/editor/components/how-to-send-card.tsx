@@ -193,7 +193,7 @@ export const HowToSendCard = ({ localSurvey, setLocalSurvey, environment }: HowT
                           <AlertButton
                             onClick={() =>
                               window.open(
-                                `/environments/${environment.id}/project/${option.id}-connection`,
+                                `/environments/${environment.id}/workspace/${option.id}-connection`,
                                 "_blank"
                               )
                             }>

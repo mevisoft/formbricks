@@ -30,7 +30,7 @@ export const ClientLogo = ({
       style={{ backgroundColor: logoToUse?.bgColor }}>
       {previewSurvey && environmentId && (
         <Link
-          href={`/environments/${environmentId}/project/look`}
+          href={`/environments/${environmentId}/workspace/look`}
           className="group/link absolute h-full w-full hover:cursor-pointer"
           target="_blank">
           <ArrowUpRight
@@ -52,7 +52,7 @@ export const ClientLogo = ({
         />
       ) : (
         <Link
-          href={`/environments/${environmentId}/project/look`}
+          href={`/environments/${environmentId}/workspace/look`}
           onClick={(e) => {
             if (!environmentId) {
               e.preventDefault();

@@ -39,7 +39,7 @@ const Page = async (props) => {
       onRequest: false,
     },
     {
-      title: t("environments.project.languages.multi_language_surveys"),
+      title: t("environments.workspace.languages.multi_language_surveys"),
       comingSoon: false,
       onRequest: false,
     },

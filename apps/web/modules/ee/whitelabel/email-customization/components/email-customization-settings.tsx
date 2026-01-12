@@ -197,8 +197,8 @@ export const EmailCustomizationSettings = ({
   return (
     <SettingsCard
       className="overflow-hidden pb-0"
-      title={t("environments.project.look.email_customization")}
-      description={t("environments.project.look.email_customization_description")}
+      title={t("environments.workspace.look.email_customization")}
+      description={t("environments.workspace.look.email_customization_description")}
       noPadding>
       <div className="px-6 pt-6">
         {hasWhiteLabelPermission ? (

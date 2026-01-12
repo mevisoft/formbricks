@@ -21,6 +21,7 @@ import {
   ListOrderedIcon,
   MessageSquareTextIcon,
   MousePointerClickIcon,
+  NetworkIcon,
   PieChartIcon,
   Rows3Icon,
   SmartphoneIcon,
@@ -99,6 +100,7 @@ const elementIcons = {
   action: MousePointerClickIcon,
   country: FlagIcon,
   url: LinkIcon,
+  ipAddress: NetworkIcon,
 
   // others
   Language: LanguagesIcon,

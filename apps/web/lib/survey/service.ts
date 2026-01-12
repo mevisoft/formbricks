@@ -56,6 +56,7 @@ export const selectSurvey = {
   isVerifyEmailEnabled: true,
   isSingleResponsePerEmailEnabled: true,
   isBackButtonHidden: true,
+  isCaptureIpEnabled: true,
   redirectUrl: true,
   projectOverwrites: true,
   styling: true,
@@ -65,6 +66,8 @@ export const selectSurvey = {
   showLanguageSwitch: true,
   recaptcha: true,
   metadata: true,
+  customHeadScripts: true,
+  customHeadScriptsMode: true,
   languages: {
     select: {
       default: true,
@@ -563,6 +566,7 @@ export const updateSurveyInternal = async (
       ...prismaSurvey, // Properties from prismaSurvey
       displayPercentage: Number(prismaSurvey.displayPercentage) || null,
       segment: surveySegment,
+      customHeadScriptsMode: prismaSurvey.customHeadScriptsMode,
     };
 
     return modifiedSurvey;
@@ -783,6 +787,7 @@ export const loadNewSegmentInSurvey = async (surveyId: string, newSegmentId: str
     const modifiedSurvey: TSurvey = {
       ...prismaSurvey, // Properties from prismaSurvey
       segment: surveySegment,
+      customHeadScriptsMode: prismaSurvey.customHeadScriptsMode,
     };
 
     return modifiedSurvey;

@@ -18,6 +18,8 @@
     "db:migrate:deploy": "turbo run db:migrate:deploy",
     "db:start": "turbo run db:start",
     "db:push": "turbo run db:push",
+    "db:seed": "turbo run db:seed",
+    "db:seed:clear": "turbo run db:seed -- -- --clear",
     "db:up": "docker compose -f docker-compose.dev.yml up -d",
     "db:down": "docker compose -f docker-compose.dev.yml down",
     "go": "pnpm db:up && turbo run go --concurrency 20",
@@ -72,7 +74,7 @@
   "engines": {
     "node": ">=16.0.0"
   },
-  "packageManager": "pnpm@9.15.9",
+  "packageManager": "pnpm@10.28.0",
   "nextBundleAnalysis": {
     "budget": 358400,
     "budgetPercentIncreaseRed": 20,

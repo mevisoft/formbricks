@@ -228,14 +228,14 @@ export const PricingTable = ({
                 "relative mx-8 flex flex-col gap-4 pb-6",
                 projectsUnlimitedCheck && "mt-4 mb-0 flex-row pb-0"
               )}>
-              <p className="text-md font-semibold text-slate-700">{t("common.projects")}</p>
+              <p className="text-md font-semibold text-slate-700">{t("common.workspaces")}</p>
               {organization.billing.limits.projects && (
                 <BillingSlider
                   className="slider-class mb-8"
                   value={projectCount}
                   max={organization.billing.limits.projects * 1.5}
                   freeTierLimit={organization.billing.limits.projects}
-                  metric={t("common.projects")}
+                  metric={t("common.workspaces")}
                 />
               )}
 
@@ -243,7 +243,7 @@ export const PricingTable = ({
                 <Badge
                   type="success"
                   size="normal"
-                  text={t("environments.settings.billing.unlimited_projects")}
+                  text={t("environments.settings.billing.unlimited_workspaces")}
                 />
               )}
             </div>
