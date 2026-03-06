@@ -15,7 +15,7 @@ const ZResendVerificationEmailAction = z.object({
   email: ZUserEmail,
 });
 
-export const resendVerificationEmailAction = actionClient.schema(ZResendVerificationEmailAction).action(
+export const resendVerificationEmailAction = actionClient.inputSchema(ZResendVerificationEmailAction).action(
   withAuditLogging(
     "verificationEmailSent",
     "user",
@@ -32,7 +32,7 @@ export const resendVerificationEmailAction = actionClient.schema(ZResendVerifica
         };
       }
       ctx.auditLoggingCtx.userId = user.id;
-      await sendVerificationEmail(user);
+      await sendVerificationEmail({ id: user.id, email: user.email, locale: user.locale });
       return {
         success: true,
       };

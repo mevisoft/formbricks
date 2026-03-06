@@ -2,7 +2,7 @@
 
 import { z } from "zod";
 import { ZId } from "@formbricks/types/common";
-import { OperationNotAllowedError } from "@formbricks/types/errors";
+import { AuthorizationError, OperationNotAllowedError } from "@formbricks/types/errors";
 import { ZProjectUpdateInput } from "@formbricks/types/project";
 import { getMembershipByUserIdOrganizationId } from "@/lib/membership/service";
 import { getOrganization } from "@/lib/organization/service";
@@ -25,7 +25,7 @@ const ZCreateProjectAction = z.object({
   data: ZProjectUpdateInput,
 });
 
-export const createProjectAction = authenticatedActionClient.schema(ZCreateProjectAction).action(
+export const createProjectAction = authenticatedActionClient.inputSchema(ZCreateProjectAction).action(
   withAuditLogging(
     "created",
     "project",
@@ -97,7 +97,7 @@ const ZGetOrganizationsForSwitcherAction = z.object({
  * Called on-demand when user opens the organization switcher.
  */
 export const getOrganizationsForSwitcherAction = authenticatedActionClient
-  .schema(ZGetOrganizationsForSwitcherAction)
+  .inputSchema(ZGetOrganizationsForSwitcherAction)
   .action(async ({ ctx, parsedInput }) => {
     await checkAuthorizationUpdated({
       userId: ctx.user.id,
@@ -122,7 +122,7 @@ const ZGetProjectsForSwitcherAction = z.object({
  * Called on-demand when user opens the project switcher.
  */
 export const getProjectsForSwitcherAction = authenticatedActionClient
-  .schema(ZGetProjectsForSwitcherAction)
+  .inputSchema(ZGetProjectsForSwitcherAction)
   .action(async ({ ctx, parsedInput }) => {
     await checkAuthorizationUpdated({
       userId: ctx.user.id,
@@ -138,7 +138,7 @@ export const getProjectsForSwitcherAction = authenticatedActionClient
     // Need membership for getProjectsByUserId (1 DB query)
     const membership = await getMembershipByUserIdOrganizationId(ctx.user.id, parsedInput.organizationId);
     if (!membership) {
-      throw new Error("Membership not found");
+      throw new AuthorizationError("Membership not found");
     }
 
     return await getProjectsByUserId(ctx.user.id, membership);

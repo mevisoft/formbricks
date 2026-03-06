@@ -102,7 +102,7 @@ export const NPSSummary = ({ elementSummary, survey, setFilter }: NPSSummaryProp
         </div>
 
         <TabsContent value="aggregated" className="mt-4">
-          <div className="px-4 pt-4 pb-6 md:px-6">
+          <div className="px-4 pb-6 pt-4 md:px-6">
             <div className="space-y-5 text-sm md:text-base">
               {["promoters", "passives", "detractors", "dismissed"].map((group) => (
                 <button
@@ -113,7 +113,7 @@ export const NPSSummary = ({ elementSummary, survey, setFilter }: NPSSummaryProp
                     className={`mb-2 flex justify-between ${group === "dismissed" ? "mb-2 border-t bg-white pt-4 text-sm md:text-base" : ""}`}>
                     <div className="mr-8 flex space-x-1">
                       <p
-                        className={`font-semibold text-slate-700 capitalize ${group === "dismissed" ? "" : "text-slate-700"}`}>
+                        className={`font-semibold capitalize text-slate-700 ${group === "dismissed" ? "" : "text-slate-700"}`}>
                         {group}
                       </p>
                       <div>
@@ -123,8 +123,7 @@ export const NPSSummary = ({ elementSummary, survey, setFilter }: NPSSummaryProp
                       </div>
                     </div>
                     <p className="flex w-32 items-end justify-end text-slate-600">
-                      {elementSummary[group]?.count}{" "}
-                      {elementSummary[group]?.count === 1 ? t("common.response") : t("common.responses")}
+                      {t("common.count_responses", { count: elementSummary[group]?.count })}
                     </p>
                   </div>
                   <ProgressBar
@@ -139,7 +138,7 @@ export const NPSSummary = ({ elementSummary, survey, setFilter }: NPSSummaryProp
 
         <TabsContent value="individual" className="mt-4">
           <TooltipProvider delayDuration={200}>
-            <div className="grid grid-cols-11 gap-2 px-4 pt-4 pb-6 text-sm md:px-6 md:text-base">
+            <div className="grid grid-cols-11 gap-2 px-4 pb-6 pt-4 text-sm md:px-6 md:text-base">
               {elementSummary.choices.map((choice) => {
                 const opacity = calculateNPSOpacity(choice.rating);
 
@@ -158,7 +157,7 @@ export const NPSSummary = ({ elementSummary, survey, setFilter }: NPSSummaryProp
                     }>
                     <div className="flex h-32 w-full flex-col items-center justify-end">
                       <div
-                        className="bg-brand-dark w-full rounded-t-lg border border-slate-200 transition-all group-hover:brightness-110"
+                        className="w-full rounded-t-lg border border-slate-200 bg-brand-dark transition-all group-hover:brightness-110"
                         style={{
                           height: `${Math.max(choice.percentage, 2)}%`,
                           opacity,
@@ -182,7 +181,7 @@ export const NPSSummary = ({ elementSummary, survey, setFilter }: NPSSummaryProp
         </TabsContent>
       </Tabs>
 
-      <div className="flex justify-center pt-4 pb-4">
+      <div className="flex justify-center pb-4 pt-4">
         <HalfCircle value={elementSummary.score} />
       </div>
     </div>

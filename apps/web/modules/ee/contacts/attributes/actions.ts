@@ -2,6 +2,7 @@
 
 import { z } from "zod";
 import { ZId } from "@formbricks/types/common";
+import { ZContactAttributeDataType } from "@formbricks/types/contact-attribute-key";
 import { ResourceNotFoundError } from "@formbricks/types/errors";
 import { authenticatedActionClient } from "@/lib/utils/action-client";
 import { checkAuthorizationUpdated } from "@/lib/utils/action-client/action-client-middleware";
@@ -19,16 +20,17 @@ import {
 const ZCreateContactAttributeKeyAction = z.object({
   environmentId: ZId,
   key: z.string().refine((val) => isSafeIdentifier(val), {
-    message:
+    error:
       "Key must be a safe identifier: only lowercase letters, numbers, and underscores, and must start with a letter",
   }),
   name: z.string().optional(),
   description: z.string().optional(),
+  dataType: ZContactAttributeDataType.optional(),
 });
 
 type TCreateContactAttributeKeyActionInput = z.infer<typeof ZCreateContactAttributeKeyAction>;
 export const createContactAttributeKeyAction = authenticatedActionClient
-  .schema(ZCreateContactAttributeKeyAction)
+  .inputSchema(ZCreateContactAttributeKeyAction)
   .action(
     withAuditLogging(
       "created",
@@ -66,6 +68,7 @@ export const createContactAttributeKeyAction = authenticatedActionClient
           key: parsedInput.key,
           name: parsedInput.name,
           description: parsedInput.description,
+          dataType: parsedInput.dataType,
         });
 
         ctx.auditLoggingCtx.newObject = contactAttributeKey;
@@ -82,7 +85,7 @@ const ZUpdateContactAttributeKeyAction = z.object({
 });
 type TUpdateContactAttributeKeyActionInput = z.infer<typeof ZUpdateContactAttributeKeyAction>;
 export const updateContactAttributeKeyAction = authenticatedActionClient
-  .schema(ZUpdateContactAttributeKeyAction)
+  .inputSchema(ZUpdateContactAttributeKeyAction)
   .action(
     withAuditLogging(
       "updated",
@@ -141,7 +144,7 @@ const ZDeleteContactAttributeKeyAction = z.object({
 type TDeleteContactAttributeKeyActionInput = z.infer<typeof ZDeleteContactAttributeKeyAction>;
 
 export const deleteContactAttributeKeyAction = authenticatedActionClient
-  .schema(ZDeleteContactAttributeKeyAction)
+  .inputSchema(ZDeleteContactAttributeKeyAction)
   .action(
     withAuditLogging(
       "deleted",

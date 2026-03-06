@@ -51,11 +51,11 @@ function EnvironmentCheckbox({
               type="button"
               checked={fieldValue.includes(environmentId)}
               onCheckedChange={handleCheckedChange}
-              className="focus:ring-opacity-50 mr-2 h-4 w-4 appearance-none border-slate-300 checked:border-transparent checked:bg-slate-500 checked:after:bg-slate-500 checked:hover:bg-slate-500 focus:ring-2 focus:ring-slate-500"
+              className="mr-2 h-4 w-4 appearance-none border-slate-300 checked:border-transparent checked:bg-slate-500 checked:after:bg-slate-500 checked:hover:bg-slate-500 focus:ring-2 focus:ring-slate-500 focus:ring-opacity-50"
               id={environmentId}
             />
             <Label htmlFor={environmentId}>
-              <p className="text-sm font-medium text-slate-900 capitalize">{environmentType}</p>
+              <p className="text-sm font-medium capitalize text-slate-900">{environmentType}</p>
             </Label>
           </div>
         </FormControl>
@@ -128,10 +128,6 @@ export const CopySurveyForm = ({ defaultProjects, survey, onCancel, setOpen }: C
               : project?.environments[1];
 
           return {
-            operation: copySurveyToOtherEnvironmentAction({
-              surveyId: survey.id,
-              targetEnvironmentId: environmentId,
-            }),
             projectName: project?.name ?? "Unknown Project",
             environmentType: environment?.type ?? "unknown",
             environmentId,
@@ -139,7 +135,14 @@ export const CopySurveyForm = ({ defaultProjects, survey, onCancel, setOpen }: C
         });
       });
 
-      const results = await Promise.all(copyOperationsWithMetadata.map((item) => item.operation));
+      const results: Awaited<ReturnType<typeof copySurveyToOtherEnvironmentAction>>[] = [];
+      for (const item of copyOperationsWithMetadata) {
+        const result = await copySurveyToOtherEnvironmentAction({
+          surveyId: survey.id,
+          targetEnvironmentId: item.environmentId,
+        });
+        results.push(result);
+      }
 
       let successCount = 0;
       let errorCount = 0;

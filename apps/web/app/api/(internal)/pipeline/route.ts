@@ -15,9 +15,11 @@ import { getOrganizationByEnvironmentId } from "@/lib/organization/service";
 import { getResponseCountBySurveyId } from "@/lib/response/service";
 import { getSurvey, updateSurvey } from "@/lib/survey/service";
 import { convertDatesInObject } from "@/lib/time";
+import { validateWebhookUrl } from "@/lib/utils/validate-webhook-url";
 import { queueAuditEvent } from "@/modules/ee/audit-logs/lib/handler";
 import { TAuditStatus, UNKNOWN_DATA } from "@/modules/ee/audit-logs/types/audit-log";
 import { sendResponseFinishedEmail } from "@/modules/email";
+import { resolveStorageUrlsInObject } from "@/modules/storage/utils";
 import { sendFollowUpsForResponse } from "@/modules/survey/follow-ups/lib/follow-ups";
 import { FollowUpSendError } from "@/modules/survey/follow-ups/types/follow-up";
 import { handleIntegrations } from "./lib/handleIntegrations";
@@ -30,7 +32,10 @@ export const POST = async (request: Request) => {
   }
 
   const jsonInput = await request.json();
-  const convertedJsonInput = convertDatesInObject(jsonInput);
+  const convertedJsonInput = convertDatesInObject(
+    jsonInput,
+    new Set(["contactAttributes", "variables", "data", "meta"])
+  );
 
   const inputValidation = ZPipelineInput.safeParse(convertedJsonInput);
 
@@ -92,12 +97,15 @@ export const POST = async (request: Request) => {
     ]);
   };
 
+  const resolvedResponseData = resolveStorageUrlsInObject(response.data);
+
   const webhookPromises = webhooks.map((webhook) => {
     const body = JSON.stringify({
       webhookId: webhook.id,
       event,
       data: {
         ...response,
+        data: resolvedResponseData,
         survey: {
           title: survey.name,
           type: survey.type,
@@ -128,13 +136,17 @@ export const POST = async (request: Request) => {
       );
     }
 
-    return fetchWithTimeout(webhook.url, {
-      method: "POST",
-      headers: requestHeaders,
-      body,
-    }).catch((error) => {
-      logger.error({ error, url: request.url }, `Webhook call to ${webhook.url} failed`);
-    });
+    return validateWebhookUrl(webhook.url)
+      .then(() =>
+        fetchWithTimeout(webhook.url, {
+          method: "POST",
+          headers: requestHeaders,
+          body,
+        })
+      )
+      .catch((error) => {
+        logger.error({ error, url: request.url }, `Webhook call to ${webhook.url} failed`);
+      });
   });
 
   if (event === "responseFinished") {
@@ -215,7 +227,14 @@ export const POST = async (request: Request) => {
     }
 
     const emailPromises = usersWithNotifications.map((user) =>
-      sendResponseFinishedEmail(user.email, environmentId, survey, response, responseCount).catch((error) => {
+      sendResponseFinishedEmail(
+        user.email,
+        user.locale,
+        environmentId,
+        survey,
+        response,
+        responseCount
+      ).catch((error) => {
         logger.error(
           { error, url: request.url, userEmail: user.email },
           `Failed to send email to ${user.email}`

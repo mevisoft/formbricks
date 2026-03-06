@@ -12,12 +12,14 @@ import { getInstanceId } from "@/lib/instance";
 import {
   TEnterpriseLicenseDetails,
   TEnterpriseLicenseFeatures,
+  TEnterpriseLicenseStatusReturn,
 } from "@/modules/ee/license-check/types/enterprise-license";
 
 // Configuration
 const CONFIG = {
   CACHE: {
     FETCH_LICENSE_TTL_MS: 24 * 60 * 60 * 1000, // 24 hours
+    FAILED_FETCH_TTL_MS: 10 * 60 * 1000, // 10 minutes for failed/null results
     PREVIOUS_RESULT_TTL_MS: 4 * 24 * 60 * 60 * 1000, // 4 days
     GRACE_PERIOD_MS: 3 * 24 * 60 * 60 * 1000, // 3 days
     MAX_RETRIES: 3,
@@ -31,6 +33,15 @@ const CONFIG = {
 
 // Types
 type FallbackLevel = "live" | "cached" | "grace" | "default";
+
+type TEnterpriseLicenseResult = {
+  active: boolean;
+  features: TEnterpriseLicenseFeatures | null;
+  lastChecked: Date;
+  isPendingDowngrade: boolean;
+  fallbackLevel: FallbackLevel;
+  status: TEnterpriseLicenseStatusReturn;
+};
 
 type TPreviousResult = {
   active: boolean;
@@ -72,7 +83,7 @@ class LicenseError extends Error {
   }
 }
 
-class LicenseApiError extends LicenseError {
+export class LicenseApiError extends LicenseError {
   constructor(
     message: string,
     public readonly status: number
@@ -84,7 +95,7 @@ class LicenseApiError extends LicenseError {
 
 // Cache keys using enterprise-grade hierarchical patterns
 const getCacheIdentifier = () => {
-  if (typeof window !== "undefined") {
+  if (globalThis.window !== undefined) {
     return "browser"; // Browser environment
   }
   if (!env.ENTERPRISE_LICENSE_KEY) {
@@ -98,6 +109,7 @@ export const getCacheKeys = () => {
   return {
     FETCH_LICENSE_CACHE_KEY: createCacheKey.license.status(identifier),
     PREVIOUS_RESULT_CACHE_KEY: createCacheKey.license.previous_result(identifier),
+    FETCH_LOCK_CACHE_KEY: createCacheKey.license.fetch_lock(identifier),
   };
 };
 
@@ -162,7 +174,7 @@ const getPreviousResult = async (): Promise<TPreviousResult> => {
 };
 
 const setPreviousResult = async (previousResult: TPreviousResult) => {
-  if (typeof window !== "undefined") return;
+  if (globalThis.window !== undefined) return;
 
   try {
     const result = await cache.set(
@@ -206,7 +218,7 @@ const getFallbackLevel = (
   previousResult: TPreviousResult,
   currentTime: Date
 ): FallbackLevel => {
-  if (liveLicense) return "live";
+  if (liveLicense?.status === "active") return "live";
   if (previousResult.active) {
     const elapsedTime = currentTime.getTime() - previousResult.lastChecked.getTime();
     return elapsedTime < CONFIG.CACHE.GRACE_PERIOD_MS ? "grace" : "default";
@@ -214,7 +226,7 @@ const getFallbackLevel = (
   return "default";
 };
 
-const handleInitialFailure = async (currentTime: Date) => {
+const handleInitialFailure = async (currentTime: Date): Promise<TEnterpriseLicenseResult> => {
   const initialFailResult: TPreviousResult = {
     active: false,
     features: DEFAULT_FEATURES,
@@ -227,6 +239,7 @@ const handleInitialFailure = async (currentTime: Date) => {
     lastChecked: currentTime,
     isPendingDowngrade: false,
     fallbackLevel: "default" as const,
+    status: "unreachable" as const,
   };
 };
 
@@ -351,6 +364,7 @@ export const getEnterpriseLicense = reactCache(
         lastChecked: new Date(),
         isPendingDowngrade: false,
         fallbackLevel: "default" as const,
+        status: "active" as const,
       };
     }
 

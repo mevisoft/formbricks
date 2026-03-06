@@ -41,6 +41,8 @@ interface SingleSelectProps {
   onChange: (value: string) => void;
   /** Whether the field is required (shows asterisk indicator) */
   required?: boolean;
+  /** Custom label for the required indicator */
+  requiredLabel?: string;
   /** Error message to display below the options */
   errorMessage?: string;
   /** Text direction: 'ltr' (left-to-right), 'rtl' (right-to-left), or 'auto' (auto-detect from content) */
@@ -76,6 +78,7 @@ function SingleSelect({
   value,
   onChange,
   required = false,
+  requiredLabel,
   errorMessage,
   dir = "auto",
   disabled = false,
@@ -126,7 +129,7 @@ function SingleSelect({
     );
 
   // Shared className for option labels
-  const optionLabelClassName = "font-option  font-option-weight text-option-label";
+  const optionLabelClassName = "font-option text-option font-option-weight text-option-label";
 
   // Get selected option label for dropdown display
   const selectedOption = options.find((opt) => opt.id === selectedValue);
@@ -141,13 +144,14 @@ function SingleSelect({
         headline={headline}
         description={description}
         required={required}
+        requiredLabel={requiredLabel}
         htmlFor={inputId}
         imageUrl={imageUrl}
         videoUrl={videoUrl}
       />
 
       {/* Options */}
-      <div className="space-y-3">
+      <div>
         {variant === "dropdown" ? (
           <>
             <ElementError errorMessage={errorMessage} dir={dir} />
@@ -156,15 +160,15 @@ function SingleSelect({
                 <Button
                   variant="outline"
                   disabled={disabled}
-                  className="rounded-input w-full justify-between"
+                  className="rounded-input min-h-input bg-input-bg border-input-border text-input-text py-input-y px-input-x w-full justify-between"
                   aria-invalid={Boolean(errorMessage)}
                   aria-label={headline}>
-                  <span className="truncate">{displayText}</span>
+                  <span className="font-input font-input-weight text-input-text truncate">{displayText}</span>
                   <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent
-                className="bg-option-bg w-[var(--radix-dropdown-menu-trigger-width)]"
+                className="bg-option-bg max-h-[300px] w-[var(--radix-dropdown-menu-trigger-width)] overflow-y-auto"
                 align="start">
                 <DropdownMenuRadioGroup value={selectedValue} onValueChange={onChange}>
                   {options
@@ -177,8 +181,9 @@ function SingleSelect({
                           key={option.id}
                           value={option.id}
                           id={optionId}
+                          dir={dir}
                           disabled={disabled}>
-                          <span className={optionLabelClassName}>{option.label}</span>
+                          <span className="font-input font-input-weight text-input-text">{option.label}</span>
                         </DropdownMenuRadioItem>
                       );
                     })}
@@ -186,8 +191,11 @@ function SingleSelect({
                     <DropdownMenuRadioItem
                       value={otherOptionId}
                       id={`${inputId}-${otherOptionId}`}
+                      dir={dir}
                       disabled={disabled}>
-                      <span className={optionLabelClassName}>{otherValue || otherOptionLabel}</span>
+                      <span className="font-input font-input-weight text-input-text">
+                        {otherValue || otherOptionLabel}
+                      </span>
                     </DropdownMenuRadioItem>
                   ) : null}
                   {options
@@ -200,8 +208,9 @@ function SingleSelect({
                           key={option.id}
                           value={option.id}
                           id={optionId}
+                          dir={dir}
                           disabled={disabled}>
-                          <span className={optionLabelClassName}>{option.label}</span>
+                          <span className="font-input font-input-weight text-input-text">{option.label}</span>
                         </DropdownMenuRadioItem>
                       );
                     })}
@@ -217,7 +226,7 @@ function SingleSelect({
                 placeholder={otherOptionPlaceholder}
                 disabled={disabled}
                 dir={dir}
-                className="w-full"
+                className="mt-2 w-full"
               />
             ) : null}
           </>
@@ -240,6 +249,7 @@ function SingleSelect({
                   return (
                     <label
                       key={option.id}
+                      dir={dir}
                       htmlFor={optionId}
                       className={cn(getOptionContainerClassName(isSelected), isSelected && "z-10")}>
                       <span className="flex items-center">
@@ -249,11 +259,7 @@ function SingleSelect({
                           disabled={disabled}
                           aria-required={required}
                         />
-                        <span
-                          className={cn("mr-3 ml-3 grow", optionLabelClassName)}
-                          style={{ fontSize: "var(--fb-option-font-size)" }}>
-                          {option.label}
-                        </span>
+                        <span className={cn("mx-3 grow", optionLabelClassName)}>{option.label}</span>
                       </span>
                     </label>
                   );
@@ -261,6 +267,7 @@ function SingleSelect({
               {hasOtherOption && otherOptionId ? (
                 <label
                   htmlFor={`${inputId}-${otherOptionId}`}
+                  dir={dir}
                   className={cn(getOptionContainerClassName(isOtherSelected), isOtherSelected && "z-10")}>
                   <span className="flex items-center">
                     <RadioGroupItem
@@ -269,11 +276,7 @@ function SingleSelect({
                       disabled={disabled}
                       aria-required={required}
                     />
-                    <span
-                      className={cn("mr-3 ml-3 grow", optionLabelClassName)}
-                      style={{ fontSize: "var(--fb-option-font-size)" }}>
-                      {otherOptionLabel}
-                    </span>
+                    <span className={cn("mr-3 ml-3 grow", optionLabelClassName)}>{otherOptionLabel}</span>
                   </span>
                   {isOtherSelected ? (
                     <Input
@@ -300,6 +303,7 @@ function SingleSelect({
                     <label
                       key={option.id}
                       htmlFor={optionId}
+                      dir={dir}
                       className={cn(getOptionContainerClassName(isSelected), isSelected && "z-10")}>
                       <span className="flex items-center">
                         <RadioGroupItem
@@ -308,11 +312,7 @@ function SingleSelect({
                           disabled={disabled}
                           aria-required={required}
                         />
-                        <span
-                          className={cn("mr-3 ml-3 grow", optionLabelClassName)}
-                          style={{ fontSize: "var(--fb-option-font-size)" }}>
-                          {option.label}
-                        </span>
+                        <span className={cn("mx-3 grow", optionLabelClassName)}>{option.label}</span>
                       </span>
                     </label>
                   );

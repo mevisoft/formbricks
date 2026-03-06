@@ -71,7 +71,7 @@ export const ContactsTable = ({
 
   // Generate columns
   const columns = useMemo(() => {
-    return generateContactTableColumns(searchValue, data, isReadOnly);
+    return generateContactTableColumns(searchValue, data, isReadOnly, t);
   }, [searchValue, data, isReadOnly]);
 
   // Load saved settings from localStorage
@@ -294,9 +294,9 @@ export const ContactsTable = ({
                 </TableRow>
               ))}
               {table.getRowModel().rows.length === 0 && (
-                <TableRow>
+                <TableRow className="hover:bg-white">
                   <TableCell colSpan={columns.length} className="h-24 text-center">
-                    {t("common.no_results")}
+                    <p className="text-slate-400">{t("common.no_results")}</p>
                   </TableCell>
                 </TableRow>
               )}

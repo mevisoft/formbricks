@@ -18,7 +18,7 @@ export const CalSummary = ({ elementSummary, survey }: CalSummaryProps) => {
   return (
     <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
       <ElementSummaryHeader elementSummary={elementSummary} survey={survey} />
-      <div className="space-y-5 px-4 pt-4 pb-6 text-sm md:px-6 md:text-base">
+      <div className="space-y-5 px-4 pb-6 pt-4 text-sm md:px-6 md:text-base">
         <div>
           <div className="text flex justify-between px-2 pb-2">
             <div className="mr-8 flex space-x-1">
@@ -30,8 +30,7 @@ export const CalSummary = ({ elementSummary, survey }: CalSummaryProps) => {
               </div>
             </div>
             <p className="flex w-32 items-end justify-end text-slate-600">
-              {elementSummary.booked.count}{" "}
-              {elementSummary.booked.count === 1 ? t("common.response") : t("common.responses")}
+              {t("common.count_responses", { count: elementSummary.booked.count })}
             </p>
           </div>
           <ProgressBar barColor="bg-brand-dark" progress={elementSummary.booked.percentage / 100} />
@@ -47,8 +46,7 @@ export const CalSummary = ({ elementSummary, survey }: CalSummaryProps) => {
               </div>
             </div>
             <p className="flex w-32 items-end justify-end text-slate-600">
-              {elementSummary.skipped.count}{" "}
-              {elementSummary.skipped.count === 1 ? t("common.response") : t("common.responses")}
+              {t("common.count_responses", { count: elementSummary.skipped.count })}
             </p>
           </div>
           <ProgressBar barColor="bg-brand-dark" progress={elementSummary.skipped.percentage / 100} />

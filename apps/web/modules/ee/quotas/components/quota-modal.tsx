@@ -120,9 +120,9 @@ export const QuotaModal = ({
     defaultValues,
     resolver: zodResolver(
       quotaResponseCount > 0
-        ? ZSurveyQuotaInput.innerType().extend({
+        ? ZSurveyQuotaInput.safeExtend({
             limit: z.number().min(quotaResponseCount, {
-              message: t(
+              error: t(
                 "environments.surveys.edit.quotas.limit_must_be_greater_than_or_equal_to_the_number_of_responses",
                 { value: quotaResponseCount }
               ),
@@ -408,7 +408,7 @@ export const QuotaModal = ({
                 control={control}
                 name="countPartialSubmissions"
                 render={({ field }) => (
-                  <FormItem className="flex flex-row items-start space-y-0 space-x-3">
+                  <FormItem className="flex flex-row items-start space-x-3 space-y-0">
                     <FormControl>
                       <Switch checked={field.value} onCheckedChange={field.onChange} />
                     </FormControl>

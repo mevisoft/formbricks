@@ -8,8 +8,9 @@ import { TApiAuditLog, TApiKeyAuthentication, withV1ApiWrapper } from "@/app/lib
 import { sendToPipeline } from "@/app/lib/pipelines";
 import { deleteResponse, getResponse } from "@/lib/response/service";
 import { getSurvey } from "@/lib/survey/service";
+import { formatValidationErrorsForV1Api, validateResponseData } from "@/modules/api/lib/validation";
 import { hasPermission } from "@/modules/organization/settings/api-keys/lib/utils";
-import { validateFileUploads } from "@/modules/storage/utils";
+import { resolveStorageUrlsInObject, validateFileUploads } from "@/modules/storage/utils";
 import { updateResponseWithQuotaEvaluation } from "./lib/response";
 
 async function fetchAndAuthorizeResponse(
@@ -56,7 +57,10 @@ export const GET = withV1ApiWrapper({
       }
 
       return {
-        response: responses.successResponse(result.response),
+        response: responses.successResponse({
+          ...result.response,
+          data: resolveStorageUrlsInObject(result.response.data),
+        }),
       };
     } catch (error) {
       return {
@@ -140,6 +144,24 @@ export const PUT = withV1ApiWrapper({
         };
       }
 
+      // Validate response data against validation rules
+      const validationErrors = validateResponseData(
+        result.survey.blocks,
+        responseUpdate.data,
+        responseUpdate.language ?? "en",
+        result.survey.questions
+      );
+
+      if (validationErrors) {
+        return {
+          response: responses.badRequestResponse(
+            "Validation failed",
+            formatValidationErrorsForV1Api(validationErrors),
+            true
+          ),
+        };
+      }
+
       const inputValidation = ZResponseUpdateInput.safeParse(responseUpdate);
       if (!inputValidation.success) {
         return {
@@ -170,7 +192,7 @@ export const PUT = withV1ApiWrapper({
       }
 
       return {
-        response: responses.successResponse(updated),
+        response: responses.successResponse({ ...updated, data: resolveStorageUrlsInObject(updated.data) }),
       };
     } catch (error) {
       return {

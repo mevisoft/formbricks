@@ -81,7 +81,7 @@ export const OrganizationBreadcrumb = ({
       getOrganizationsForSwitcherAction({ organizationId: currentOrganizationId }).then((result) => {
         if (result?.data) {
           // Sort organizations by name
-          const sorted = result.data.toSorted((a, b) => a.name.localeCompare(b.name));
+          const sorted = [...result.data].sort((a, b) => a.name.localeCompare(b.name));
           setOrganizations(sorted);
         } else {
           // Handle server errors or validation errors
@@ -209,7 +209,7 @@ export const OrganizationBreadcrumb = ({
               )}
               {!isLoadingOrganizations && !loadError && (
                 <>
-                  <DropdownMenuGroup>
+                  <DropdownMenuGroup className="max-h-[300px] overflow-y-auto">
                     {organizations.map((org) => (
                       <DropdownMenuCheckboxItem
                         key={org.id}

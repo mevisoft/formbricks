@@ -37,7 +37,7 @@ export const ConsentSummary = ({ elementSummary, survey, setFilter }: ConsentSum
   return (
     <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
       <ElementSummaryHeader elementSummary={elementSummary} survey={survey} />
-      <div className="space-y-5 px-4 pt-4 pb-6 text-sm md:px-6 md:text-base">
+      <div className="space-y-5 px-4 pb-6 pt-4 text-sm md:px-6 md:text-base">
         {summaryItems.map((summaryItem) => {
           return (
             <button
@@ -64,7 +64,7 @@ export const ConsentSummary = ({ elementSummary, survey, setFilter }: ConsentSum
                   </div>
                 </div>
                 <p className="flex w-32 items-end justify-end text-slate-600">
-                  {summaryItem.count} {summaryItem.count === 1 ? t("common.response") : t("common.responses")}
+                  {t("common.count_responses", { count: summaryItem.count })}
                 </p>
               </div>
               <div className="group-hover:opacity-80">

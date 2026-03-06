@@ -31,7 +31,7 @@ export const MatrixElementSummary = ({ elementSummary, survey, setFilter }: Matr
     if (label) {
       return label;
     } else if (percentage !== undefined && totalResponsesForRow !== undefined) {
-      return `${Math.round((percentage / 100) * totalResponsesForRow)} ${t("common.responses")}`;
+      return t("common.count_responses", { count: Math.round((percentage / 100) * totalResponsesForRow) });
     }
     return "";
   };
@@ -46,7 +46,7 @@ export const MatrixElementSummary = ({ elementSummary, survey, setFilter }: Matr
         <table className="mx-auto border-collapse cursor-default text-left">
           <thead>
             <tr>
-              <th className="p-4 pt-0 pb-3 font-medium text-slate-400 dark:border-slate-600 dark:text-slate-200"></th>
+              <th className="p-4 pb-3 pt-0 font-medium text-slate-400 dark:border-slate-600 dark:text-slate-200"></th>
               {columns.map((column) => (
                 <th key={column} className="text-center font-medium">
                   <TooltipRenderer tooltipContent={getTooltipContent(column)} shouldRender={true}>
@@ -59,7 +59,7 @@ export const MatrixElementSummary = ({ elementSummary, survey, setFilter }: Matr
           <tbody>
             {elementSummary.data.map(({ rowLabel, columnPercentages }, rowIndex) => (
               <tr key={rowLabel}>
-                <td className="max-w-60 overflow-hidden p-4 text-ellipsis whitespace-nowrap">
+                <td className="max-w-60 overflow-hidden text-ellipsis whitespace-nowrap p-4">
                   <TooltipRenderer tooltipContent={getTooltipContent(rowLabel)} shouldRender={true}>
                     <p className="max-w-40 overflow-hidden text-ellipsis whitespace-nowrap">{rowLabel}</p>
                   </TooltipRenderer>
@@ -77,7 +77,7 @@ export const MatrixElementSummary = ({ elementSummary, survey, setFilter }: Matr
                       )}>
                       <button
                         style={{ backgroundColor: `rgba(0,196,184,${getOpacityLevel(percentage)})` }}
-                        className="hover:outline-brand-dark m-1 flex h-full w-40 cursor-pointer items-center justify-center rounded p-4 text-sm text-slate-950 hover:outline"
+                        className="m-1 flex h-full w-40 cursor-pointer items-center justify-center rounded p-4 text-sm text-slate-950 hover:outline hover:outline-brand-dark"
                         onClick={() =>
                           setFilter(
                             elementSummary.element.id,

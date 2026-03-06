@@ -191,16 +191,16 @@ test.describe("Survey Create & Submit Response without logic", async () => {
         page.getByRole("rowheader", { name: surveys.createAndSubmit.matrix.rows[2] })
       ).toBeVisible();
       await expect(
-        page.getByRole("cell", { name: surveys.createWithLogicAndSubmit.matrix.columns[0], exact: true })
+        page.getByRole("columnheader", { name: surveys.createAndSubmit.matrix.columns[0], exact: true })
       ).toBeVisible();
       await expect(
-        page.getByRole("cell", { name: surveys.createWithLogicAndSubmit.matrix.columns[1], exact: true })
+        page.getByRole("columnheader", { name: surveys.createAndSubmit.matrix.columns[1], exact: true })
       ).toBeVisible();
       await expect(
-        page.getByRole("cell", { name: surveys.createWithLogicAndSubmit.matrix.columns[2], exact: true })
+        page.getByRole("columnheader", { name: surveys.createAndSubmit.matrix.columns[2], exact: true })
       ).toBeVisible();
       await expect(
-        page.getByRole("cell", { name: surveys.createWithLogicAndSubmit.matrix.columns[3], exact: true })
+        page.getByRole("columnheader", { name: surveys.createAndSubmit.matrix.columns[3], exact: true })
       ).toBeVisible();
       await expect(page.locator("#questionCard-9").getByRole("button", { name: "Next" })).toBeVisible();
       await expect(page.locator("#questionCard-9").getByRole("button", { name: "Back" })).toBeVisible();
@@ -255,14 +255,14 @@ test.describe("Multi Language Survey Create", async () => {
     await page.getByRole("button", { name: "Select" }).click();
     await page.getByPlaceholder("Search items").click();
     await page.getByPlaceholder("Search items").fill("Eng");
-    await page.getByText("English").click();
+    await page.getByText("English", { exact: true }).click();
     await page.getByRole("button", { name: "Save changes" }).click();
     await page.getByRole("button", { name: "Edit languages" }).click();
     await page.getByRole("button", { name: "Add language" }).click();
     await page.getByRole("button", { name: "Select" }).click();
     await page.getByRole("textbox", { name: "Search items" }).click();
     await page.getByRole("textbox", { name: "Search items" }).fill("German");
-    await page.getByText("German").nth(1).click();
+    await page.getByText("German", { exact: true }).nth(1).click();
     await page.getByRole("button", { name: "Save changes" }).click();
     await page.waitForTimeout(2000);
     await page.getByRole("link", { name: "Surveys" }).click();
@@ -275,7 +275,6 @@ test.describe("Multi Language Survey Create", async () => {
     await page.getByRole("button", { name: "Confirm" }).click();
     await page.getByLabel("German").click();
     await page.locator("#welcome-toggle").click();
-    await page.getByText("Welcome CardShownOn").click();
 
     // Add questions in default language
     await page.getByText("Add Block").click();
@@ -447,9 +446,9 @@ test.describe("Multi Language Survey Create", async () => {
       .getByRole("textbox", { name: "Button Label", exact: true })
       .first()
       .fill(surveys.germanCreate.next);
-    await page.getByRole("textbox", { name: '"Back" Button Label', exact: true }).first().click();
+    await page.getByRole("textbox", { name: "“Back” Button Label", exact: true }).first().click();
     await page
-      .getByRole("textbox", { name: '"Back" Button Label', exact: true })
+      .getByRole("textbox", { name: "“Back” Button Label", exact: true })
       .first()
       .fill(surveys.germanCreate.back);
     await page
@@ -474,9 +473,9 @@ test.describe("Multi Language Survey Create", async () => {
       .getByRole("textbox", { name: "Button Label", exact: true })
       .first()
       .fill(surveys.germanCreate.next);
-    await page.getByRole("textbox", { name: '"Back" Button Label', exact: true }).first().click();
+    await page.getByRole("textbox", { name: "“Back” Button Label", exact: true }).first().click();
     await page
-      .getByRole("textbox", { name: '"Back" Button Label', exact: true })
+      .getByRole("textbox", { name: "“Back” Button Label", exact: true })
       .first()
       .fill(surveys.germanCreate.back);
     await page
@@ -494,9 +493,9 @@ test.describe("Multi Language Survey Create", async () => {
       .getByRole("textbox", { name: "Button Label", exact: true })
       .first()
       .fill(surveys.germanCreate.next);
-    await page.getByRole("textbox", { name: '"Back" Button Label', exact: true }).first().click();
+    await page.getByRole("textbox", { name: "“Back” Button Label", exact: true }).first().click();
     await page
-      .getByRole("textbox", { name: '"Back" Button Label', exact: true })
+      .getByRole("textbox", { name: "“Back” Button Label", exact: true })
       .first()
       .fill(surveys.germanCreate.back);
     await page
@@ -518,9 +517,9 @@ test.describe("Multi Language Survey Create", async () => {
       .getByRole("textbox", { name: "Button Label", exact: true })
       .first()
       .fill(surveys.germanCreate.next);
-    await page.getByRole("textbox", { name: '"Back" Button Label', exact: true }).first().click();
+    await page.getByRole("textbox", { name: "“Back” Button Label", exact: true }).first().click();
     await page
-      .getByRole("textbox", { name: '"Back" Button Label', exact: true })
+      .getByRole("textbox", { name: "“Back” Button Label", exact: true })
       .first()
       .fill(surveys.germanCreate.back);
     await page
@@ -542,9 +541,9 @@ test.describe("Multi Language Survey Create", async () => {
       .getByRole("textbox", { name: "Button Label", exact: true })
       .first()
       .fill(surveys.germanCreate.next);
-    await page.getByRole("textbox", { name: '"Back" Button Label', exact: true }).first().click();
+    await page.getByRole("textbox", { name: "“Back” Button Label", exact: true }).first().click();
     await page
-      .getByRole("textbox", { name: '"Back" Button Label', exact: true })
+      .getByRole("textbox", { name: "“Back” Button Label", exact: true })
       .first()
       .fill(surveys.germanCreate.back);
     await page
@@ -562,9 +561,9 @@ test.describe("Multi Language Survey Create", async () => {
       .getByRole("textbox", { name: "Button Label", exact: true })
       .first()
       .fill(surveys.germanCreate.next);
-    await page.getByRole("textbox", { name: '"Back" Button Label', exact: true }).first().click();
+    await page.getByRole("textbox", { name: "“Back” Button Label", exact: true }).first().click();
     await page
-      .getByRole("textbox", { name: '"Back" Button Label', exact: true })
+      .getByRole("textbox", { name: "“Back” Button Label", exact: true })
       .first()
       .fill(surveys.germanCreate.back);
     await page
@@ -582,9 +581,9 @@ test.describe("Multi Language Survey Create", async () => {
       .getByRole("textbox", { name: "Button Label", exact: true })
       .first()
       .fill(surveys.germanCreate.next);
-    await page.getByRole("textbox", { name: '"Back" Button Label', exact: true }).first().click();
+    await page.getByRole("textbox", { name: "“Back” Button Label", exact: true }).first().click();
     await page
-      .getByRole("textbox", { name: '"Back" Button Label', exact: true })
+      .getByRole("textbox", { name: "“Back” Button Label", exact: true })
       .first()
       .fill(surveys.germanCreate.back);
     await page
@@ -616,9 +615,9 @@ test.describe("Multi Language Survey Create", async () => {
       .getByRole("textbox", { name: "Button Label", exact: true })
       .first()
       .fill(surveys.germanCreate.next);
-    await page.getByRole("textbox", { name: '"Back" Button Label', exact: true }).first().click();
+    await page.getByRole("textbox", { name: "“Back” Button Label", exact: true }).first().click();
     await page
-      .getByRole("textbox", { name: '"Back" Button Label', exact: true })
+      .getByRole("textbox", { name: "“Back” Button Label", exact: true })
       .first()
       .fill(surveys.germanCreate.back);
     await page
@@ -658,9 +657,9 @@ test.describe("Multi Language Survey Create", async () => {
       .getByRole("textbox", { name: "Button Label", exact: true })
       .first()
       .fill(surveys.germanCreate.next);
-    await page.getByRole("textbox", { name: '"Back" Button Label', exact: true }).first().click();
+    await page.getByRole("textbox", { name: "“Back” Button Label", exact: true }).first().click();
     await page
-      .getByRole("textbox", { name: '"Back" Button Label', exact: true })
+      .getByRole("textbox", { name: "“Back” Button Label", exact: true })
       .first()
       .fill(surveys.germanCreate.back);
     await page
@@ -688,9 +687,9 @@ test.describe("Multi Language Survey Create", async () => {
       .getByRole("textbox", { name: "Button Label", exact: true })
       .first()
       .fill(surveys.germanCreate.next);
-    await page.getByRole("textbox", { name: '"Back" Button Label', exact: true }).first().click();
+    await page.getByRole("textbox", { name: "“Back” Button Label", exact: true }).first().click();
     await page
-      .getByRole("textbox", { name: '"Back" Button Label', exact: true })
+      .getByRole("textbox", { name: "“Back” Button Label", exact: true })
       .first()
       .fill(surveys.germanCreate.back);
     await page
@@ -896,16 +895,28 @@ test.describe("Testing Survey with advanced logic", async () => {
         page.getByRole("rowheader", { name: surveys.createWithLogicAndSubmit.matrix.rows[2] })
       ).toBeVisible();
       await expect(
-        page.getByRole("cell", { name: surveys.createWithLogicAndSubmit.matrix.columns[0], exact: true })
+        page.getByRole("columnheader", {
+          name: surveys.createWithLogicAndSubmit.matrix.columns[0],
+          exact: true,
+        })
       ).toBeVisible();
       await expect(
-        page.getByRole("cell", { name: surveys.createWithLogicAndSubmit.matrix.columns[1], exact: true })
+        page.getByRole("columnheader", {
+          name: surveys.createWithLogicAndSubmit.matrix.columns[1],
+          exact: true,
+        })
       ).toBeVisible();
       await expect(
-        page.getByRole("cell", { name: surveys.createWithLogicAndSubmit.matrix.columns[2], exact: true })
+        page.getByRole("columnheader", {
+          name: surveys.createWithLogicAndSubmit.matrix.columns[2],
+          exact: true,
+        })
       ).toBeVisible();
       await expect(
-        page.getByRole("cell", { name: surveys.createWithLogicAndSubmit.matrix.columns[3], exact: true })
+        page.getByRole("columnheader", {
+          name: surveys.createWithLogicAndSubmit.matrix.columns[3],
+          exact: true,
+        })
       ).toBeVisible();
       await expect(page.locator("#questionCard-7").getByRole("button", { name: "Next" })).toBeVisible();
       await expect(page.locator("#questionCard-7").getByRole("button", { name: "Back" })).toBeVisible();
@@ -996,14 +1007,14 @@ test.describe("Testing Survey with advanced logic", async () => {
       const updatedUrl = currentUrl.replace("summary?share=true", "responses");
 
       await page.goto(updatedUrl);
-      await page.waitForSelector("table#response-table");
-
-      await expect(page.getByRole("cell", { name: "score" })).toBeVisible();
+      const responseTable = page.locator("table#response-table");
+      await expect(responseTable).toBeVisible();
+      await expect(responseTable.getByRole("columnheader", { name: /^score$/i })).toBeVisible({
+        timeout: 15000,
+      });
 
       await page.waitForLoadState("networkidle");
       await page.waitForTimeout(5000);
-
-      await page.pause();
 
       // Look for any cell containing "32" or a score-related value
       const scoreCell = page.getByRole("cell").filter({ hasText: /^32/ });

@@ -27,7 +27,7 @@ export const ElementSummaryHeader = ({
   const elementType = getElementTypes(t).find((type) => type.id === elementSummary.element.type);
 
   return (
-    <div className="space-y-2 px-4 pt-6 pb-5 md:px-6">
+    <div className="space-y-2 px-4 pb-5 pt-6 md:px-6">
       <div className={"align-center flex justify-between gap-4"}>
         <h3 className="pb-1 text-lg font-semibold text-slate-900 md:text-xl">
           {formatTextWithSlashes(
@@ -48,7 +48,7 @@ export const ElementSummaryHeader = ({
         {showResponses && (
           <div className="flex items-center rounded-lg bg-slate-100 p-2">
             <InboxIcon className="mr-2 h-4 w-4" />
-            {`${elementSummary.responseCount} ${t("common.responses")}`}
+            {t("common.count_responses", { count: elementSummary.responseCount })}
           </div>
         )}
         {additionalInfo}

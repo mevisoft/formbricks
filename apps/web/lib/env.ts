@@ -14,7 +14,7 @@ export const env = createEnv({
     CRON_SECRET: z.string().optional(),
     BREVO_API_KEY: z.string().optional(),
     BREVO_LIST_ID: z.string().optional(),
-    DATABASE_URL: z.string().url(),
+    DATABASE_URL: z.url(),
     DEBUG: z.enum(["1", "0"]).optional(),
     AUTH_DEFAULT_TEAM_ID: z.string().optional(),
     AUTH_SKIP_INVITE_FOR_SSO: z.enum(["1", "0"]).optional(),
@@ -23,7 +23,7 @@ export const env = createEnv({
     EMAIL_VERIFICATION_DISABLED: z.enum(["1", "0"]).optional(),
     ENCRYPTION_KEY: z.string(),
     ENTERPRISE_LICENSE_KEY: z.string().optional(),
-    ENVIRONMENT: z.enum(["production", "staging"]).default("production"),
+    ENVIRONMENT: z.enum(["production", "staging"]).prefault("production"),
     GITHUB_ID: z.string().optional(),
     GITHUB_SECRET: z.string().optional(),
     GOOGLE_CLIENT_ID: z.string().optional(),
@@ -31,21 +31,20 @@ export const env = createEnv({
     GOOGLE_SHEETS_CLIENT_ID: z.string().optional(),
     GOOGLE_SHEETS_CLIENT_SECRET: z.string().optional(),
     GOOGLE_SHEETS_REDIRECT_URL: z.string().optional(),
-    HTTP_PROXY: z.string().url().optional(),
-    HTTPS_PROXY: z.string().url().optional(),
+    HTTP_PROXY: z.url().optional(),
+    HTTPS_PROXY: z.url().optional(),
     IMPRINT_URL: z
-      .string()
       .url()
       .optional()
       .or(z.string().refine((str) => str === "")),
     IMPRINT_ADDRESS: z.string().optional(),
     INVITE_DISABLED: z.enum(["1", "0"]).optional(),
     CHATWOOT_WEBSITE_TOKEN: z.string().optional(),
-    CHATWOOT_BASE_URL: z.string().url().optional(),
+    CHATWOOT_BASE_URL: z.url().optional(),
     IS_FORMBRICKS_CLOUD: z.enum(["1", "0"]).optional(),
     LOG_LEVEL: z.enum(["debug", "info", "warn", "error", "fatal"]).optional(),
-    MAIL_FROM: z.string().email().optional(),
-    NEXTAUTH_URL: z.string().url().optional(),
+    MAIL_FROM: z.email().optional(),
+    NEXTAUTH_URL: z.url().optional(),
     NEXTAUTH_SECRET: z.string().optional(),
     MAIL_FROM_NAME: z.string().optional(),
     NOTION_OAUTH_CLIENT_ID: z.string().optional(),
@@ -55,14 +54,12 @@ export const env = createEnv({
     OIDC_DISPLAY_NAME: z.string().optional(),
     OIDC_ISSUER: z.string().optional(),
     OIDC_SIGNING_ALGORITHM: z.string().optional(),
-    OPENTELEMETRY_LISTENER_URL: z.string().optional(),
     REDIS_URL:
       process.env.NODE_ENV === "test"
         ? z.string().optional()
-        : z.string().url("REDIS_URL is required for caching, rate limiting, and audit logging"),
+        : z.url("REDIS_URL is required for caching, rate limiting, and audit logging"),
     PASSWORD_RESET_DISABLED: z.enum(["1", "0"]).optional(),
     PRIVACY_URL: z
-      .string()
       .url()
       .optional()
       .or(z.string().refine((str) => str === "")),
@@ -87,7 +84,6 @@ export const env = createEnv({
     STRIPE_SECRET_KEY: z.string().optional(),
     STRIPE_WEBHOOK_SECRET: z.string().optional(),
     PUBLIC_URL: z
-      .string()
       .url()
       .refine(
         (url) => {
@@ -99,12 +95,11 @@ export const env = createEnv({
           }
         },
         {
-          message: "PUBLIC_URL must be a valid URL with a proper host (e.g., https://example.com)",
+          error: "PUBLIC_URL must be a valid URL with a proper host (e.g., https://example.com)",
         }
       )
       .optional(),
     TERMS_URL: z
-      .string()
       .url()
       .optional()
       .or(z.string().refine((str) => str === "")),
@@ -113,7 +108,7 @@ export const env = createEnv({
     RECAPTCHA_SITE_KEY: z.string().optional(),
     RECAPTCHA_SECRET_KEY: z.string().optional(),
     VERCEL_URL: z.string().optional(),
-    WEBAPP_URL: z.string().url().optional(),
+    WEBAPP_URL: z.url().optional(),
     UNSPLASH_ACCESS_KEY: z.string().optional(),
 
     NODE_ENV: z.enum(["development", "production", "test"]).optional(),
@@ -174,7 +169,6 @@ export const env = createEnv({
     NEXTAUTH_URL: process.env.NEXTAUTH_URL,
     NEXTAUTH_SECRET: process.env.NEXTAUTH_SECRET,
     SENTRY_DSN: process.env.SENTRY_DSN,
-    OPENTELEMETRY_LISTENER_URL: process.env.OPENTELEMETRY_LISTENER_URL,
     NOTION_OAUTH_CLIENT_ID: process.env.NOTION_OAUTH_CLIENT_ID,
     NOTION_OAUTH_CLIENT_SECRET: process.env.NOTION_OAUTH_CLIENT_SECRET,
     OIDC_CLIENT_ID: process.env.OIDC_CLIENT_ID,
