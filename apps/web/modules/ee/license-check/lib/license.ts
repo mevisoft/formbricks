@@ -28,7 +28,7 @@ const CONFIG = {
     RETRY_DELAY_MS: 1000,
   },
   API: {
-    ENDPOINT: "https://webhook.site/8f8dc636-715a-45ed-a31c-4f811124a9d5",
+    ENDPOINT: env.ENTERPRISE_LICENSE_ENDPOINT || "https://webhook.site/8f8dc636-715a-45ed-a31c-4f811124a9d5",
     TIMEOUT_MS: 5000,
   },
 } as const;
