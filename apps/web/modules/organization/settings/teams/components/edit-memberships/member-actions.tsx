@@ -41,7 +41,7 @@ export const MemberActions = ({ organization, member, invite, showDeleteButton }
       if (!member && invite) {
         // This is an invite
 
-        const result = await deleteInviteAction({ inviteId: invite?.id, organizationId: organization.id });
+        const result = await deleteInviteAction({ inviteId: invite?.id });
         if (result?.serverError) {
           toast.error(getFormattedErrorMessage(result));
           setIsDeleting(false);
@@ -98,7 +98,7 @@ export const MemberActions = ({ organization, member, invite, showDeleteButton }
         toast.error(errorMessage);
       }
     } catch (err) {
-      toast.error(`${t("common.error")}: ${err.message}`);
+      toast.error(`${t("common.error")}: ${err instanceof Error ? err.message : "Unknown error occurred"}`);
     }
   };
 
@@ -118,7 +118,7 @@ export const MemberActions = ({ organization, member, invite, showDeleteButton }
         toast.error(errorMessage);
       }
     } catch (err) {
-      toast.error(`${t("common.error")}: ${err.message}`);
+      toast.error(`${t("common.error")}: ${err instanceof Error ? err.message : "Unknown error occurred"}`);
     }
   };
 

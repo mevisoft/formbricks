@@ -26,6 +26,7 @@ export const TERMS_URL = env.TERMS_URL;
 export const IMPRINT_URL = env.IMPRINT_URL;
 export const IMPRINT_ADDRESS = env.IMPRINT_ADDRESS;
 
+export const DANGEROUSLY_ALLOW_WEBHOOK_INTERNAL_URLS = env.DANGEROUSLY_ALLOW_WEBHOOK_INTERNAL_URLS === "1";
 export const PASSWORD_RESET_DISABLED = env.PASSWORD_RESET_DISABLED === "1";
 export const EMAIL_VERIFICATION_DISABLED = env.EMAIL_VERIFICATION_DISABLED === "1";
 
@@ -182,45 +183,11 @@ export const AVAILABLE_LOCALES: TUserLocale[] = [
   "zh-Hant-TW",
 ];
 
-// Billing constants
-
-export enum PROJECT_FEATURE_KEYS {
-  FREE = "free",
-  STARTUP = "startup",
-  CUSTOM = "custom",
-}
-
-export enum STRIPE_PROJECT_NAMES {
-  STARTUP = "Formbricks Startup",
-  CUSTOM = "Formbricks Custom",
-}
-
-export enum STRIPE_PRICE_LOOKUP_KEYS {
-  STARTUP_MAY25_MONTHLY = "STARTUP_MAY25_MONTHLY",
-  STARTUP_MAY25_YEARLY = "STARTUP_MAY25_YEARLY",
-}
-
-export const BILLING_LIMITS = {
-  FREE: {
-    PROJECTS: 3,
-    RESPONSES: 1500,
-    MIU: 2000,
-  },
-  STARTUP: {
-    PROJECTS: 3,
-    RESPONSES: 5000,
-    MIU: 7500,
-  },
-  CUSTOM: {
-    PROJECTS: null,
-    RESPONSES: null,
-    MIU: null,
-  },
-} as const;
-
 export const CHATWOOT_WEBSITE_TOKEN = env.CHATWOOT_WEBSITE_TOKEN;
 export const CHATWOOT_BASE_URL = env.CHATWOOT_BASE_URL || "https://app.chatwoot.com";
 export const IS_CHATWOOT_CONFIGURED = Boolean(env.CHATWOOT_WEBSITE_TOKEN);
+
+export const POSTHOG_KEY = env.POSTHOG_KEY;
 
 export const TURNSTILE_SECRET_KEY = env.TURNSTILE_SECRET_KEY;
 export const TURNSTILE_SITE_KEY = env.TURNSTILE_SITE_KEY;

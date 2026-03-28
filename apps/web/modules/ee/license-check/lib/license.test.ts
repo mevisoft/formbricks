@@ -148,7 +148,6 @@ describe("License Core Logic", () => {
       spamProtection: true,
       ai: false,
       auditLogs: true,
-      multiLanguageSurveys: true,
       accessControl: true,
       quotas: true,
     };
@@ -286,7 +285,6 @@ describe("License Core Logic", () => {
             saml: false,
             spamProtection: false,
             auditLogs: false,
-            multiLanguageSurveys: false,
             accessControl: false,
             quotas: false,
           },
@@ -308,7 +306,6 @@ describe("License Core Logic", () => {
           saml: false,
           spamProtection: false,
           auditLogs: false,
-          multiLanguageSurveys: false,
           accessControl: false,
           quotas: false,
         },
@@ -339,7 +336,6 @@ describe("License Core Logic", () => {
         saml: false,
         spamProtection: false,
         auditLogs: false,
-        multiLanguageSurveys: false,
         accessControl: false,
         quotas: false,
       };
@@ -466,6 +462,37 @@ describe("License Core Logic", () => {
       });
     });
 
+    test("should return instance_mismatch when API returns 403", async () => {
+      vi.resetModules();
+      vi.doMock("@/lib/env", () => ({
+        env: {
+          ENTERPRISE_LICENSE_KEY: "test-license-key",
+          ENVIRONMENT: "production",
+          VERCEL_URL: "some.vercel.url",
+          FORMBRICKS_COM_URL: "https://app.formbricks.com",
+          HTTPS_PROXY: undefined,
+          HTTP_PROXY: undefined,
+        },
+      }));
+
+      const { getEnterpriseLicense } = await import("./license");
+      const fetch = (await import("node-fetch")).default as Mock;
+
+      mockCache.get.mockResolvedValue({ ok: true, data: null });
+      fetch.mockResolvedValueOnce({ ok: false, status: 403 } as any);
+
+      const license = await getEnterpriseLicense();
+
+      expect(license).toEqual({
+        active: false,
+        features: expect.objectContaining({ projects: 3 }),
+        lastChecked: expect.any(Date),
+        isPendingDowngrade: false,
+        fallbackLevel: "default" as const,
+        status: "instance_mismatch" as const,
+      });
+    });
+
     test("should skip polling and fetch directly when Redis is unavailable (tryLock error)", async () => {
       vi.resetModules();
       vi.doMock("@/lib/env", () => ({
@@ -496,7 +523,6 @@ describe("License Core Logic", () => {
           spamProtection: true,
           ai: false,
           auditLogs: true,
-          multiLanguageSurveys: true,
           accessControl: true,
           quotas: true,
         },
@@ -561,7 +587,6 @@ describe("License Core Logic", () => {
           spamProtection: true,
           ai: false,
           auditLogs: true,
-          multiLanguageSurveys: true,
           accessControl: true,
           quotas: true,
         },
@@ -617,7 +642,6 @@ describe("License Core Logic", () => {
           spamProtection: true,
           ai: false,
           auditLogs: true,
-          multiLanguageSurveys: true,
           accessControl: true,
           quotas: true,
         },
@@ -760,7 +784,6 @@ describe("License Core Logic", () => {
           spamProtection: true,
           ai: true,
           auditLogs: true,
-          multiLanguageSurveys: true,
           accessControl: true,
           quotas: true,
         },
@@ -789,7 +812,6 @@ describe("License Core Logic", () => {
         spamProtection: true,
         ai: true,
         auditLogs: true,
-        multiLanguageSurveys: true,
         accessControl: true,
         quotas: true,
       });
@@ -821,7 +843,6 @@ describe("License Core Logic", () => {
                   saml: false,
                   spamProtection: false,
                   auditLogs: false,
-                  multiLanguageSurveys: false,
                   accessControl: false,
                   quotas: false,
                 },
@@ -893,7 +914,6 @@ describe("License Core Logic", () => {
               saml: true,
               spamProtection: true,
               auditLogs: true,
-              multiLanguageSurveys: true,
               accessControl: true,
               quotas: true,
             },
@@ -962,7 +982,6 @@ describe("License Core Logic", () => {
               saml: true,
               spamProtection: true,
               auditLogs: true,
-              multiLanguageSurveys: true,
               accessControl: true,
               quotas: true,
             },
@@ -987,7 +1006,7 @@ describe("License Core Logic", () => {
 
     test("should log warning when setPreviousResult cache.set fails (line 176-178)", async () => {
       const { getEnterpriseLicense } = await import("./license");
-      const fetch = (await import("node-fetch")).default as Mock;
+      (await import("node-fetch")).default as Mock;
 
       const mockFetchedLicenseDetails: TEnterpriseLicenseDetails = {
         status: "active",
@@ -1003,7 +1022,6 @@ describe("License Core Logic", () => {
           spamProtection: true,
           ai: false,
           auditLogs: true,
-          multiLanguageSurveys: true,
           accessControl: true,
           quotas: true,
         },
@@ -1130,7 +1148,6 @@ describe("License Core Logic", () => {
         spamProtection: true,
         ai: false,
         auditLogs: true,
-        multiLanguageSurveys: true,
         accessControl: true,
         quotas: true,
       },
@@ -1254,7 +1271,6 @@ describe("License Core Logic", () => {
           saml: true,
           spamProtection: true,
           auditLogs: true,
-          multiLanguageSurveys: true,
           accessControl: true,
           quotas: true,
         },
@@ -1310,7 +1326,6 @@ describe("License Core Logic", () => {
               saml: true,
               spamProtection: true,
               auditLogs: true,
-              multiLanguageSurveys: true,
               accessControl: true,
               quotas: true,
             },
@@ -1366,7 +1381,6 @@ describe("License Core Logic", () => {
               saml: true,
               spamProtection: true,
               auditLogs: true,
-              multiLanguageSurveys: true,
               accessControl: true,
               quotas: true,
             },

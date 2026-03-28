@@ -6,7 +6,11 @@ import { FormWrapper } from "@/modules/auth/components/form-wrapper";
 import { RequestVerificationEmail } from "@/modules/auth/verification-requested/components/request-verification-email";
 import { VerificationMessage } from "@/modules/auth/verification-requested/components/verification-message";
 
-export const VerificationRequestedPage = async ({ searchParams }) => {
+export const VerificationRequestedPage = async ({
+  searchParams,
+}: {
+  searchParams: Promise<{ token: string }>;
+}) => {
   const t = await getTranslate();
   const { token } = await searchParams;
   try {
@@ -16,7 +20,7 @@ export const VerificationRequestedPage = async ({ searchParams }) => {
       return (
         <FormWrapper>
           <>
-            <h1 className="mb-4 text-center text-lg leading-2 font-semibold text-slate-900">
+            <h1 className="leading-2 mb-4 text-center text-lg font-semibold text-slate-900">
               {t("auth.verification-requested.please_confirm_your_email_address")}
             </h1>
             <VerificationMessage email={email} />

@@ -1,3 +1,4 @@
+import { ResourceNotFoundError } from "@formbricks/types/errors";
 import { MainNavigation } from "@/app/(app)/environments/[environmentId]/components/MainNavigation";
 import { TopControlBar } from "@/app/(app)/environments/[environmentId]/components/TopControlBar";
 import { IS_DEVELOPMENT, IS_FORMBRICKS_CLOUD } from "@/lib/constants";
@@ -29,7 +30,6 @@ export const EnvironmentLayout = async ({ layoutData, children }: EnvironmentLay
     isAccessControlAllowed,
     projectPermission,
     license,
-    peopleCount,
     responseCount,
   } = layoutData;
 
@@ -38,12 +38,12 @@ export const EnvironmentLayout = async ({ layoutData, children }: EnvironmentLay
 
   const { features, lastChecked, isPendingDowngrade, active, status } = license;
   const isMultiOrgEnabled = features?.isMultiOrgEnabled ?? false;
-  const organizationProjectsLimit = await getOrganizationProjectsLimit(organization.billing.limits);
+  const organizationProjectsLimit = await getOrganizationProjectsLimit(organization.id);
   const isOwnerOrManager = isOwner || isManager;
 
   // Validate that project permission exists for members
   if (isMember && !projectPermission) {
-    throw new Error(t("common.workspace_permission_not_found"));
+    throw new ResourceNotFoundError(t("common.workspace"), null);
   }
 
   return (
@@ -52,7 +52,6 @@ export const EnvironmentLayout = async ({ layoutData, children }: EnvironmentLay
         <LimitsReachedBanner
           organization={organization}
           environmentId={environment.id}
-          peopleCount={peopleCount}
           responseCount={responseCount}
         />
       )}

@@ -378,15 +378,15 @@ export const getResponseDownloadFile = async (
 
     const organizationId = await getOrganizationIdFromEnvironmentId(survey.environmentId);
     if (!organizationId) {
-      throw new Error("Organization ID not found");
+      throw new ResourceNotFoundError("Organization", null);
     }
 
     const organizationBilling = await getOrganizationBilling(organizationId);
 
     if (!organizationBilling) {
-      throw new Error("Organization billing not found");
+      throw new ResourceNotFoundError("OrganizationBilling", organizationId);
     }
-    const isQuotasAllowed = await getIsQuotasEnabled(organizationBilling.plan);
+    const isQuotasAllowed = await getIsQuotasEnabled(organizationId);
 
     const headers = [
       "No.",

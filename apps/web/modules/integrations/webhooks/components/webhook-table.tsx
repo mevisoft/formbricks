@@ -14,6 +14,7 @@ interface WebhookTableProps {
   surveys: TSurvey[];
   children: [JSX.Element, JSX.Element[]];
   isReadOnly: boolean;
+  allowInternalUrls: boolean;
 }
 
 export const WebhookTable = ({
@@ -22,6 +23,7 @@ export const WebhookTable = ({
   surveys,
   children: [TableHeading, webhookRows],
   isReadOnly,
+  allowInternalUrls,
 }: WebhookTableProps) => {
   const [isWebhookDetailModalOpen, setWebhookDetailModalOpen] = useState(false);
   const { t } = useTranslation();
@@ -38,7 +40,7 @@ export const WebhookTable = ({
     secret: null,
   });
 
-  const handleOpenWebhookDetailModalClick = (e, webhook: Webhook) => {
+  const handleOpenWebhookDetailModalClick = (e: React.MouseEvent, webhook: Webhook) => {
     e.preventDefault();
     setActiveWebhook(webhook);
     setWebhookDetailModalOpen(true);
@@ -71,6 +73,7 @@ export const WebhookTable = ({
         webhook={activeWebhook}
         surveys={surveys}
         isReadOnly={isReadOnly}
+        allowInternalUrls={allowInternalUrls}
       />
     </>
   );

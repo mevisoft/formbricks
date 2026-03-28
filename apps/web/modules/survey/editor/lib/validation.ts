@@ -150,12 +150,9 @@ export const validationRules = {
     let fieldsToValidate = ["upperLabel", "lowerLabel"];
 
     for (const field of fieldsToValidate) {
-      if (
-        element[field] &&
-        typeof element[field][defaultLanguageCode] !== "undefined" &&
-        element[field][defaultLanguageCode].trim() !== ""
-      ) {
-        isValid = isValid && isLabelValidForAllLanguages(element[field], languages);
+      const fieldValue = (element as unknown as Record<string, Record<string, string> | undefined>)[field];
+      if (fieldValue?.[defaultLanguageCode] !== undefined && fieldValue[defaultLanguageCode].trim() !== "") {
+        isValid = isValid && isLabelValidForAllLanguages(fieldValue, languages);
       }
     }
 
@@ -165,7 +162,12 @@ export const validationRules = {
 
 // Main validation function
 export const validateElement = (element: TSurveyElement, surveyLanguages: TSurveyLanguage[]): boolean => {
-  const specificValidation = validationRules[element.type];
+  const specificValidation = (
+    validationRules as Record<
+      string,
+      ((element: TSurveyElement, languages: TSurveyLanguage[]) => boolean) | undefined
+    >
+  )[element.type];
   const defaultValidation = validationRules.defaultValidation;
 
   const specificValidationResult = specificValidation ? specificValidation(element, surveyLanguages) : true;
@@ -195,6 +197,16 @@ export const validateSurveyElementsInBatch = (
 
 const isContentValid = (content: Record<string, string> | undefined, surveyLanguages: TSurveyLanguage[]) => {
   return !content || isLabelValidForAllLanguages(content, surveyLanguages);
+};
+
+const hasValidSurveyClosedMessageHeading = (survey: TSurvey): boolean => {
+  if (survey.type !== "link" || !survey.surveyClosedMessage) {
+    return true;
+  }
+
+  const heading = survey.surveyClosedMessage.heading?.trim() ?? "";
+
+  return heading.length > 0;
 };
 
 export const isWelcomeCardValid = (card: TSurveyWelcomeCard, surveyLanguages: TSurveyLanguage[]): boolean => {
@@ -278,6 +290,11 @@ export const isSurveyValid = (
       );
       return false;
     }
+  }
+
+  if (!hasValidSurveyClosedMessageHeading(survey)) {
+    toast.error(t("environments.surveys.edit.survey_closed_message_heading_required"));
+    return false;
   }
 
   return true;

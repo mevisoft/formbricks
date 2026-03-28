@@ -1,5 +1,5 @@
 import { parse } from "node-html-parser";
-import { z } from "zod";
+import { type z } from "zod";
 import type { TI18nString } from "../i18n";
 import type { TConditionGroup, TSingleCondition } from "./logic";
 import type {
@@ -228,7 +228,10 @@ export const findLanguageCodesForDuplicateLabels = (
   const duplicateLabels = new Set<string>();
 
   for (const language of languagesToCheck) {
-    const labelTexts = labels.map((label) => label[language].trim()).filter(Boolean);
+    const labelTexts = labels
+      .map((label) => label[language])
+      .filter((text): text is string => typeof text === "string" && text.trim().length > 0)
+      .map((text) => text.trim());
     const uniqueLabels = new Set(labelTexts);
 
     if (uniqueLabels.size !== labelTexts.length) {

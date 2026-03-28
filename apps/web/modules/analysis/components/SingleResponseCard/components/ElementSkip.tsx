@@ -5,7 +5,9 @@ import { useTranslation } from "react-i18next";
 import { TResponseData } from "@formbricks/types/responses";
 import { TSurveyElement } from "@formbricks/types/surveys/elements";
 import { getTextContent } from "@formbricks/types/surveys/validation";
+import { TUserLocale } from "@formbricks/types/user";
 import { getLocalizedValue } from "@/lib/i18n/utils";
+import { getSurveyDateFormatMap } from "@/lib/utils/date-display";
 import { parseRecallInfo } from "@/lib/utils/recall";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/modules/ui/components/tooltip";
 
@@ -15,6 +17,7 @@ interface ElementSkipProps {
   elements: TSurveyElement[];
   isFirstElementAnswered?: boolean;
   responseData: TResponseData;
+  locale: TUserLocale;
 }
 
 export const ElementSkip = ({
@@ -23,8 +26,10 @@ export const ElementSkip = ({
   elements,
   isFirstElementAnswered,
   responseData,
+  locale,
 }: ElementSkipProps) => {
   const { t } = useTranslation();
+  const dateFormats = getSurveyDateFormatMap(elements);
   return (
     <div>
       {skippedElements && (
@@ -40,7 +45,7 @@ export const ElementSkip = ({
                     background:
                       "repeating-linear-gradient(rgb(148, 163, 184), rgb(148, 163, 184) 5px, transparent 5px, transparent 8px)",
                   }}>
-                  <CheckCircle2Icon className="absolute top-0 w-[1.5rem] min-w-[1.5rem] rounded-full bg-white p-0.25 text-slate-400" />
+                  <CheckCircle2Icon className="p-0.25 absolute top-0 w-[1.5rem] min-w-[1.5rem] rounded-full bg-white text-slate-400" />
                 </div>
               }
               <div className="ml-6 flex flex-col text-slate-700">{t("common.welcome_card")}</div>
@@ -81,7 +86,11 @@ export const ElementSkip = ({
                             },
                             "default"
                           ),
-                          responseData
+                          responseData,
+                          undefined,
+                          false,
+                          locale,
+                          dateFormats
                         )
                       )}
                     </p>
@@ -120,7 +129,11 @@ export const ElementSkip = ({
                               },
                               "default"
                             ),
-                            responseData
+                            responseData,
+                            undefined,
+                            false,
+                            locale,
+                            dateFormats
                           )
                         )}
                       </p>

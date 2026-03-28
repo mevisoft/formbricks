@@ -15,6 +15,7 @@ export const env = createEnv({
     BREVO_API_KEY: z.string().optional(),
     BREVO_LIST_ID: z.string().optional(),
     DATABASE_URL: z.url(),
+    DANGEROUSLY_ALLOW_WEBHOOK_INTERNAL_URLS: z.enum(["1", "0"]).optional(),
     DEBUG: z.enum(["1", "0"]).optional(),
     AUTH_DEFAULT_TEAM_ID: z.string().optional(),
     AUTH_SKIP_INVITE_FOR_SSO: z.enum(["1", "0"]).optional(),
@@ -43,6 +44,7 @@ export const env = createEnv({
     CHATWOOT_WEBSITE_TOKEN: z.string().optional(),
     CHATWOOT_BASE_URL: z.url().optional(),
     IS_FORMBRICKS_CLOUD: z.enum(["1", "0"]).optional(),
+    POSTHOG_KEY: z.string().optional(),
     LOG_LEVEL: z.enum(["debug", "info", "warn", "error", "fatal"]).optional(),
     MAIL_FROM: z.email().optional(),
     NEXTAUTH_URL: z.url().optional(),
@@ -84,6 +86,7 @@ export const env = createEnv({
     SMTP_REJECT_UNAUTHORIZED_TLS: z.enum(["1", "0"]).optional(),
     STRIPE_SECRET_KEY: z.string().optional(),
     STRIPE_WEBHOOK_SECRET: z.string().optional(),
+    STRIPE_PUBLISHABLE_KEY: z.string().optional(),
     PUBLIC_URL: z
       .url()
       .refine(
@@ -140,6 +143,7 @@ export const env = createEnv({
     BREVO_LIST_ID: process.env.BREVO_LIST_ID,
     CRON_SECRET: process.env.CRON_SECRET,
     DATABASE_URL: process.env.DATABASE_URL,
+    DANGEROUSLY_ALLOW_WEBHOOK_INTERNAL_URLS: process.env.DANGEROUSLY_ALLOW_WEBHOOK_INTERNAL_URLS,
     DEBUG: process.env.DEBUG,
     AUTH_DEFAULT_TEAM_ID: process.env.AUTH_SSO_DEFAULT_TEAM_ID,
     AUTH_SKIP_INVITE_FOR_SSO: process.env.AUTH_SKIP_INVITE_FOR_SSO,
@@ -165,6 +169,7 @@ export const env = createEnv({
     CHATWOOT_WEBSITE_TOKEN: process.env.CHATWOOT_WEBSITE_TOKEN,
     CHATWOOT_BASE_URL: process.env.CHATWOOT_BASE_URL,
     IS_FORMBRICKS_CLOUD: process.env.IS_FORMBRICKS_CLOUD,
+    POSTHOG_KEY: process.env.POSTHOG_KEY,
     LOG_LEVEL: process.env.LOG_LEVEL,
     MAIL_FROM: process.env.MAIL_FROM,
     MAIL_FROM_NAME: process.env.MAIL_FROM_NAME,
@@ -200,6 +205,7 @@ export const env = createEnv({
     SMTP_AUTHENTICATED: process.env.SMTP_AUTHENTICATED,
     STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY,
     STRIPE_WEBHOOK_SECRET: process.env.STRIPE_WEBHOOK_SECRET,
+    STRIPE_PUBLISHABLE_KEY: process.env.STRIPE_PUBLISHABLE_KEY,
     PUBLIC_URL: process.env.PUBLIC_URL,
     TURNSTILE_SECRET_KEY: process.env.TURNSTILE_SECRET_KEY,
     TURNSTILE_SITE_KEY: process.env.TURNSTILE_SITE_KEY,

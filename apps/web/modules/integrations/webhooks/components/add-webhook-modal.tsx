@@ -34,16 +34,23 @@ interface AddWebhookModalProps {
   open: boolean;
   surveys: TSurvey[];
   setOpen: (v: boolean) => void;
+  allowInternalUrls: boolean;
 }
 
-export const AddWebhookModal = ({ environmentId, surveys, open, setOpen }: AddWebhookModalProps) => {
+export const AddWebhookModal = ({
+  environmentId,
+  surveys,
+  open,
+  setOpen,
+  allowInternalUrls,
+}: AddWebhookModalProps) => {
   const router = useRouter();
   const {
     handleSubmit,
     reset,
     register,
     formState: { isSubmitting },
-  } = useForm();
+  } = useForm<TWebhookInput>();
   const { t } = useTranslation();
   const [testEndpointInput, setTestEndpointInput] = useState("");
   const [hittingEndpoint, setHittingEndpoint] = useState<boolean>(false);
@@ -59,7 +66,7 @@ export const AddWebhookModal = ({ environmentId, surveys, open, setOpen }: AddWe
     sendSuccessToast: boolean
   ): Promise<{ success: boolean; secret?: string }> => {
     try {
-      const { valid, error } = validWebHookURL(testEndpointInput);
+      const { valid, error } = validWebHookURL(testEndpointInput, allowInternalUrls);
       if (!valid) {
         toast.error(error ?? t("common.something_went_wrong_please_try_again"));
         return { success: false };
@@ -82,15 +89,14 @@ export const AddWebhookModal = ({ environmentId, surveys, open, setOpen }: AddWe
       return testEndpointActionResult.data;
     } catch (err) {
       setHittingEndpoint(false);
+      const errMessage = err instanceof Error ? err.message : "Unknown error occurred";
       toast.error(
         `${t("environments.integrations.webhooks.endpoint_pinged_error")} \n ${
-          err.message.length < 250
-            ? `${t("common.error")}:  ${err.message}`
-            : t("environments.integrations.webhooks.please_check_console")
+          errMessage.length < 250 ? errMessage : t("environments.integrations.webhooks.please_check_console")
         }`,
-        { className: err.message.length < 250 ? "break-all" : "" }
+        { className: errMessage.length < 250 ? "break-all" : "" }
       );
-      console.error(t("environments.integrations.webhooks.webhook_test_failed_due_to"), err.message);
+      console.error(t("environments.integrations.webhooks.webhook_test_failed_due_to"), errMessage);
       setEndpointAccessible(false);
       return { success: false };
     }
@@ -161,7 +167,7 @@ export const AddWebhookModal = ({ environmentId, surveys, open, setOpen }: AddWe
           toast.error(errorMessage);
         }
       } catch (e) {
-        toast.error(e.message);
+        toast.error(e instanceof Error ? e.message : "Unknown error occurred");
       } finally {
         setCreatingWebhook(false);
       }

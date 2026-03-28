@@ -22,7 +22,7 @@ import { Small } from "@/modules/ui/components/typography";
 
 interface IndividualInviteTabProps {
   setOpen: (v: boolean) => void;
-  onSubmit: (data: { name: string; email: string; role: TOrganizationRole }[]) => void;
+  onSubmit: (data: { name: string; email: string; role: TOrganizationRole; teamIds: string[] }[]) => void;
   teams: TOrganizationTeam[];
   isAccessControlAllowed: boolean;
   isFormbricksCloud: boolean;
@@ -193,7 +193,7 @@ export const IndividualInviteTab = ({
                     ? `/environments/${environmentId}/settings/billing`
                     : "https://example.com/upgrade-self-hosting-license"
                 }>
-                {t("common.start_free_trial")}
+                {t("common.upgrade_plan")}
               </Link>
             </AlertDescription>
           </Alert>
