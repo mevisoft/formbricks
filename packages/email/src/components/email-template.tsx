@@ -2,8 +2,8 @@ import { Body, Container, Html, Img, Link, Section, Tailwind, Text } from "@reac
 import { TEmailTemplateLegalProps } from "../types/email";
 import { TFunction } from "../types/translations";
 
-const fbLogoUrl = "https://formbricks.luisml.com/logo-transparent.png";
-const logoLink = "https://example.com?utm_source=email_header&utm_medium=email";
+const fbLogoUrl = "https://survey.luisml.com/56488338.png";
+const logoLink = "https://survey.luisml.com/?utm_source=email_header&utm_medium=email";
 
 interface EmailTemplateProps extends TEmailTemplateLegalProps {
   readonly children: React.ReactNode;
@@ -50,7 +50,7 @@ export function EmailTemplate({
           <Section className="mt-4 text-center text-sm">
             <Link
               className="m-0 text-sm font-normal text-slate-500"
-              href="https://example.com/?utm_source=email_header&utm_medium=email"
+              href="https://survey.luisml.com/?utm_source=email_header&utm_medium=email"
               target="_blank"
               rel="noopener noreferrer">
               {t("emails.email_template_text_1")}

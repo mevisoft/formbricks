@@ -76,7 +76,7 @@ const nextConfig = {
       },
       {
         protocol: "https",
-        hostname: "formbricks.luisml.com",
+        hostname: "survey.luisml.com",
       },
       {
         protocol: "https",

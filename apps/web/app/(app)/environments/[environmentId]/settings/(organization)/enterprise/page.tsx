@@ -173,7 +173,7 @@ const Page = async (props: { params: Promise<{ environmentId: string }> }) => {
               </p>
               <Button asChild>
                 <Link
-                  href="https://formbricks.luisml.com/s/clvupq3y205i5yrm3sm9v1xt5"
+                  href="https://survey.luisml.com/s/clvupq3y205i5yrm3sm9v1xt5"
                   target="_blank"
                   rel="noopener noreferrer nofollow"
                   referrerPolicy="no-referrer">

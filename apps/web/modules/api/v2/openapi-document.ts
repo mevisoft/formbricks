@@ -50,7 +50,7 @@ const document = createDocument({
   },
   servers: [
     {
-      url: "https://formbricks.luisml.com/api/v2",
+      url: "https://survey.luisml.com/api/v2",
       description: "Formbricks Cloud",
     },
   ],

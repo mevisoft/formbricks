@@ -6,16 +6,16 @@ import { TSurvey } from "@formbricks/types/surveys/types";
 
 export const exampleData = {
   verificationEmail: {
-    verifyLink: "https://formbricks.luisml.com/auth/verify?token=example-verification-token",
-    verificationRequestLink: "https://formbricks.luisml.com/auth/verification-requested",
+    verifyLink: "https://survey.luisml.com/auth/verify?token=example-verification-token",
+    verificationRequestLink: "https://survey.luisml.com/auth/verification-requested",
   },
 
   forgotPasswordEmail: {
-    verifyLink: "https://formbricks.luisml.com/auth/forgot-password/reset?token=example-reset-token",
+    verifyLink: "https://survey.luisml.com/auth/forgot-password/reset?token=example-reset-token",
   },
 
   newEmailVerification: {
-    verifyLink: "https://formbricks.luisml.com/verify-email-change?token=example-email-change-token",
+    verifyLink: "https://survey.luisml.com/verify-email-change?token=example-email-change-token",
   },
 
   passwordResetNotifyEmail: {
@@ -25,7 +25,7 @@ export const exampleData = {
   inviteEmail: {
     inviteeName: "Jane Smith",
     inviterName: "John Doe",
-    verifyLink: "https://formbricks.luisml.com/invite?token=example-invite-token",
+    verifyLink: "https://survey.luisml.com/invite?token=example-invite-token",
   },
 
   inviteAcceptedEmail: {
@@ -36,7 +36,7 @@ export const exampleData = {
   linkSurveyEmail: {
     surveyName: "Customer Satisfaction Survey",
     surveyLink:
-      "https://formbricks.luisml.com/s/example-survey-id?verify=example-token&suId=example-single-use-id",
+      "https://survey.luisml.com/s/example-survey-id?verify=example-token&suId=example-single-use-id",
   },
 
   embedSurveyPreviewEmail: {
@@ -111,7 +111,7 @@ export const exampleData = {
       language: "default",
       displayId: null,
     } as unknown as TResponse,
-    WEBAPP_URL: "https://formbricks.luisml.com",
+    WEBAPP_URL: "https://survey.luisml.com",
     environmentId: "env-123",
     organization: {
       id: "org-123",

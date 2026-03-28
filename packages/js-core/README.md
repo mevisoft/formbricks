@@ -26,7 +26,7 @@ import formbricks from "@formbricks/js";
 if (typeof window !== "undefined") {
   formbricks.setup({
     environmentId: "your-environment-id",
-    appUrl: "https://formbricks.luisml.com",
+    appUrl: "https://survey.luisml.com",
   });
 }
 ```
