@@ -8,7 +8,7 @@ import { useTranslation } from "react-i18next";
 import { ZProjectConfigChannel, ZProjectConfigIndustry } from "@formbricks/types/project";
 import { TSurveyCreateInput, TSurveyType } from "@formbricks/types/surveys/types";
 import { TTemplate, TTemplateFilter, ZTemplateRole } from "@formbricks/types/templates";
-import { templates } from "@/app/lib/templates";
+import { customSurveyTemplate, templates } from "@/app/lib/templates";
 import { getFormattedErrorMessage } from "@/lib/utils/helper";
 import { createSurveyAction } from "./actions";
 import { StartFromScratchTemplate } from "./components/start-from-scratch-template";
@@ -58,9 +58,11 @@ export const TemplateList = ({
       type: surveyType,
       createdBy: userId,
     };
+    const isBlank = activeTemplate.name === customSurveyTemplate(t).name;
     const createSurveyResponse = await createSurveyAction({
       environmentId: environmentId,
       surveyBody: augmentedTemplate,
+      createdFrom: isBlank ? "blank" : "template",
     });
 
     if (createSurveyResponse?.data) {
@@ -103,7 +105,7 @@ export const TemplateList = ({
   };
 
   return (
-    <main className="relative z-0 flex-1 overflow-y-auto px-6 pt-2 pb-6 focus:outline-none">
+    <main className="relative z-0 flex-1 overflow-y-auto px-6 pb-6 pt-2 focus:outline-none">
       {showFilters && !templateSearch && (
         <TemplateFilters
           selectedFilter={selectedFilter}
