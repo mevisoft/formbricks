@@ -156,6 +156,7 @@ main() {
   else
     log ".env already contains all required generated secrets."
   fi
+  ln -s ../../.env ./apps/web/.env
 
   log "Development environment file is ready."
 }
