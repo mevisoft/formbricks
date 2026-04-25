@@ -2,14 +2,13 @@
 
 import { TFunction } from "i18next";
 import { ChevronDownIcon, X } from "lucide-react";
-import { useState } from "react";
+import { type Dispatch, type SetStateAction, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useDebounce } from "react-use";
-import { TProjectConfigChannel } from "@formbricks/types/project";
-import { TFilterOption, TSortOption, TSurveyFilters } from "@formbricks/types/surveys/types";
-import { FORMBRICKS_SURVEYS_FILTERS_KEY_LS } from "@/lib/localStorage";
+import type { TProjectConfigChannel } from "@formbricks/types/project";
+import type { TFilterOption, TSortOption } from "@formbricks/types/surveys/types";
 import { SortOption } from "@/modules/survey/list/components/sort-option";
 import { initialFilters } from "@/modules/survey/list/lib/constants";
+import { TSurveyOverviewFilters } from "@/modules/survey/list/types/survey-overview";
 import { Button } from "@/modules/ui/components/button";
 import {
   DropdownMenu,
@@ -20,15 +19,10 @@ import { SearchBar } from "@/modules/ui/components/search-bar";
 import { SurveyFilterDropdown } from "./survey-filter-dropdown";
 
 interface SurveyFilterProps {
-  surveyFilters: TSurveyFilters;
-  setSurveyFilters: React.Dispatch<React.SetStateAction<TSurveyFilters>>;
+  surveyFilters: TSurveyOverviewFilters;
+  setSurveyFilters: Dispatch<SetStateAction<TSurveyOverviewFilters>>;
   currentProjectChannel: TProjectConfigChannel;
 }
-
-const getCreatorOptions = (t: TFunction): TFilterOption[] => [
-  { label: t("common.you"), value: "you" },
-  { label: t("common.others"), value: "others" },
-];
 
 const getStatusOptions = (t: TFunction): TFilterOption[] => [
   { label: t("common.draft"), value: "draft" },
@@ -61,10 +55,15 @@ export const SurveyFilters = ({
   setSurveyFilters,
   currentProjectChannel,
 }: SurveyFilterProps) => {
-  const { createdBy, sortBy, status, type } = surveyFilters;
-  const [name, setName] = useState("");
+  const { sortBy, status, type } = surveyFilters;
+  const [name, setName] = useState(surveyFilters.name);
   const { t } = useTranslation();
-  useDebounce(() => setSurveyFilters((prev) => ({ ...prev, name: name })), 800, [name]);
+
+  useEffect(() => {
+    const timeoutId = setTimeout(() => setSurveyFilters((prev) => ({ ...prev, name })), 800);
+
+    return () => clearTimeout(timeoutId);
+  }, [name, setSurveyFilters]);
 
   const [dropdownOpenStates, setDropdownOpenStates] = useState(new Map());
 
@@ -73,18 +72,12 @@ export const SurveyFilters = ({
     { label: t("common.app"), value: "app" },
   ];
 
+  useEffect(() => {
+    setName(surveyFilters.name);
+  }, [surveyFilters.name]);
+
   const toggleDropdown = (id: string) => {
     setDropdownOpenStates(new Map(dropdownOpenStates).set(id, !dropdownOpenStates.get(id)));
-  };
-
-  const handleCreatedByChange = (value: string) => {
-    if (value === "you" || value === "others") {
-      if (createdBy.includes(value)) {
-        setSurveyFilters((prev) => ({ ...prev, createdBy: prev.createdBy.filter((v) => v !== value) }));
-      } else {
-        setSurveyFilters((prev) => ({ ...prev, createdBy: [...prev.createdBy, value] }));
-      }
-    }
   };
 
   const handleStatusChange = (value: string) => {
@@ -122,17 +115,6 @@ export const SurveyFilters = ({
         />
         <div>
           <SurveyFilterDropdown
-            title={t("common.created_by")}
-            id="createdBy"
-            options={getCreatorOptions(t)}
-            selectedOptions={createdBy}
-            setSelectedOptions={handleCreatedByChange}
-            isOpen={dropdownOpenStates.get("createdBy")}
-            toggleDropdown={toggleDropdown}
-          />
-        </div>
-        <div>
-          <SurveyFilterDropdown
             title={t("common.status")}
             id="status"
             options={getStatusOptions(t)}
@@ -156,13 +138,12 @@ export const SurveyFilters = ({
           </div>
         )}
 
-        {(createdBy.length > 0 || status.length > 0 || type.length > 0 || name) && (
+        {(status.length > 0 || type.length > 0 || name) && (
           <Button
             size="sm"
             onClick={() => {
               setSurveyFilters(initialFilters);
-              setName(""); // Also clear the search input
-              localStorage.removeItem(FORMBRICKS_SURVEYS_FILTERS_KEY_LS);
+              setName(initialFilters.name);
             }}
             className="h-8">
             {t("common.clear_filters")}
@@ -175,7 +156,7 @@ export const SurveyFilters = ({
           <DropdownMenuTrigger
             asChild
             className="surveyFilterDropdown h-full cursor-pointer border border-slate-700 outline-none hover:bg-slate-900">
-            <div className="h-8 min-w-auto rounded-md border sm:flex sm:px-2">
+            <div className="min-w-auto h-8 rounded-md border sm:flex sm:px-2">
               <div className="hidden w-full items-center justify-between hover:text-white sm:flex">
                 <span className="text-sm">
                   {t("common.sort_by")}:{" "}

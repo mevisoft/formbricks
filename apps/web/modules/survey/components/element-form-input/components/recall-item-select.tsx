@@ -122,7 +122,11 @@ export const RecallItemSelect = ({
         return !recallItemIds.includes(element.id) && !notAllowed && element.id !== elementId && idx > index;
       })
       .map((element) => {
-        return { id: element.id, label: element.headline[selectedLanguageCode], type: "element" as const };
+        return {
+          id: element.id,
+          label: element.headline[selectedLanguageCode],
+          type: "element" as const,
+        };
       });
 
     return filteredElements;
@@ -183,7 +187,7 @@ export const RecallItemSelect = ({
             }
           }}
         />
-        <div className="max-h-72 overflow-x-hidden overflow-y-auto">
+        <div className="max-h-72 overflow-y-auto overflow-x-hidden">
           {filteredRecallItems.map((recallItem, index) => {
             const IconComponent = getRecallItemIcon(recallItem);
             return (
@@ -207,8 +211,8 @@ export const RecallItemSelect = ({
                   }
                 }}>
                 <div>{IconComponent && <IconComponent className="mr-2 w-4" />}</div>
-                <p className="max-w-full overflow-hidden text-sm text-ellipsis whitespace-nowrap">
-                  {getTextContentWithRecallTruncated(recallItem.label)}
+                <p className="max-w-full overflow-hidden text-ellipsis whitespace-nowrap text-sm">
+                  {getTextContentWithRecallTruncated(recallItem.label).trim() || t("common.no_text_found")}
                 </p>
               </DropdownMenuItem>
             );

@@ -6,6 +6,7 @@ import { z } from "zod";
 import { prisma } from "@formbricks/database";
 import { logger } from "@formbricks/logger";
 import { DatabaseError, InvalidInputError, ResourceNotFoundError } from "@formbricks/types/errors";
+import { TSurveyBlock } from "@formbricks/types/surveys/blocks";
 import { TSurveyFilterCriteria } from "@formbricks/types/surveys/types";
 import { getOrganizationByEnvironmentId } from "@/lib/organization/service";
 import { checkForInvalidMediaInBlocks } from "@/lib/survey/utils";
@@ -144,53 +145,6 @@ export const getSurvey = reactCache(async (surveyId: string): Promise<TSurvey | 
 
   return mapSurveyRowToSurvey(surveyPrisma);
 });
-
-export const deleteSurvey = async (surveyId: string): Promise<boolean> => {
-  try {
-    const deletedSurvey = await prisma.survey.delete({
-      where: {
-        id: surveyId,
-      },
-      select: {
-        id: true,
-        environmentId: true,
-        segment: {
-          select: {
-            id: true,
-            isPrivate: true,
-          },
-        },
-        type: true,
-        triggers: {
-          select: {
-            actionClass: {
-              select: {
-                id: true,
-              },
-            },
-          },
-        },
-      },
-    });
-
-    if (deletedSurvey.type === "app" && deletedSurvey.segment?.isPrivate) {
-      await prisma.segment.delete({
-        where: {
-          id: deletedSurvey.segment.id,
-        },
-      });
-    }
-
-    return true;
-  } catch (error) {
-    if (error instanceof Prisma.PrismaClientKnownRequestError) {
-      logger.error(error, "Error deleting survey");
-      throw new DatabaseError(error.message);
-    }
-
-    throw error;
-  }
-};
 
 const getExistingSurvey = async (surveyId: string) => {
   return await prisma.survey.findUnique({
@@ -520,7 +474,7 @@ export const copySurveyToOtherEnvironment = async (
     }
 
     if (surveyData.blocks) {
-      const result = checkForInvalidMediaInBlocks(surveyData.blocks);
+      const result = checkForInvalidMediaInBlocks(surveyData.blocks as unknown as TSurveyBlock[]);
       if (!result.ok) {
         throw new InvalidInputError(result.error.message);
       }
