@@ -650,7 +650,10 @@ export async function PreviewEmailTemplate({
                         <Column
                           className="text-question-color px-4 py-2 text-center"
                           key={column.id}
-                          style={{ ...getLightModeTextStyle(styleTokens), textAlign: "center" }}>
+                          style={{
+                            ...getLightModeTextStyle(styleTokens),
+                            textAlign: "center",
+                          }}>
                           <span
                             className={getChoiceMarkerClassName("radio", false)}
                             style={getChoiceMarkerStyle("radio", styleTokens)}>
@@ -751,7 +754,7 @@ function PreviewEmailCard({
   return (
     <EmailTemplateWrapper styleTokens={styleTokens}>
       {children}
-      <EmailFooter fontFamily={styleTokens.fontFamily} signatureColor={styleTokens.signatureColor} t={t} />
+      <EmailFooter t={t} />
     </EmailTemplateWrapper>
   );
 }
@@ -1033,6 +1036,10 @@ function EmailTemplateWrapper({
   );
 }
 
-function EmailFooter(): React.JSX.Element {
-  return <Container className="m-auto mt-8 text-center" />;
+function EmailFooter({ t }: { t: TFunction }): React.JSX.Element {
+  return (
+    <Container className="m-auto mt-8 text-center">
+      <span data-t={t("common.powered_by_formbricks")} />
+    </Container>
+  );
 }
