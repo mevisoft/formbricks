@@ -10,8 +10,7 @@ export const IS_DEVELOPMENT = env.NODE_ENV === "development";
 export const E2E_TESTING = env.E2E_TESTING === "1";
 
 // URLs
-export const WEBAPP_URL =
-  env.WEBAPP_URL || (env.VERCEL_URL ? `https://${env.VERCEL_URL}` : false) || "http://localhost:3000";
+export const WEBAPP_URL = env.WEBAPP_URL?.trim() || "http://localhost:3000";
 
 // encryption keys
 export const ENCRYPTION_KEY = env.ENCRYPTION_KEY;
@@ -26,6 +25,8 @@ export const TERMS_URL = env.TERMS_URL;
 export const IMPRINT_URL = env.IMPRINT_URL;
 export const IMPRINT_ADDRESS = env.IMPRINT_ADDRESS;
 
+export const DISABLE_ACCOUNT_DELETION_SSO_CONFIRMATION =
+  env.DISABLE_ACCOUNT_DELETION_SSO_CONFIRMATION === "1";
 export const DANGEROUSLY_ALLOW_WEBHOOK_INTERNAL_URLS = env.DANGEROUSLY_ALLOW_WEBHOOK_INTERNAL_URLS === "1";
 export const DEBUG_SHOW_RESET_LINK = !IS_PRODUCTION && env.DEBUG_SHOW_RESET_LINK === "1";
 export const PASSWORD_RESET_DISABLED = env.PASSWORD_RESET_DISABLED === "1";
@@ -43,6 +44,9 @@ export const GITHUB_ID = env.GITHUB_ID;
 export const GITHUB_SECRET = env.GITHUB_SECRET;
 export const GOOGLE_CLIENT_ID = env.GOOGLE_CLIENT_ID;
 export const GOOGLE_CLIENT_SECRET = env.GOOGLE_CLIENT_SECRET;
+
+export const HUB_API_URL = env.HUB_API_URL;
+export const HUB_API_KEY = env.HUB_API_KEY;
 
 export const AZUREAD_CLIENT_ID = env.AZUREAD_CLIENT_ID;
 export const AZUREAD_CLIENT_SECRET = env.AZUREAD_CLIENT_SECRET;
@@ -153,6 +157,9 @@ export const DEBUG = env.DEBUG === "1";
 // Enterprise License constant
 export const ENTERPRISE_LICENSE_KEY = env.ENTERPRISE_LICENSE_KEY;
 
+export const ENTERPRISE_LICENSE_REQUEST_FORM_URL =
+  "https://app.formbricks.com/s/trvp8tzy5uvsps9rc9qi9l9w?delivery=onpremise&source=ce";
+
 export const REDIS_URL = env.REDIS_URL;
 export const RATE_LIMITING_DISABLED = env.RATE_LIMITING_DISABLED === "1";
 export const TELEMETRY_DISABLED = env.TELEMETRY_DISABLED === "1";
@@ -230,4 +237,4 @@ export const AUDIT_LOG_GET_USER_IP = env.AUDIT_LOG_GET_USER_IP === "1";
 export const SESSION_MAX_AGE = Number(env.SESSION_MAX_AGE) || 86400;
 
 // Control hash for constant-time password verification to prevent timing attacks. Used when user doesn't exist to maintain consistent verification timing
-export const CONTROL_HASH = "$2b$12$fzHf9le13Ss9UJ04xzmsjODXpFJxz6vsnupoepF5FiqDECkX2BH5q";
+export const CONTROL_HASH = "$2b$12$fzHf9le13Ss9UJ04xzmsjODXpFJxz6vsnupoepF5FiqDECkX2BH5q"; //NOSONAR not a real password hash, used only for timing-safe comparison

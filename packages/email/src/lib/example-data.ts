@@ -3,6 +3,7 @@ import { TOrganization } from "@formbricks/types/organizations";
 import { TResponse } from "@formbricks/types/responses";
 import { TSurveyElementTypeEnum } from "@formbricks/types/surveys/elements";
 import { TSurvey } from "@formbricks/types/surveys/types";
+import { embedSurveyPreviewEmailHtml } from "./fixtures/embed-survey-preview-email-html";
 
 export const exampleData = {
   verificationEmail: {
@@ -41,8 +42,8 @@ export const exampleData = {
   },
 
   embedSurveyPreviewEmail: {
-    html: '<div style="padding: 20px; background-color: #f3f4f6; border-radius: 8px;"><h3 style="margin-top: 0;">Example Survey Embed</h3><p>This is a preview of how your survey will look when embedded in an email.</p></div>',
-    environmentId: "clxyz123456789",
+    html: embedSurveyPreviewEmailHtml,
+    workspaceId: "workspace-123",
   },
 
   responseFinishedEmail: {
@@ -113,7 +114,7 @@ export const exampleData = {
       displayId: null,
     } as unknown as TResponse,
     WEBAPP_URL: "https://survey.luisml.com",
-    environmentId: "env-123",
+    workspaceId: "workspace-123",
     organization: {
       id: "org-123",
       name: "Acme Corporation",
@@ -134,7 +135,6 @@ export const exampleData = {
         },
       },
       isAISmartToolsEnabled: false,
-      isAIDataAnalysisEnabled: false,
     } as unknown as TOrganization,
   },
 

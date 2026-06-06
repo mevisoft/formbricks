@@ -23,6 +23,7 @@ const mocks = vi.hoisted(() => ({
   prismaOrganizationBillingUpsert: vi.fn(),
   prismaOrganizationBillingUpdate: vi.fn(),
   cacheWithCache: vi.fn(),
+  cacheWithCacheNullable: vi.fn(),
   cacheDel: vi.fn(),
   loggerWarn: vi.fn(),
   getCloudPlanFromProduct: vi.fn(),
@@ -88,6 +89,7 @@ vi.mock("@formbricks/database", () => ({
 vi.mock("@/lib/cache", () => ({
   cache: {
     withCache: mocks.cacheWithCache,
+    withCacheNullable: mocks.cacheWithCacheNullable,
     del: mocks.cacheDel,
   },
 }));
@@ -156,6 +158,7 @@ describe("organization-billing", () => {
         [namespace, identifier, subresource].filter(Boolean).join(":")
     );
     mocks.cacheWithCache.mockImplementation(async (fn: () => Promise<unknown>) => await fn());
+    mocks.cacheWithCacheNullable.mockImplementation(async (fn: () => Promise<unknown>) => await fn());
     mocks.getCloudPlanFromProduct.mockReturnValue("pro");
     mocks.subscriptionsList.mockResolvedValue({ data: [] });
     mocks.customersList.mockResolvedValue({ data: [] });
@@ -330,7 +333,7 @@ describe("organization-billing", () => {
     mocks.prismaOrganizationBillingCreate.mockResolvedValue({
       stripeCustomerId: null,
       limits: {
-        projects: 3,
+        workspaces: 3,
         monthly: {
           responses: 1500,
         },
@@ -407,7 +410,7 @@ describe("organization-billing", () => {
     mocks.prismaOrganizationBillingFindUnique.mockResolvedValue({
       stripeCustomerId: null,
       limits: {
-        projects: 3,
+        workspaces: 3,
         monthly: {
           responses: 1500,
         },
@@ -445,19 +448,20 @@ describe("organization-billing", () => {
   });
 
   test("syncOrganizationBillingFromStripe returns billing unchanged when customer is missing", async () => {
+    const usageCycleAnchor = new Date("2026-04-08T07:19:10.425Z");
     const billing = {
       stripeCustomerId: null,
       limits: {
-        projects: 3,
+        workspaces: 3,
         monthly: {
           responses: 1500,
         },
       },
-      usageCycleAnchor: new Date(),
+      usageCycleAnchor,
     };
     mocks.prismaOrganizationBillingFindUnique.mockResolvedValue({
       ...billing,
-      usageCycleAnchor: new Date(),
+      usageCycleAnchor,
       stripe: null,
     });
 
@@ -471,7 +475,7 @@ describe("organization-billing", () => {
     mocks.prismaOrganizationBillingFindUnique.mockResolvedValue({
       stripeCustomerId: "cus_1",
       limits: {
-        projects: 3,
+        workspaces: 3,
         monthly: {
           responses: 1500,
         },
@@ -512,7 +516,7 @@ describe("organization-billing", () => {
     mocks.prismaOrganizationBillingFindUnique.mockResolvedValue({
       ...billing,
       limits: {
-        projects: 3,
+        workspaces: 3,
         monthly: {
           responses: 1500,
         },
@@ -541,7 +545,7 @@ describe("organization-billing", () => {
     mocks.prismaOrganizationBillingFindUnique.mockResolvedValue({
       ...billing,
       limits: {
-        projects: 3,
+        workspaces: 3,
         monthly: {
           responses: 1500,
         },
@@ -565,7 +569,7 @@ describe("organization-billing", () => {
     mocks.prismaOrganizationBillingFindUnique.mockResolvedValue({
       stripeCustomerId: "cus_1",
       limits: {
-        projects: 3,
+        workspaces: 3,
         monthly: {
           responses: 1500,
         },
@@ -614,7 +618,7 @@ describe("organization-billing", () => {
       data: {
         stripeCustomerId: "cus_1",
         limits: {
-          projects: 5,
+          workspaces: 5,
           monthly: {
             responses: 2000,
           },
@@ -644,7 +648,7 @@ describe("organization-billing", () => {
       createPaidPlanCheckoutSession({
         organizationId: "org_1",
         customerId: "cus_1",
-        environmentId: "env_1",
+        workspaceId: "ws_1",
         plan: "pro",
         interval: "yearly",
       })
@@ -700,7 +704,7 @@ describe("organization-billing", () => {
     mocks.prismaOrganizationBillingFindUnique.mockResolvedValue({
       stripeCustomerId: "cus_1",
       limits: {
-        projects: 3,
+        workspaces: 3,
         monthly: {
           responses: 1500,
         },
@@ -825,7 +829,7 @@ describe("organization-billing", () => {
     mocks.prismaOrganizationBillingFindUnique.mockResolvedValue({
       stripeCustomerId: "cus_1",
       limits: {
-        projects: 3,
+        workspaces: 3,
         monthly: {
           responses: 1500,
         },
@@ -906,7 +910,7 @@ describe("organization-billing", () => {
     mocks.prismaOrganizationBillingFindUnique.mockResolvedValue({
       stripeCustomerId: "cus_1",
       limits: {
-        projects: 5,
+        workspaces: 5,
         monthly: {
           responses: 5000,
         },
@@ -1040,7 +1044,7 @@ describe("organization-billing", () => {
     mocks.prismaOrganizationBillingFindUnique.mockResolvedValue({
       stripeCustomerId: "cus_1",
       limits: {
-        projects: 3,
+        workspaces: 3,
         monthly: {
           responses: 1500,
         },
@@ -1120,7 +1124,7 @@ describe("organization-billing", () => {
     mocks.prismaOrganizationBillingFindUnique.mockResolvedValue({
       stripeCustomerId: "cus_1",
       limits: {
-        projects: 5,
+        workspaces: 5,
         monthly: {
           responses: 5000,
         },
@@ -1204,7 +1208,7 @@ describe("organization-billing", () => {
     mocks.prismaOrganizationBillingFindUnique.mockResolvedValue({
       stripeCustomerId: "cus_1",
       limits: {
-        projects: 3,
+        workspaces: 3,
         monthly: {
           responses: 1500,
         },
@@ -1332,7 +1336,7 @@ describe("organization-billing", () => {
     mocks.prismaOrganizationBillingFindUnique.mockResolvedValue({
       stripeCustomerId: "cus_1",
       limits: {
-        projects: 3,
+        workspaces: 3,
         monthly: {
           responses: 1500,
         },
@@ -1396,7 +1400,7 @@ describe("organization-billing", () => {
     mocks.prismaOrganizationBillingFindUnique.mockResolvedValue({
       stripeCustomerId: "cus_1",
       limits: {
-        projects: 3,
+        workspaces: 3,
         monthly: {
           responses: 1500,
         },
@@ -1438,7 +1442,7 @@ describe("organization-billing", () => {
     mocks.prismaOrganizationBillingFindUnique.mockResolvedValue({
       stripeCustomerId: "cus_1",
       limits: {
-        projects: 3,
+        workspaces: 3,
         monthly: {
           responses: 1500,
         },
@@ -1483,7 +1487,7 @@ describe("organization-billing", () => {
       where: { organizationId: "org_1" },
       data: expect.objectContaining({
         limits: {
-          projects: 5,
+          workspaces: 5,
           monthly: {
             responses: null,
           },
@@ -1502,7 +1506,7 @@ describe("organization-billing", () => {
     mocks.prismaOrganizationBillingFindUnique.mockResolvedValue({
       stripeCustomerId: "cus_1",
       limits: {
-        projects: 3,
+        workspaces: 3,
         monthly: {
           responses: 1500,
         },
@@ -1571,7 +1575,7 @@ describe("organization-billing", () => {
       data: {
         stripeCustomerId: "cus_1",
         limits: {
-          projects: 3,
+          workspaces: 3,
           monthly: {
             responses: 1500,
           },
@@ -1600,7 +1604,7 @@ describe("organization-billing", () => {
     mocks.prismaOrganizationBillingFindUnique.mockResolvedValue({
       stripeCustomerId: "cus_1",
       limits: {
-        projects: 3,
+        workspaces: 3,
         monthly: {
           responses: 1500,
         },
@@ -1646,7 +1650,7 @@ describe("organization-billing", () => {
     mocks.prismaOrganizationBillingFindUnique.mockResolvedValue({
       stripeCustomerId: "cus_1",
       limits: {
-        projects: 3,
+        workspaces: 3,
         monthly: {
           responses: 500,
         },
@@ -1696,7 +1700,7 @@ describe("organization-billing", () => {
     mocks.prismaOrganizationBillingFindUnique.mockResolvedValue({
       stripeCustomerId: "cus_1",
       limits: {
-        projects: 3,
+        workspaces: 3,
         monthly: {
           responses: 1500,
         },
@@ -1753,14 +1757,14 @@ describe("organization-billing", () => {
     const cachedBilling = {
       stripeCustomerId: null,
       limits: {
-        projects: 3,
+        workspaces: 3,
         monthly: {
           responses: 1500,
         },
       },
       usageCycleAnchor: new Date().toISOString(),
     };
-    mocks.cacheWithCache.mockResolvedValue(cachedBilling);
+    mocks.cacheWithCacheNullable.mockResolvedValue(cachedBilling);
 
     const result = await getOrganizationBillingWithReadThroughSync("org_1");
 
@@ -1773,7 +1777,7 @@ describe("organization-billing", () => {
       stripeCustomerId: "cus_1",
       stripe: { lastSyncedAt: new Date().toISOString() },
     };
-    mocks.cacheWithCache.mockResolvedValue(cachedBilling);
+    mocks.cacheWithCacheNullable.mockResolvedValue(cachedBilling);
 
     const result = await getOrganizationBillingWithReadThroughSync("org_1");
 
@@ -1786,11 +1790,11 @@ describe("organization-billing", () => {
       stripeCustomerId: "cus_1",
       stripe: { lastSyncedAt: new Date(Date.now() - 6 * 60 * 1000).toISOString() },
     };
-    mocks.cacheWithCache.mockResolvedValue(cachedBilling);
+    mocks.cacheWithCacheNullable.mockResolvedValue(cachedBilling);
     mocks.prismaOrganizationBillingFindUnique.mockResolvedValue({
       stripeCustomerId: "cus_1",
       limits: {
-        projects: 3,
+        workspaces: 3,
         monthly: {
           responses: 1500,
         },
@@ -1814,7 +1818,7 @@ describe("organization-billing", () => {
     mocks.prismaOrganizationBillingFindUnique.mockResolvedValue({
       stripeCustomerId: null,
       limits: {
-        projects: 3,
+        workspaces: 3,
         monthly: {
           responses: 1500,
         },
@@ -1825,11 +1829,11 @@ describe("organization-billing", () => {
 
     const result = await getOrganizationBillingWithReadThroughSync("org_1");
 
-    expect(mocks.cacheWithCache).not.toHaveBeenCalled();
+    expect(mocks.cacheWithCacheNullable).not.toHaveBeenCalled();
     expect(result).toEqual({
       stripeCustomerId: null,
       limits: {
-        projects: 3,
+        workspaces: 3,
         monthly: {
           responses: 1500,
         },
@@ -1840,7 +1844,7 @@ describe("organization-billing", () => {
 
   test("getOrganizationBillingWithReadThroughSync returns null when organization billing is missing", async () => {
     mocks.prismaOrganizationBillingFindUnique.mockResolvedValue(null);
-    mocks.cacheWithCache.mockImplementation(async (fn: () => Promise<unknown>) => await fn());
+    mocks.cacheWithCacheNullable.mockImplementation(async (fn: () => Promise<unknown>) => await fn());
 
     await expect(getOrganizationBillingWithReadThroughSync("org_1")).resolves.toBeNull();
   });
@@ -1878,7 +1882,7 @@ describe("organization-billing", () => {
     mocks.prismaOrganizationBillingFindUnique.mockResolvedValue({
       stripeCustomerId: "cus_new",
       limits: {
-        projects: 3,
+        workspaces: 3,
         monthly: {
           responses: 1500,
         },
@@ -1931,7 +1935,7 @@ describe("organization-billing", () => {
     mocks.prismaOrganizationBillingFindUnique.mockResolvedValue({
       stripeCustomerId: "cus_1",
       limits: {
-        projects: 3,
+        workspaces: 3,
         monthly: {
           responses: 1500,
         },

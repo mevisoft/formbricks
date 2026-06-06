@@ -42,7 +42,7 @@ export const DropdownSelector = ({
                 </span>
               </span>
               <span className="flex h-full items-center border-l pl-3">
-                <ChevronDownIcon className="h-4 w-4 text-slate-500" />
+                <ChevronDownIcon className="size-4 text-slate-500" />
               </span>
             </button>
           </DropdownMenuTrigger>
@@ -50,7 +50,7 @@ export const DropdownSelector = ({
           {!disabled && (
             <DropdownMenuPortal>
               <DropdownMenuContent
-                className="z-50 max-h-64 max-w-96 min-w-[220px] overflow-auto rounded-md bg-white text-sm text-slate-800 shadow-md"
+                className="z-50 max-h-64 min-w-[220px] max-w-96 overflow-auto rounded-md bg-white text-sm text-slate-800 shadow-md"
                 align="start">
                 {items
                   .sort((a, b) => a.name?.localeCompare(b.name))

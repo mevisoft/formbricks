@@ -7,7 +7,8 @@ import toast from "react-hot-toast";
 import { useTranslation } from "react-i18next";
 import { TAllowedFileExtension } from "@formbricks/types/storage";
 import { cn } from "@/lib/cn";
-import { FileUploadError, handleFileUpload } from "@/modules/storage/file-upload";
+import { handleFileUpload } from "@/modules/storage/file-upload";
+import { showFileUploadErrorToast } from "@/modules/storage/file-upload-error";
 import { LoadingSpinner } from "@/modules/ui/components/loading-spinner";
 import { OptionsSwitch } from "@/modules/ui/components/options-switch";
 import { showStorageNotConfiguredToast } from "@/modules/ui/components/storage-not-configured-toast/lib/utils";
@@ -23,7 +24,7 @@ const isImage = (name: string) => {
 interface FileInputProps {
   id: string;
   allowedFileExtensions: TAllowedFileExtension[];
-  environmentId: string;
+  workspaceId: string;
   onFileUpload: (uploadedUrl: string[] | undefined, fileType: "image" | "video") => void;
   fileUrl?: string | string[];
   videoUrl?: string;
@@ -44,7 +45,7 @@ interface SelectedFile {
 export const FileInput = ({
   id,
   allowedFileExtensions,
-  environmentId,
+  workspaceId,
   onFileUpload,
   fileUrl,
   videoUrl,
@@ -62,9 +63,14 @@ export const FileInput = ({
   ];
   const [selectedFiles, setSelectedFiles] = useState<SelectedFile[]>([]);
   const [uploadedVideoUrl, setUploadedVideoUrl] = useState(videoUrl ?? "");
-  const [activeTab, setActiveTab] = useState(videoUrl ? "video" : "image");
+  const [activeTab, setActiveTab] = useState(isVideoAllowed && videoUrl ? "video" : "image");
   const [imageUrlTemp, setImageUrlTemp] = useState(fileUrl ?? "");
   const [videoUrlTemp, setVideoUrlTemp] = useState(videoUrl ?? "");
+  const fileType = isVideoAllowed && activeTab === "video" ? "video" : "image";
+
+  useEffect(() => {
+    setActiveTab(isVideoAllowed && videoUrl ? "video" : "image");
+  }, [isVideoAllowed, videoUrl]);
 
   const handleUpload = async (files: File[]) => {
     if (!isStorageConfigured) {
@@ -88,15 +94,15 @@ export const FileInput = ({
     );
 
     const uploadedFiles = await Promise.all(
-      allowedFiles.map((file) => handleFileUpload(file, environmentId, allowedFileExtensions))
+      allowedFiles.map((file) => handleFileUpload(file, workspaceId, allowedFileExtensions))
     );
 
     if (uploadedFiles.length < allowedFiles.length || uploadedFiles.some((file) => file.error)) {
       const firstError = uploadedFiles.find((f) => f.error)?.error;
-      if (firstError === FileUploadError.INVALID_FILE_NAME) {
-        toast.error(t("common.invalid_file_name"));
-      } else if (uploadedFiles.length === 0) {
+      if (uploadedFiles.length === 0) {
         toast.error(t("common.no_files_uploaded"));
+      } else if (firstError) {
+        showFileUploadErrorToast(firstError, t);
       } else {
         toast.error(t("common.some_files_failed_to_upload"));
       }
@@ -114,7 +120,7 @@ export const FileInput = ({
       return;
     }
 
-    onFileUpload(uploadedUrls, activeTab === "video" ? "video" : "image");
+    onFileUpload(uploadedUrls, fileType);
   };
 
   const handleDragOver = (e: React.DragEvent<HTMLLabelElement>) => {
@@ -133,7 +139,7 @@ export const FileInput = ({
 
   const handleRemove = async (idx: number) => {
     const newFileUrl = selectedFiles.filter((_, i) => i !== idx).map((file) => file.url);
-    onFileUpload(newFileUrl, activeTab === "video" ? "video" : "image");
+    onFileUpload(newFileUrl, fileType);
     setImageUrlTemp("");
   };
 
@@ -162,15 +168,15 @@ export const FileInput = ({
     ]);
 
     const uploadedFiles = await Promise.all(
-      allowedFiles.map((file) => handleFileUpload(file, environmentId, allowedFileExtensions))
+      allowedFiles.map((file) => handleFileUpload(file, workspaceId, allowedFileExtensions))
     );
 
     if (uploadedFiles.length < allowedFiles.length || uploadedFiles.some((file) => file.error)) {
       const firstError = uploadedFiles.find((f) => f.error)?.error;
-      if (firstError === FileUploadError.INVALID_FILE_NAME) {
-        toast.error(t("common.invalid_file_name"));
-      } else if (uploadedFiles.length === 0) {
+      if (uploadedFiles.length === 0) {
         toast.error(t("common.no_files_uploaded"));
+      } else if (firstError) {
+        showFileUploadErrorToast(firstError, t);
       } else {
         toast.error(t("common.some_files_failed_to_upload"));
       }
@@ -184,7 +190,7 @@ export const FileInput = ({
     });
 
     const prevUrls = Array.isArray(fileUrl) ? fileUrl : fileUrl ? [fileUrl] : [];
-    onFileUpload([...prevUrls, ...uploadedUrls], activeTab === "video" ? "video" : "image");
+    onFileUpload([...prevUrls, ...uploadedUrls], fileType);
   };
 
   useEffect(() => {
@@ -201,14 +207,14 @@ export const FileInput = ({
   }, [fileUrl]);
 
   useEffect(() => {
-    if (activeTab === "image" && typeof imageUrlTemp === "string") {
+    if (fileType === "image" && typeof imageUrlTemp === "string") {
       // Temporarily store the current video URL before switching tabs.
       setVideoUrlTemp(videoUrl ?? "");
 
       if (imageUrlTemp) {
         onFileUpload([imageUrlTemp], "image");
       }
-    } else if (activeTab === "video") {
+    } else if (fileType === "video") {
       // Temporarily store the current image URL before switching tabs.
       setImageUrlTemp(fileUrl ?? "");
 
@@ -216,8 +222,8 @@ export const FileInput = ({
         onFileUpload([videoUrlTemp], "video");
       }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- Only run when activeTab changes to avoid infinite loops
-  }, [activeTab]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- Only run when file type changes to avoid loops
+  }, [fileType]);
 
   return (
     <div className="w-full cursor-default">
@@ -226,7 +232,7 @@ export const FileInput = ({
           <OptionsSwitch options={options} currentOption={activeTab} handleOptionChange={setActiveTab} />
         )}
         <div>
-          {activeTab === "video" && (
+          {fileType === "video" && (
             <div className={cn(isVideoAllowed && "rounded-b-lg border-x border-b border-slate-200 p-4")}>
               <VideoSettings
                 uploadedVideoUrl={uploadedVideoUrl}
@@ -238,7 +244,7 @@ export const FileInput = ({
             </div>
           )}
 
-          {activeTab === "image" && (
+          {fileType === "image" && (
             <div className={cn(isVideoAllowed && "rounded-b-lg border-x border-b border-slate-200 p-4")}>
               {selectedFiles.length > 0 ? (
                 multiple ? (
@@ -258,7 +264,8 @@ export const FileInput = ({
                             />
                             {file.uploaded ? (
                               <button
-                                className="absolute top-2 right-2 flex cursor-pointer items-center justify-center rounded-md bg-slate-100 p-1 hover:bg-slate-200 hover:bg-white/90"
+                                type="button"
+                                className="absolute right-2 top-2 flex cursor-pointer items-center justify-center rounded-md bg-slate-100 p-1 hover:bg-slate-200 hover:bg-white/90"
                                 onClick={(e) => {
                                   e.preventDefault();
                                   handleRemove(idx);
@@ -279,7 +286,8 @@ export const FileInput = ({
                             </p>
                             {file.uploaded ? (
                               <button
-                                className="absolute top-2 right-2 flex cursor-pointer items-center justify-center rounded-md bg-slate-100 p-1 hover:bg-slate-200 hover:bg-white/90"
+                                type="button"
+                                className="absolute right-2 top-2 flex cursor-pointer items-center justify-center rounded-md bg-slate-100 p-1 hover:bg-slate-200 hover:bg-white/90"
                                 onClick={(e) => {
                                   e.preventDefault();
                                   handleRemove(idx);
@@ -323,7 +331,8 @@ export const FileInput = ({
                         />
                         {selectedFiles[0].uploaded ? (
                           <button
-                            className="absolute top-2 right-2 flex cursor-pointer items-center justify-center rounded-md bg-slate-100 p-1 hover:bg-slate-200 hover:bg-white/90"
+                            type="button"
+                            className="absolute right-2 top-2 flex cursor-pointer items-center justify-center rounded-md bg-slate-100 p-1 hover:bg-slate-200 hover:bg-white/90"
                             onClick={(e) => {
                               e.preventDefault();
                               handleRemove(0);
@@ -342,7 +351,8 @@ export const FileInput = ({
                         </p>
                         {selectedFiles[0].uploaded ? (
                           <button
-                            className="absolute top-2 right-2 flex cursor-pointer items-center justify-center rounded-md bg-slate-100 p-1 hover:bg-slate-200 hover:bg-white/90"
+                            type="button"
+                            className="absolute right-2 top-2 flex cursor-pointer items-center justify-center rounded-md bg-slate-100 p-1 hover:bg-slate-200 hover:bg-white/90"
                             onClick={(e) => {
                               e.preventDefault();
                               handleRemove(0);

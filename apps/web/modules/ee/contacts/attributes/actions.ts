@@ -4,11 +4,16 @@ import { z } from "zod";
 import { ZId } from "@formbricks/types/common";
 import { ZContactAttributeDataType } from "@formbricks/types/contact-attribute-key";
 import { ResourceNotFoundError } from "@formbricks/types/errors";
+import { capturePostHogEvent } from "@/lib/posthog";
 import { authenticatedActionClient } from "@/lib/utils/action-client";
 import { checkAuthorizationUpdated } from "@/lib/utils/action-client/action-client-middleware";
-import { getOrganizationIdFromEnvironmentId, getProjectIdFromEnvironmentId } from "@/lib/utils/helper";
+import { getOrganizationIdFromWorkspaceId } from "@/lib/utils/helper";
 import { isSafeIdentifier } from "@/lib/utils/safe-identifier";
 import { withAuditLogging } from "@/modules/ee/audit-logs/lib/handler";
+import {
+  RESERVED_FUTURE_DEFAULT_ATTRIBUTE_KEY_VALIDATION_MESSAGE,
+  isReservedFutureDefaultAttributeKey,
+} from "@/modules/ee/contacts/lib/attribute-key-policy";
 import {
   createContactAttributeKey,
   deleteContactAttributeKey,
@@ -17,11 +22,16 @@ import {
 } from "@/modules/ee/contacts/lib/contact-attribute-keys";
 
 const ZCreateContactAttributeKeyAction = z.object({
-  environmentId: ZId,
-  key: z.string().refine((val) => isSafeIdentifier(val), {
-    error:
-      "Key must be a safe identifier: only lowercase letters, numbers, and underscores, and must start with a letter",
-  }),
+  workspaceId: ZId,
+  key: z
+    .string()
+    .refine((val) => isSafeIdentifier(val), {
+      error:
+        "Key must be a safe identifier: only lowercase letters, numbers, and underscores, and must start with a letter",
+    })
+    .refine((val) => !isReservedFutureDefaultAttributeKey(val), {
+      error: RESERVED_FUTURE_DEFAULT_ATTRIBUTE_KEY_VALIDATION_MESSAGE,
+    }),
   name: z.string().optional(),
   description: z.string().optional(),
   dataType: ZContactAttributeDataType.optional(),
@@ -31,8 +41,8 @@ export const createContactAttributeKeyAction = authenticatedActionClient
   .inputSchema(ZCreateContactAttributeKeyAction)
   .action(
     withAuditLogging("created", "contactAttributeKey", async ({ ctx, parsedInput }) => {
-      const organizationId = await getOrganizationIdFromEnvironmentId(parsedInput.environmentId);
-      const projectId = await getProjectIdFromEnvironmentId(parsedInput.environmentId);
+      const workspaceId = parsedInput.workspaceId;
+      const organizationId = await getOrganizationIdFromWorkspaceId(workspaceId);
 
       await checkAuthorizationUpdated({
         userId: ctx.user.id,
@@ -43,9 +53,9 @@ export const createContactAttributeKeyAction = authenticatedActionClient
             roles: ["owner", "manager"],
           },
           {
-            type: "projectTeam",
+            type: "workspaceTeam",
             minPermission: "readWrite",
-            projectId,
+            workspaceId,
           },
         ],
       });
@@ -53,7 +63,7 @@ export const createContactAttributeKeyAction = authenticatedActionClient
       ctx.auditLoggingCtx.organizationId = organizationId;
 
       const contactAttributeKey = await createContactAttributeKey({
-        environmentId: parsedInput.environmentId,
+        workspaceId,
         key: parsedInput.key,
         name: parsedInput.name,
         description: parsedInput.description,
@@ -61,6 +71,17 @@ export const createContactAttributeKeyAction = authenticatedActionClient
       });
 
       ctx.auditLoggingCtx.newObject = contactAttributeKey;
+
+      capturePostHogEvent(
+        ctx.user.id,
+        "contact_attribute_key_created",
+        {
+          organization_id: organizationId,
+          workspace_id: workspaceId,
+          key: parsedInput.key,
+        },
+        { organizationId, workspaceId }
+      );
 
       return contactAttributeKey;
     })
@@ -75,15 +96,15 @@ export const updateContactAttributeKeyAction = authenticatedActionClient
   .inputSchema(ZUpdateContactAttributeKeyAction)
   .action(
     withAuditLogging("updated", "contactAttributeKey", async ({ ctx, parsedInput }) => {
-      // Fetch existing key to check authorization and get environmentId
+      // Fetch existing key to check authorization
       const existingKey = await getContactAttributeKeyById(parsedInput.id);
 
       if (!existingKey) {
         throw new ResourceNotFoundError("contactAttributeKey", parsedInput.id);
       }
 
-      const organizationId = await getOrganizationIdFromEnvironmentId(existingKey.environmentId);
-      const projectId = await getProjectIdFromEnvironmentId(existingKey.environmentId);
+      const workspaceId = existingKey.workspaceId;
+      const organizationId = await getOrganizationIdFromWorkspaceId(workspaceId);
 
       await checkAuthorizationUpdated({
         userId: ctx.user.id,
@@ -94,9 +115,9 @@ export const updateContactAttributeKeyAction = authenticatedActionClient
             roles: ["owner", "manager"],
           },
           {
-            type: "projectTeam",
+            type: "workspaceTeam",
             minPermission: "readWrite",
-            projectId,
+            workspaceId,
           },
         ],
       });
@@ -122,15 +143,15 @@ export const deleteContactAttributeKeyAction = authenticatedActionClient
   .inputSchema(ZDeleteContactAttributeKeyAction)
   .action(
     withAuditLogging("deleted", "contactAttributeKey", async ({ ctx, parsedInput }) => {
-      // Fetch existing key to check authorization and get environmentId
+      // Fetch existing key to check authorization
       const existingKey = await getContactAttributeKeyById(parsedInput.id);
 
       if (!existingKey) {
         throw new ResourceNotFoundError("contactAttributeKey", parsedInput.id);
       }
 
-      const organizationId = await getOrganizationIdFromEnvironmentId(existingKey.environmentId);
-      const projectId = await getProjectIdFromEnvironmentId(existingKey.environmentId);
+      const workspaceId = existingKey.workspaceId;
+      const organizationId = await getOrganizationIdFromWorkspaceId(workspaceId);
 
       await checkAuthorizationUpdated({
         userId: ctx.user.id,
@@ -141,9 +162,9 @@ export const deleteContactAttributeKeyAction = authenticatedActionClient
             roles: ["owner", "manager"],
           },
           {
-            type: "projectTeam",
+            type: "workspaceTeam",
             minPermission: "readWrite",
-            projectId,
+            workspaceId,
           },
         ],
       });

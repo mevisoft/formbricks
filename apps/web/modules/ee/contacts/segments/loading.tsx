@@ -25,7 +25,7 @@ const Loading = async () => {
               className="m-2 grid h-16 grid-cols-7 content-center rounded-lg transition-colors ease-in-out hover:bg-slate-100">
               <div className="col-span-4 flex items-center pl-6 text-sm">
                 <div className="flex items-center gap-4">
-                  <UsersIcon className="h-5 w-5 flex-shrink-0 animate-pulse text-slate-500" />
+                  <UsersIcon className="size-5 flex-shrink-0 animate-pulse text-slate-500" />
                   <div className="flex flex-col">
                     <div className="font-medium text-slate-900">
                       <div className="mt-0 h-4 w-48 animate-pulse rounded-full bg-slate-200"></div>
@@ -36,13 +36,13 @@ const Loading = async () => {
                   </div>
                 </div>
               </div>
-              <div className="col-span-1 my-auto text-center text-sm whitespace-nowrap text-slate-500">
+              <div className="col-span-1 my-auto whitespace-nowrap text-center text-sm text-slate-500">
                 <div className="m-4 h-4 animate-pulse rounded-full bg-slate-200"></div>
               </div>
               <div className="whitespace-wrap col-span-1 my-auto text-center text-sm text-slate-500">
                 <div className="m-4 h-4 animate-pulse rounded-full bg-slate-200"></div>
               </div>
-              <div className="col-span-1 my-auto text-center text-sm whitespace-normal text-slate-500">
+              <div className="col-span-1 my-auto whitespace-normal text-center text-sm text-slate-500">
                 <div className="m-4 h-4 animate-pulse rounded-full bg-slate-200"></div>
               </div>
             </div>

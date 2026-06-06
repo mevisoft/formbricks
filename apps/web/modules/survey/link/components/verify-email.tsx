@@ -7,10 +7,10 @@ import { FormProvider, useForm } from "react-hook-form";
 import { Toaster, toast } from "react-hot-toast";
 import { useTranslation } from "react-i18next";
 import { z } from "zod";
-import { TProjectStyling } from "@formbricks/types/project";
 import { TSurvey } from "@formbricks/types/surveys/types";
 import { getTextContent } from "@formbricks/types/surveys/validation";
 import { TUserLocale } from "@formbricks/types/user";
+import { TWorkspaceStyling } from "@formbricks/types/workspace";
 import { getLocalizedValue } from "@/lib/i18n/utils";
 import { getFormattedErrorMessage } from "@/lib/utils/helper";
 import { replaceHeadlineRecall } from "@/lib/utils/recall";
@@ -26,8 +26,9 @@ interface VerifyEmailProps {
   survey: TSurvey;
   isErrorComponent?: boolean;
   singleUseId?: string;
+  singleUseToken?: string;
   languageCode: string;
-  styling: TProjectStyling;
+  styling: TWorkspaceStyling;
   locale: TUserLocale;
 }
 
@@ -40,6 +41,7 @@ export const VerifyEmail = ({
   survey,
   isErrorComponent,
   singleUseId,
+  singleUseToken,
   languageCode,
   styling,
   locale,
@@ -94,6 +96,7 @@ export const VerifyEmail = ({
       email: email,
       surveyName: localSurvey.name,
       suId: singleUseId ?? "",
+      suToken: singleUseToken,
       locale,
     };
 
@@ -118,7 +121,7 @@ export const VerifyEmail = ({
   if (isErrorComponent) {
     return (
       <div className="flex h-[100vh] w-[100vw] flex-col items-center justify-center bg-slate-50">
-        <span className="h-24 w-24 rounded-full bg-slate-300 p-6 text-5xl">🤔</span>
+        <span className="size-24 rounded-full bg-slate-300 p-6 text-5xl">🤔</span>
         <p className="mt-8 text-4xl font-bold">{t("s.this_looks_fishy")}</p>
         <Button variant="ghost" className="mt-4" onClick={handleGoBackClick}>
           {t("s.please_try_again_with_the_original_link")}
@@ -145,7 +148,7 @@ export const VerifyEmail = ({
             {!emailSent && !showPreviewQuestions && (
               <div className="flex flex-col">
                 <div className="mx-auto rounded-full border bg-slate-200 p-6">
-                  <MailIcon strokeWidth={1.5} className="mx-auto h-12 w-12 text-white" />
+                  <MailIcon strokeWidth={1.5} className="mx-auto size-12 text-white" />
                 </div>
                 <p className="mt-8 text-2xl font-bold lg:text-4xl">{t("s.verify_email_before_submission")}</p>
                 <p className="mt-4 text-sm text-slate-500 lg:text-base">
@@ -158,7 +161,7 @@ export const VerifyEmail = ({
                     <FormItem className="my-4 w-full space-y-4">
                       <FormControl>
                         <div>
-                          <div className="flex space-x-2">
+                          <div className="flex gap-x-2">
                             <Input
                               value={field.value}
                               onChange={(email) => {

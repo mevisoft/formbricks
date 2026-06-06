@@ -46,7 +46,7 @@ describe("Response Utils", () => {
       hiddenFields: { enabled: true, fieldIds: [] },
       createdAt: new Date(),
       updatedAt: new Date(),
-      environmentId: "env1",
+      workspaceId: "env1",
       createdBy: "user1",
       status: "draft",
     };
@@ -105,7 +105,7 @@ describe("Response Utils", () => {
       hiddenFields: { enabled: false, fieldIds: [] },
       createdAt: new Date(),
       updatedAt: new Date(),
-      environmentId: "e1",
+      workspaceId: "e1",
       createdBy: "u1",
       status: "inProgress",
     };
@@ -219,7 +219,7 @@ describe("Response Utils", () => {
       hiddenFields: { enabled: false, fieldIds: [] },
       createdAt: new Date(),
       updatedAt: new Date(),
-      environmentId: "e2",
+      workspaceId: "e2",
       createdBy: "u2",
       status: "inProgress",
     };
@@ -310,7 +310,7 @@ describe("Response Utils", () => {
         hiddenFields: { enabled: false, fieldIds: [] },
         createdAt: new Date(),
         updatedAt: new Date(),
-        environmentId: "e3",
+        workspaceId: "e3",
         createdBy: "u3",
         status: "inProgress",
       };
@@ -405,7 +405,7 @@ describe("Response Utils", () => {
       hiddenFields: { enabled: true, fieldIds: ["hidden1"] },
       createdAt: new Date(),
       updatedAt: new Date(),
-      environmentId: "env1",
+      workspaceId: "env1",
       createdBy: "user1",
       status: "draft",
     };
@@ -430,6 +430,12 @@ describe("Response Utils", () => {
       expect(result.elements).toHaveLength(2); // 1 regular question + 2 matrix rows
       expect(result.hiddenFields).toContain("hidden1");
       expect(result.userAttributes).toContain("email");
+    });
+
+    test("should collect contact attributes for link surveys too", () => {
+      const linkSurvey = { ...mockSurvey, type: "link" } as TSurvey;
+      const result = extractSurveyDetails(linkSurvey, mockResponses as TResponse[]);
+      expect(result.userAttributes).toEqual(["email"]);
     });
   });
 
@@ -462,7 +468,7 @@ describe("Response Utils", () => {
       hiddenFields: { enabled: true, fieldIds: [] },
       createdAt: new Date(),
       updatedAt: new Date(),
-      environmentId: "env1",
+      workspaceId: "env1",
       createdBy: "user1",
       status: "draft",
     };
@@ -496,7 +502,24 @@ describe("Response Utils", () => {
       expect(result[0]["Response ID"]).toBe("response1");
       expect(result[0]["userAgent - browser"]).toBe("Chrome");
       expect(result[0]["1. Question 1"]).toBe("answer1");
-      expect(result[0]["email"]).toBe("test@example.com");
+      expect(result[0]["person.email"]).toBe("test@example.com");
+    });
+
+    test("should namespace person attributes for link surveys too", () => {
+      const linkSurvey = { ...mockSurvey, type: "link" } as TSurvey;
+      const responsesWithContact = [
+        { ...mockResponses[0], contactAttributes: { plan: "pro", email: "linked@example.com" } },
+      ] as TResponse[];
+      const result = getResponsesJson(
+        linkSurvey,
+        responsesWithContact,
+        [["1. Question 1"]],
+        ["plan", "email"],
+        [],
+        false
+      );
+      expect(result[0]["person.plan"]).toBe("pro");
+      expect(result[0]["person.email"]).toBe("linked@example.com");
     });
   });
 
@@ -659,7 +682,7 @@ describe("Response Utils", () => {
       hiddenFields: { enabled: true, fieldIds: ["hidden1", "hidden2"] },
       createdAt: new Date(),
       updatedAt: new Date(),
-      environmentId: "env1",
+      workspaceId: "env1",
       createdBy: "user1",
       status: "draft",
     };

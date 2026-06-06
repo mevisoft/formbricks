@@ -1,7 +1,7 @@
 import { type JSX } from "preact";
 import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { SurveyContainerProps } from "@formbricks/types/formbricks-surveys";
-import { type TJsEnvironmentStateSurvey, TJsFileUploadParams } from "@formbricks/types/js";
+import { TJsFileUploadParams, type TJsWorkspaceStateSurvey } from "@formbricks/types/js";
 import type {
   TResponseData,
   TResponseTtc,
@@ -70,7 +70,7 @@ interface VariableStackEntry {
 
 export function Survey({
   appUrl,
-  environmentId,
+  workspaceId,
   isPreviewMode = false,
   userId,
   contactId,
@@ -114,15 +114,15 @@ export function Survey({
 }: SurveyContainerProps) {
   let apiClient: ApiClient | null = null;
 
-  if (appUrl && environmentId) {
+  if (appUrl && workspaceId) {
     apiClient = new ApiClient({
       appUrl,
-      environmentId,
+      workspaceId,
     });
   }
 
   const surveyState = useMemo(() => {
-    if (appUrl && environmentId) {
+    if (appUrl && workspaceId) {
       if (mode === "inline") {
         return new SurveyState(survey.id, singleUseId, singleUseResponseId, userId, contactId);
       }
@@ -130,18 +130,17 @@ export function Survey({
       return new SurveyState(survey.id, null, null, userId, contactId);
     }
     return null;
-  }, [appUrl, environmentId, mode, survey.id, userId, singleUseId, singleUseResponseId, contactId]);
+  }, [appUrl, workspaceId, mode, survey.id, userId, singleUseId, singleUseResponseId, contactId]);
 
   // Update the responseQueue to use the stored responseId
 
   const [hasInteracted, setHasInteracted] = useState(false);
 
-  const [localSurvey, setlocalSurvey] = useState<TJsEnvironmentStateSurvey>(survey);
+  const [localSurvey, setlocalSurvey] = useState<TJsWorkspaceStateSurvey>(survey);
   const [currentVariables, setCurrentVariables] = useState<TResponseVariables>({});
 
   const isLinkSurvey = survey.type === "link";
-  const offlinePersistEnabled =
-    offlineSupport && isLinkSurvey && !isPreviewMode && !!appUrl && !!environmentId;
+  const offlinePersistEnabled = offlineSupport && isLinkSurvey && !isPreviewMode && !!appUrl && !!workspaceId;
 
   const persistSurveyStateSnapshot = useCallback(
     async (snapshotPatch: Partial<SerializedSurveyState>) => {
@@ -152,11 +151,11 @@ export function Survey({
   );
 
   const responseQueue = useMemo(() => {
-    if (appUrl && environmentId && surveyState) {
+    if (appUrl && workspaceId && surveyState) {
       return new ResponseQueue(
         {
           appUrl,
-          environmentId,
+          workspaceId,
           retryAttempts: 4,
           persistOffline: offlinePersistEnabled,
           surveyId: survey.id,
@@ -195,7 +194,7 @@ export function Survey({
     return null;
   }, [
     appUrl,
-    environmentId,
+    workspaceId,
     getSetIsError,
     getSetIsResponseSendingFinished,
     surveyState,
@@ -256,6 +255,7 @@ export function Survey({
   const [selectedLanguage, setSelectedLanguage] = useState(languageCode);
   const [loadingElement, setLoadingElement] = useState(false);
   const [history, setHistory] = useState<string[]>([]);
+  const isNavigatingBackRef = useRef(false);
   const [responseData, setResponseData] = useState<TResponseData>(hiddenFieldsRecord ?? {});
   const [_variableStack, setVariableStack] = useState<VariableStackEntry[]>([]);
 
@@ -385,7 +385,7 @@ export function Survey({
     if (displayCreatedRef.current) return;
     displayCreatedRef.current = true;
 
-    if (appUrl && environmentId) {
+    if (appUrl && workspaceId) {
       createDisplay();
     } else {
       onDisplay?.();
@@ -819,7 +819,7 @@ export function Survey({
   const onResponseCreateOrUpdate = useCallback(
     async (responseUpdate: TResponseUpdate) => {
       // Always trigger the onResponse callback even in preview mode
-      if (!appUrl || !environmentId) {
+      if (!appUrl || !workspaceId) {
         onResponse?.({
           data: responseUpdate.data,
           ttc: responseUpdate.ttc,
@@ -873,7 +873,7 @@ export function Survey({
     },
     [
       appUrl,
-      environmentId,
+      workspaceId,
       isPreviewMode,
       surveyState,
       responseQueue,
@@ -916,6 +916,8 @@ export function Survey({
   }, [isResponseSendingFinished, isSurveyFinished, onFinished]);
 
   const onSubmit = async (surveyResponseData: TResponseData, responsettc: TResponseTtc) => {
+    isNavigatingBackRef.current = false;
+
     // Get the first responded element ID for tracking
     const respondedElementIds = Object.keys(surveyResponseData);
     const firstRespondedElementId = respondedElementIds[0];
@@ -1003,6 +1005,8 @@ export function Survey({
   };
 
   const onBack = (): void => {
+    isNavigatingBackRef.current = true;
+
     let prevBlockId: string | undefined;
     // use history if available
     if (history.length > 0) {
@@ -1045,20 +1049,39 @@ export function Survey({
       switch (errorType) {
         case TResponseErrorCodesEnum.ResponseSendingError:
           return (
-            <ResponseErrorComponent
-              responseData={responseQueue?.getUnsentData() ?? responseData}
-              questions={questions}
-              onRetry={retryResponse}
-              isRetrying={isRetrying}
-            />
+            <>
+              {localSurvey.type !== "link" ? (
+                <div className="bg-survey-bg relative h-8 w-full">
+                  <div className="flex w-full items-center justify-end">
+                    <SurveyCloseButton
+                      onClose={onClose}
+                      hoverColor={styling.inputBgColor?.light ?? "#f8fafc"}
+                      borderRadius={styling.roundness ?? 8}
+                    />
+                  </div>
+                </div>
+              ) : null}
+              <ResponseErrorComponent
+                responseData={responseQueue?.getUnsentData() ?? responseData}
+                questions={questions}
+                onRetry={retryResponse}
+                isRetrying={isRetrying}
+              />
+            </>
           );
         case TResponseErrorCodesEnum.RecaptchaError:
         case TResponseErrorCodesEnum.InvalidDeviceError:
           return (
             <>
               {localSurvey.type !== "link" ? (
-                <div className="bg-survey-bg flex h-6 justify-end pt-2 pr-2">
-                  <SurveyCloseButton onClose={onClose} />
+                <div className="bg-survey-bg relative h-8 w-full">
+                  <div className="flex w-full items-center justify-end">
+                    <SurveyCloseButton
+                      onClose={onClose}
+                      hoverColor={styling.inputBgColor?.light ?? "#f8fafc"}
+                      borderRadius={styling.roundness ?? 8}
+                    />
+                  </div>
                 </div>
               ) : null}
               <ErrorComponent errorType={errorType} />
@@ -1134,7 +1157,7 @@ export function Survey({
               setTtc={setTtc}
               onFileUpload={onFileUpload}
               isFirstBlock={block.id === localSurvey.blocks[0]?.id}
-              skipPrefilled={skipPrefilled}
+              skipPrefilled={skipPrefilled && !isNavigatingBackRef.current}
               prefilledResponseData={offset === 0 ? prefillResponseData : undefined}
               isLastBlock={block.id === localSurvey.blocks[localSurvey.blocks.length - 1].id}
               languageCode={selectedLanguage}
@@ -1180,7 +1203,7 @@ export function Survey({
                       survey={localSurvey}
                       surveyLanguages={localSurvey.languages}
                       setSelectedLanguageCode={setSelectedLanguage}
-                      hoverColor={styling.inputColor?.light ?? "#f8fafc"}
+                      hoverColor={styling.inputBgColor?.light ?? "#f8fafc"}
                       borderRadius={styling.roundness ?? 8}
                       setDir={setDir}
                       dir={dir}
@@ -1193,7 +1216,7 @@ export function Survey({
                   {isCloseButtonVisible && (
                     <SurveyCloseButton
                       onClose={onClose}
-                      hoverColor={styling.inputColor?.light ?? "#f8fafc"}
+                      hoverColor={styling.inputBgColor?.light ?? "#f8fafc"}
                       borderRadius={styling.roundness ?? 8}
                     />
                   )}

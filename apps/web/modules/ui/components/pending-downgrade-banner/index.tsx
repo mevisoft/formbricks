@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { TUserLocale } from "@formbricks/types/user";
+import { useWorkspace } from "@/app/(app)/workspaces/[workspaceId]/context/workspace-context";
 import { formatDateForDisplay } from "@/lib/utils/datetime";
 import type { TLicenseStatus } from "@/modules/ee/license-check/types/enterprise-license";
 
@@ -12,7 +13,6 @@ interface PendingDowngradeBannerProps {
   lastChecked: Date;
   active: boolean;
   isPendingDowngrade: boolean;
-  environmentId: string;
   locale: TUserLocale;
   status: TLicenseStatus;
 }
@@ -21,10 +21,11 @@ export const PendingDowngradeBanner = ({
   lastChecked,
   active,
   isPendingDowngrade,
-  environmentId,
   locale,
   status,
 }: PendingDowngradeBannerProps) => {
+  const { workspace } = useWorkspace();
+  const workspaceBasePath = `/workspaces/${workspace?.id}`;
   const threeDaysInMillis = 3 * 24 * 60 * 60 * 1000;
   const { t } = useTranslation();
   const isLastCheckedWithin72Hours = lastChecked
@@ -72,13 +73,13 @@ export const PendingDowngradeBanner = ({
       <div
         aria-live="assertive"
         className="pointer-events-none fixed inset-0 z-[100] flex min-w-80 items-end px-4 py-6 sm:items-start sm:p-6">
-        <div className="flex w-full flex-col items-center space-y-4 sm:items-end">
+        <div className="flex w-full flex-col items-center gap-y-4 sm:items-end">
           <div className="pointer-events-auto w-full max-w-sm overflow-hidden rounded-lg bg-white shadow-lg ring-1 ring-black ring-opacity-5 transition">
             <div className="p-4">
               <div className="relative flex flex-col">
                 <div className="flex">
                   <div className="flex-shrink-0">
-                    <TriangleAlertIcon className="h-6 w-6 text-error" aria-hidden="true" />
+                    <TriangleAlertIcon className="size-6 text-error" aria-hidden="true" />
                   </div>
                   <div className="ml-3 w-0 flex-1">
                     <p className="text-base font-medium text-slate-900">
@@ -86,7 +87,7 @@ export const PendingDowngradeBanner = ({
                     </p>
                     <p className="mt-1 text-sm text-slate-500">{getDescription()}</p>
 
-                    <Link href={`/environments/${environmentId}/settings/enterprise`}>
+                    <Link href={`${workspaceBasePath}/settings/organization/enterprise`}>
                       <span className="text-sm text-slate-900">{t("common.learn_more")}</span>
                     </Link>
                   </div>
@@ -98,7 +99,7 @@ export const PendingDowngradeBanner = ({
                     className="inline-flex rounded-md bg-white text-slate-400 hover:text-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
                     onClick={() => setShow(false)}>
                     <span className="sr-only">{t("common.close")}</span>
-                    <XIcon className="h-5 w-5" aria-hidden="true" />
+                    <XIcon className="size-5" aria-hidden="true" />
                   </button>
                 </div>
               </div>

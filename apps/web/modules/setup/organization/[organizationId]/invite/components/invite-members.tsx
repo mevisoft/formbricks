@@ -44,12 +44,12 @@ export const InviteMembers = ({ IS_SMTP_CONFIGURED, organizationId }: InviteMemb
           organizationId,
         });
         if (inviteResponse?.data) {
-          toast.success(`${t("setup.invite.invitation_sent_to")} ${member.email}!`);
+          toast.success(t("setup.invite.invitation_sent_to_email", { email: member.email }));
         } else {
           const errorMessage = getFormattedErrorMessage(inviteResponse);
           toast.error(errorMessage);
         }
-      } catch (error) {
+      } catch {
         toast.error(`${t("setup.invite.failed_to_invite")} ${member.email}.`);
       }
     }
@@ -75,7 +75,7 @@ export const InviteMembers = ({ IS_SMTP_CONFIGURED, organizationId }: InviteMemb
           void form.handleSubmit(inviteTeamMembers)(e);
         }}
         className="space-y-4">
-        <div className="flex flex-col items-center space-y-4">
+        <div className="flex flex-col items-center gap-y-4">
           <h2 className="text-2xl font-medium">{t("setup.invite.invite_your_organization_members")}</h2>
           <p>{t("setup.invite.life_s_no_fun_alone")}</p>
 

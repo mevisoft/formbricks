@@ -1,14 +1,15 @@
 import { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { ResourceNotFoundError } from "@formbricks/types/errors";
+import { getAISmartToolsUnavailableReason, getOrganizationAIConfig } from "@/lib/ai/service";
 import { DEFAULT_LOCALE, IS_FORMBRICKS_CLOUD, SURVEYS_PER_PAGE } from "@/lib/constants";
 import { getPublicDomain } from "@/lib/getPublicUrl";
 import { getBillingFallbackPath } from "@/lib/membership/navigation";
 import { getUserLocale } from "@/lib/user/service";
 import { getTranslate } from "@/lingodotdev/server";
-import { getEnvironmentAuth } from "@/modules/environments/lib/utils";
-import { getProjectWithTeamIdsByEnvironmentId } from "@/modules/survey/lib/project";
+import { getWorkspaceWithTeamIds } from "@/modules/survey/lib/workspace";
 import { SurveysList } from "@/modules/survey/list/components/survey-list";
+import { getWorkspaceAuth } from "@/modules/workspaces/lib/utils";
 
 export const metadata: Metadata = {
   title: "Your Surveys",
@@ -16,7 +17,7 @@ export const metadata: Metadata = {
 
 interface SurveyTemplateProps {
   params: Promise<{
-    environmentId: string;
+    workspaceId: string;
   }>;
 }
 
@@ -25,36 +26,44 @@ export const SurveysPage = async ({ params: paramsProps }: SurveyTemplateProps) 
   const params = await paramsProps;
   const t = await getTranslate();
 
-  const project = await getProjectWithTeamIdsByEnvironmentId(params.environmentId);
+  const workspace = await getWorkspaceWithTeamIds(params.workspaceId);
 
-  if (!project) {
+  if (!workspace) {
     throw new ResourceNotFoundError(t("common.workspace"), null);
   }
 
-  const { session, isBilling, environment, isReadOnly } = await getEnvironmentAuth(params.environmentId);
+  const { session, isBilling, isReadOnly } = await getWorkspaceAuth(params.workspaceId);
 
   if (isBilling) {
-    return redirect(getBillingFallbackPath(params.environmentId, IS_FORMBRICKS_CLOUD));
+    return redirect(getBillingFallbackPath(params.workspaceId, IS_FORMBRICKS_CLOUD));
   }
 
-  const currentProjectChannel = project.config.channel ?? null;
+  const currentWorkspaceChannel = workspace.config.channel ?? null;
   const locale = (await getUserLocale(session.user.id)) ?? DEFAULT_LOCALE;
-  const projectWithRequiredProps = {
-    ...project,
-    brandColor: project.styling?.brandColor?.light ?? null,
+  const aiConfig = isReadOnly ? null : await getOrganizationAIConfig(workspace.organizationId);
+  const aiUnavailableReason = isReadOnly
+    ? "read_only"
+    : aiConfig
+      ? getAISmartToolsUnavailableReason(aiConfig)
+      : undefined;
+  const isAIAvailable = Boolean(aiConfig && !aiUnavailableReason);
+  const workspaceWithRequiredProps = {
+    ...workspace,
+    brandColor: workspace.styling?.brandColor?.light ?? null,
     highlightBorderColor: null,
   };
 
   return (
     <SurveysList
-      environment={environment}
-      project={projectWithRequiredProps}
+      workspace={workspaceWithRequiredProps}
       isReadOnly={isReadOnly}
       publicDomain={publicDomain}
       userId={session.user.id}
       surveysPerPage={SURVEYS_PER_PAGE}
-      currentProjectChannel={currentProjectChannel}
+      currentWorkspaceChannel={currentWorkspaceChannel}
       locale={locale}
+      isAIAvailable={isAIAvailable}
+      aiUnavailableReason={aiUnavailableReason}
     />
   );
 };

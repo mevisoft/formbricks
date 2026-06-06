@@ -9,7 +9,8 @@ import { getOrganization } from "@/lib/organization/service";
 import { capturePostHogEvent } from "@/lib/posthog";
 import { authenticatedActionClient } from "@/lib/utils/action-client";
 import { checkAuthorizationUpdated } from "@/lib/utils/action-client/action-client-middleware";
-import { getOrganizationIdFromEnvironmentId } from "@/lib/utils/helper";
+import { getOrganizationIdFromWorkspaceId } from "@/lib/utils/helper";
+import { getWorkspace } from "@/lib/workspace/service";
 import { withAuditLogging } from "@/modules/ee/audit-logs/lib/handler";
 import { createCustomerPortalSession } from "@/modules/ee/billing/api/lib/create-customer-portal-session";
 import { createSetupCheckoutSession } from "@/modules/ee/billing/api/lib/create-setup-checkout-session";
@@ -25,14 +26,14 @@ import {
 } from "@/modules/ee/billing/lib/organization-billing";
 
 const ZManageSubscriptionAction = z.object({
-  environmentId: ZId,
+  workspaceId: ZId,
 });
 
 export const manageSubscriptionAction = authenticatedActionClient
   .inputSchema(ZManageSubscriptionAction)
   .action(
     withAuditLogging("subscriptionAccessed", "organization", async ({ ctx, parsedInput }) => {
-      const organizationId = await getOrganizationIdFromEnvironmentId(parsedInput.environmentId);
+      const organizationId = await getOrganizationIdFromWorkspaceId(parsedInput.workspaceId);
       await checkAuthorizationUpdated({
         userId: ctx.user.id,
         organizationId,
@@ -54,9 +55,13 @@ export const manageSubscriptionAction = authenticatedActionClient
       }
 
       ctx.auditLoggingCtx.organizationId = organizationId;
+      const workspace = await getWorkspace(parsedInput.workspaceId);
+      if (!workspace) {
+        throw new ResourceNotFoundError("workspace", parsedInput.workspaceId);
+      }
       const result = await createCustomerPortalSession(
         organization.billing.stripeCustomerId,
-        `${WEBAPP_URL}/environments/${parsedInput.environmentId}/settings/billing`
+        `${WEBAPP_URL}/workspaces/${workspace.id}/settings/organization/billing`
       );
       ctx.auditLoggingCtx.newObject = { portalSessionCreated: true };
       return result;
@@ -64,7 +69,7 @@ export const manageSubscriptionAction = authenticatedActionClient
   );
 
 const ZCreatePlanCheckoutAction = z.object({
-  environmentId: ZId,
+  workspaceId: ZId,
   targetPlan: z.enum(["pro", "scale"]),
   targetInterval: ZCloudBillingInterval,
 });
@@ -73,7 +78,7 @@ export const createPlanCheckoutAction = authenticatedActionClient
   .inputSchema(ZCreatePlanCheckoutAction)
   .action(
     withAuditLogging("subscriptionAccessed", "organization", async ({ ctx, parsedInput }) => {
-      const organizationId = await getOrganizationIdFromEnvironmentId(parsedInput.environmentId);
+      const organizationId = await getOrganizationIdFromWorkspaceId(parsedInput.workspaceId);
       await checkAuthorizationUpdated({
         userId: ctx.user.id,
         organizationId,
@@ -101,7 +106,7 @@ export const createPlanCheckoutAction = authenticatedActionClient
       const checkoutUrl = await createPaidPlanCheckoutSession({
         organizationId,
         customerId: organization.billing.stripeCustomerId,
-        environmentId: parsedInput.environmentId,
+        workspaceId: parsedInput.workspaceId,
         plan: parsedInput.targetPlan,
         interval: parsedInput.targetInterval,
       });
@@ -140,14 +145,14 @@ export const retryStripeSetupAction = authenticatedActionClient
   });
 
 const ZCreateTrialPaymentCheckoutAction = z.object({
-  environmentId: ZId,
+  workspaceId: ZId,
 });
 
 export const createTrialPaymentCheckoutAction = authenticatedActionClient
   .inputSchema(ZCreateTrialPaymentCheckoutAction)
   .action(
     withAuditLogging("subscriptionAccessed", "organization", async ({ ctx, parsedInput }) => {
-      const organizationId = await getOrganizationIdFromEnvironmentId(parsedInput.environmentId);
+      const organizationId = await getOrganizationIdFromWorkspaceId(parsedInput.workspaceId);
       await checkAuthorizationUpdated({
         userId: ctx.user.id,
         organizationId,
@@ -174,7 +179,11 @@ export const createTrialPaymentCheckoutAction = authenticatedActionClient
       }
 
       ctx.auditLoggingCtx.organizationId = organizationId;
-      const returnUrl = `${WEBAPP_URL}/environments/${parsedInput.environmentId}/settings/billing`;
+      const workspace = await getWorkspace(parsedInput.workspaceId);
+      if (!workspace) {
+        throw new ResourceNotFoundError("workspace", parsedInput.workspaceId);
+      }
+      const returnUrl = `${WEBAPP_URL}/workspaces/${workspace.id}/settings/organization/billing`;
       const checkoutUrl = await createSetupCheckoutSession(
         organization.billing.stripeCustomerId,
         subscriptionId,
@@ -220,9 +229,14 @@ export const startHobbyAction = authenticatedActionClient
     await reconcileCloudStripeSubscriptionsForOrganization(parsedInput.organizationId);
     await syncOrganizationBillingFromStripe(parsedInput.organizationId);
 
-    capturePostHogEvent(ctx.user.id, "stayed_on_hobby_plan", {
-      organization_id: parsedInput.organizationId,
-    });
+    capturePostHogEvent(
+      ctx.user.id,
+      "stayed_on_hobby_plan",
+      {
+        organization_id: parsedInput.organizationId,
+      },
+      { organizationId: parsedInput.organizationId }
+    );
 
     return { success: true };
   });
@@ -257,27 +271,37 @@ export const startProTrialAction = authenticatedActionClient
     await reconcileCloudStripeSubscriptionsForOrganization(parsedInput.organizationId);
     await syncOrganizationBillingFromStripe(parsedInput.organizationId);
 
-    capturePostHogEvent(ctx.user.id, "free_trial_started", {
-      plan: "pro",
-      organization_id: parsedInput.organizationId,
-      trial_duration_days: 14,
-    });
+    capturePostHogEvent(
+      ctx.user.id,
+      "free_trial_started",
+      {
+        plan: "pro",
+        organization_id: parsedInput.organizationId,
+        trial_duration_days: 14,
+      },
+      { organizationId: parsedInput.organizationId }
+    );
 
-    capturePostHogEvent(ctx.user.id, "reverse_trial_started", {
-      organization_id: parsedInput.organizationId,
-    });
+    capturePostHogEvent(
+      ctx.user.id,
+      "reverse_trial_started",
+      {
+        organization_id: parsedInput.organizationId,
+      },
+      { organizationId: parsedInput.organizationId }
+    );
 
     return { success: true };
   });
 
 const ZChangeBillingPlanAction = z.discriminatedUnion("targetPlan", [
   z.object({
-    environmentId: ZId,
+    workspaceId: ZId,
     targetPlan: z.literal("hobby"),
     targetInterval: z.literal("monthly"),
   }),
   z.object({
-    environmentId: ZId,
+    workspaceId: ZId,
     targetPlan: z.enum(["pro", "scale"]),
     targetInterval: ZCloudBillingInterval,
   }),
@@ -285,7 +309,7 @@ const ZChangeBillingPlanAction = z.discriminatedUnion("targetPlan", [
 
 export const changeBillingPlanAction = authenticatedActionClient.inputSchema(ZChangeBillingPlanAction).action(
   withAuditLogging("subscriptionAccessed", "organization", async ({ ctx, parsedInput }) => {
-    const organizationId = await getOrganizationIdFromEnvironmentId(parsedInput.environmentId);
+    const organizationId = await getOrganizationIdFromWorkspaceId(parsedInput.workspaceId);
     await checkAuthorizationUpdated({
       userId: ctx.user.id,
       organizationId,
@@ -331,14 +355,14 @@ export const changeBillingPlanAction = authenticatedActionClient.inputSchema(ZCh
 );
 
 const ZUndoPendingPlanChangeAction = z.object({
-  environmentId: ZId,
+  workspaceId: ZId,
 });
 
 export const undoPendingPlanChangeAction = authenticatedActionClient
   .inputSchema(ZUndoPendingPlanChangeAction)
   .action(
     withAuditLogging("subscriptionAccessed", "organization", async ({ ctx, parsedInput }) => {
-      const organizationId = await getOrganizationIdFromEnvironmentId(parsedInput.environmentId);
+      const organizationId = await getOrganizationIdFromWorkspaceId(parsedInput.workspaceId);
       await checkAuthorizationUpdated({
         userId: ctx.user.id,
         organizationId,

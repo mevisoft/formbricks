@@ -5,6 +5,8 @@ type TranslationKey = string;
 type TranslationValue = string;
 
 const translations: Record<TranslationKey, TranslationValue> = {
+  "common.continue": "Continue",
+  "common.powered_by_formbricks": "Powered by Formbricks",
   "emails.accept": "Accept",
   "emails.click_or_drag_to_upload_files": "Click or drag to upload files.",
   "emails.email_customization_preview_email_heading": "Hey {userName}",
@@ -15,7 +17,7 @@ const translations: Record<TranslationKey, TranslationValue> = {
   "emails.email_footer_text_2": "The Formbricks Team",
   "emails.email_template_text_1": "This email was sent via Formbricks.",
   "emails.embed_survey_preview_email_didnt_request": "Didn't request this?",
-  "emails.embed_survey_preview_email_environment_id": "Environment ID",
+  "emails.embed_survey_preview_email_workspace_id": "Workspace ID",
   "emails.embed_survey_preview_email_fight_spam":
     "Help us fight spam and forward this mail to hola@example.com",
   "emails.embed_survey_preview_email_heading": "Preview Email Embed",

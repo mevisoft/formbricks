@@ -1,21 +1,23 @@
-import { ActionClass, Environment, OrganizationRole } from "@prisma/client";
+import { ActionClass, OrganizationRole } from "@prisma/client";
 import { type Dispatch, type SetStateAction } from "react";
 import { TContactAttributeKey } from "@formbricks/types/contact-attribute-key";
 import { TSurveyQuota } from "@formbricks/types/quota";
 import { TSegment } from "@formbricks/types/segment";
 import { TSurvey } from "@formbricks/types/surveys/types";
+import { TUserLocale } from "@formbricks/types/user";
 import { TargetingCard } from "@/modules/ee/contacts/segments/components/targeting-card";
 import { QuotasCard } from "@/modules/ee/quotas/components/quotas-card";
-import { TTeamPermission } from "@/modules/ee/teams/project-teams/types/team";
+import { TTeamPermission } from "@/modules/ee/teams/workspace-teams/types/team";
+import { HiddenFieldsCard } from "@/modules/survey/editor/components/hidden-fields-card";
 import { HowToSendCard } from "@/modules/survey/editor/components/how-to-send-card";
 import { RecontactOptionsCard } from "@/modules/survey/editor/components/recontact-options-card";
 import { ResponseOptionsCard } from "@/modules/survey/editor/components/response-options-card";
 import { SurveyPlacementCard } from "@/modules/survey/editor/components/survey-placement-card";
+import { SurveyVariablesCard } from "@/modules/survey/editor/components/survey-variables-card";
 import { TargetingLockedCard } from "@/modules/survey/editor/components/targeting-locked-card";
 import { WhenToSendCard } from "@/modules/survey/editor/components/when-to-send-card";
 
 interface SettingsViewProps {
-  environment: Pick<Environment, "id" | "appSetupCompleted">;
   localSurvey: TSurvey;
   setLocalSurvey: Dispatch<SetStateAction<TSurvey>>;
   actionClasses: ActionClass[];
@@ -25,14 +27,19 @@ interface SettingsViewProps {
   membershipRole?: OrganizationRole;
   isUserTargetingAllowed?: boolean;
   isSpamProtectionAllowed: boolean;
-  projectPermission: TTeamPermission | null;
+  workspacePermission: TTeamPermission | null;
   isFormbricksCloud: boolean;
   isQuotasAllowed: boolean;
   quotas: TSurveyQuota[];
+  locale: TUserLocale;
+  appSetupCompleted: boolean;
+  enterpriseLicenseRequestFormUrl: string;
+  moveHiddenFieldsToSettingsTab?: boolean;
+  activeElementId?: string | null;
+  setActiveElementId?: (elementId: string | null) => void;
 }
 
 export const SettingsView = ({
-  environment,
   localSurvey,
   setLocalSurvey,
   actionClasses,
@@ -43,15 +50,25 @@ export const SettingsView = ({
   isUserTargetingAllowed = false,
   isSpamProtectionAllowed,
   isQuotasAllowed,
-  projectPermission,
+  workspacePermission,
   isFormbricksCloud,
   quotas,
+  locale,
+  appSetupCompleted,
+  enterpriseLicenseRequestFormUrl,
+  moveHiddenFieldsToSettingsTab = false,
+  activeElementId,
+  setActiveElementId,
 }: SettingsViewProps) => {
   const isAppSurvey = localSurvey.type === "app";
 
   return (
     <div className="mt-12 space-y-3 p-5">
-      <HowToSendCard localSurvey={localSurvey} setLocalSurvey={setLocalSurvey} environment={environment} />
+      <HowToSendCard
+        localSurvey={localSurvey}
+        setLocalSurvey={setLocalSurvey}
+        appSetupCompleted={appSetupCompleted}
+      />
 
       {localSurvey.type === "app" ? (
         <div>
@@ -62,7 +79,6 @@ export const SettingsView = ({
                   key={localSurvey.segment?.id}
                   localSurvey={localSurvey}
                   setLocalSurvey={setLocalSurvey}
-                  environmentId={environment.id}
                   contactAttributeKeys={contactAttributeKeys}
                   segments={segments}
                   initialSegment={segments.find((segment) => segment.id === localSurvey.segment?.id)}
@@ -70,7 +86,11 @@ export const SettingsView = ({
               </div>
             </div>
           ) : (
-            <TargetingLockedCard isFormbricksCloud={isFormbricksCloud} environmentId={environment.id} />
+            <TargetingLockedCard
+              isFormbricksCloud={isFormbricksCloud}
+              workspaceId={localSurvey.workspaceId}
+              enterpriseLicenseRequestFormUrl={enterpriseLicenseRequestFormUrl}
+            />
           )}
         </div>
       ) : null}
@@ -78,10 +98,10 @@ export const SettingsView = ({
       <WhenToSendCard
         localSurvey={localSurvey}
         setLocalSurvey={setLocalSurvey}
-        environmentId={environment.id}
+        workspaceId={localSurvey.workspaceId}
         propActionClasses={actionClasses}
         membershipRole={membershipRole}
-        projectPermission={projectPermission}
+        workspacePermission={workspacePermission}
       />
       <QuotasCard
         localSurvey={localSurvey}
@@ -89,6 +109,7 @@ export const SettingsView = ({
         isFormbricksCloud={isFormbricksCloud}
         quotas={quotas}
         hasResponses={responseCount > 0}
+        enterpriseLicenseRequestFormUrl={enterpriseLicenseRequestFormUrl}
       />
 
       <ResponseOptionsCard
@@ -96,16 +117,32 @@ export const SettingsView = ({
         setLocalSurvey={setLocalSurvey}
         responseCount={responseCount}
         isSpamProtectionAllowed={isSpamProtectionAllowed}
+        locale={locale}
       />
 
       <RecontactOptionsCard localSurvey={localSurvey} setLocalSurvey={setLocalSurvey} />
 
-      {isAppSurvey && (
-        <SurveyPlacementCard
-          localSurvey={localSurvey}
-          setLocalSurvey={setLocalSurvey}
-          environmentId={environment.id}
-        />
+      {isAppSurvey && <SurveyPlacementCard localSurvey={localSurvey} setLocalSurvey={setLocalSurvey} />}
+
+      {moveHiddenFieldsToSettingsTab && setActiveElementId && (
+        <>
+          <HiddenFieldsCard
+            localSurvey={localSurvey}
+            setLocalSurvey={setLocalSurvey}
+            setActiveElementId={setActiveElementId}
+            activeElementId={activeElementId ?? null}
+            quotas={quotas}
+            inSettings
+          />
+          <SurveyVariablesCard
+            localSurvey={localSurvey}
+            setLocalSurvey={setLocalSurvey}
+            activeElementId={activeElementId ?? null}
+            setActiveElementId={setActiveElementId}
+            quotas={quotas}
+            inSettings
+          />
+        </>
       )}
     </div>
   );

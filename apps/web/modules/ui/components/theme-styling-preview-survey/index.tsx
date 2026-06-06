@@ -1,11 +1,12 @@
 "use client";
 
-import { Project } from "@prisma/client";
-import { Variants, motion } from "framer-motion";
+import { MotionConfig, Variants, motion } from "framer-motion";
 import { Fragment, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { TSurvey, TSurveyType } from "@formbricks/types/surveys/types";
+import { TWorkspace } from "@formbricks/types/workspace";
 import { cn } from "@/lib/cn";
+import { toJsWorkspaceStateSurvey } from "@/lib/survey/client-utils";
 import { ClientLogo } from "@/modules/ui/components/client-logo";
 import { MediaBackground } from "@/modules/ui/components/media-background";
 import { Modal } from "@/modules/ui/components/preview-survey/components/modal";
@@ -14,7 +15,7 @@ import { SurveyInline } from "@/modules/ui/components/survey";
 
 interface ThemeStylingPreviewSurveyProps {
   survey: TSurvey;
-  project: Project;
+  workspace: TWorkspace;
   previewType: TSurveyType;
   setPreviewType: (type: TSurveyType) => void;
   publicDomain: string;
@@ -49,7 +50,7 @@ const previewParentContainerVariant: Variants = {
 
 export const ThemeStylingPreviewSurvey = ({
   survey,
-  project,
+  workspace,
   previewType,
   setPreviewType,
   publicDomain,
@@ -59,7 +60,7 @@ export const ThemeStylingPreviewSurvey = ({
   const ContentRef = useRef<HTMLDivElement | null>(null);
   const [shrink] = useState(false);
   const { t } = useTranslation();
-  const { projectOverwrites } = survey || {};
+  const { workspaceOverwrites } = survey || {};
   const isAppSurvey = previewType === "app"; // Moved up
 
   const previewScreenVariants: Variants = {
@@ -96,15 +97,15 @@ export const ThemeStylingPreviewSurvey = ({
     },
   };
 
-  const { placement: surveyPlacement } = projectOverwrites || {};
-  const { overlay: surveyOverlay } = projectOverwrites || {};
-  const { clickOutsideClose: surveyClickOutsideClose } = projectOverwrites || {};
+  const { placement: surveyPlacement } = workspaceOverwrites || {};
+  const { overlay: surveyOverlay } = workspaceOverwrites || {};
+  const { clickOutsideClose: surveyClickOutsideClose } = workspaceOverwrites || {};
 
-  const placement = surveyPlacement || project.placement;
-  const overlay = surveyOverlay ?? project.overlay;
-  const clickOutsideClose = surveyClickOutsideClose ?? project.clickOutsideClose;
+  const placement = surveyPlacement || workspace.placement;
+  const overlay = surveyOverlay ?? workspace.overlay;
+  const clickOutsideClose = surveyClickOutsideClose ?? workspace.clickOutsideClose;
 
-  const highlightBorderColor = project.styling.highlightBorderColor?.light;
+  const highlightBorderColor = workspace.styling.highlightBorderColor?.light;
   const [surveyFormKey, setSurveyFormKey] = useState<number>(Date.now());
 
   const resetQuestionProgress = () => {
@@ -113,10 +114,10 @@ export const ThemeStylingPreviewSurvey = ({
 
   const styling = useMemo(() => {
     if (survey.styling?.overwriteThemeStyling) {
-      return { ...project.styling, ...survey.styling };
+      return { ...workspace.styling, ...survey.styling };
     }
-    return project.styling;
-  }, [project.styling, survey.styling]);
+    return workspace.styling;
+  }, [workspace.styling, survey.styling]);
 
   // Create a unique key that includes both timestamp and preview type
   // This ensures the survey remounts when switching between app and link
@@ -130,111 +131,113 @@ export const ThemeStylingPreviewSurvey = ({
   };
 
   return (
-    <div className="flex h-full w-full flex-col items-center justify-items-center overflow-hidden">
-      <motion.div
-        variants={previewParentContainerVariant}
-        className="fixed hidden h-[95%] w-5/6"
-        animate={isFullScreenPreview ? "expanded" : "shrink"}
-      />
-      <motion.div
-        layout
-        variants={previewScreenVariants}
-        animate={
-          isFullScreenPreview
-            ? previewPosition === "relative"
-              ? "expanded"
-              : "expanded_with_fixed_positioning"
-            : "shrink"
-        }
-        className={cn(
-          "relative z-10 flex w-5/6 flex-col rounded-lg border border-slate-300 shadow-xl",
-          isAppSurvey ? "bg-slate-200" : "overflow-y-auto bg-white"
-        )}>
-        <div className="flex h-auto w-full items-center rounded-t-lg bg-slate-100 py-2">
-          <div className="ml-6 flex space-x-2">
-            <div className="h-3 w-3 rounded-full bg-red-500"></div>
-            <div className="h-3 w-3 rounded-full bg-amber-500"></div>
-            <div className="h-3 w-3 rounded-full bg-emerald-500"></div>
-          </div>
-          <div className="ml-4 flex w-full justify-between font-mono text-sm text-slate-400">
-            <p>{isAppSurvey ? t("environments.surveys.edit.your_web_app") : t("common.preview")}</p>
+    <MotionConfig reducedMotion="user">
+      <div className="flex h-full w-full flex-col items-center justify-items-center overflow-hidden">
+        <motion.div
+          variants={previewParentContainerVariant}
+          className="fixed hidden h-[95%] w-5/6"
+          animate={isFullScreenPreview ? "expanded" : "shrink"}
+        />
+        <motion.div
+          layout
+          variants={previewScreenVariants}
+          animate={
+            isFullScreenPreview
+              ? previewPosition === "relative"
+                ? "expanded"
+                : "expanded_with_fixed_positioning"
+              : "shrink"
+          }
+          className={cn(
+            "relative z-10 flex w-5/6 flex-col rounded-lg border border-slate-300 shadow-xl",
+            isAppSurvey ? "bg-slate-200" : "overflow-y-auto bg-white"
+          )}>
+          <div className="flex h-auto w-full items-center rounded-t-lg bg-slate-100 py-2">
+            <div className="ml-6 flex gap-x-2">
+              <div className="size-3 rounded-full bg-red-500"></div>
+              <div className="size-3 rounded-full bg-amber-500"></div>
+              <div className="size-3 rounded-full bg-emerald-500"></div>
+            </div>
+            <div className="ml-4 flex w-full justify-between font-mono text-sm text-slate-400">
+              <p>{isAppSurvey ? t("workspace.surveys.edit.your_web_app") : t("common.preview")}</p>
 
-            <div className="flex items-center">
-              <ResetProgressButton onClick={resetQuestionProgress} />
+              <div className="flex items-center">
+                <ResetProgressButton onClick={resetQuestionProgress} />
+              </div>
             </div>
           </div>
-        </div>
-        <div className="flex w-full flex-1 flex-col rounded-b-lg">
-          {isAppSurvey ? (
-            <Modal
-              isOpen
-              placement={placement}
-              clickOutsideClose={clickOutsideClose}
-              overlay={overlay}
-              previewMode="desktop"
-              background={project.styling.cardBackgroundColor?.light}
-              borderRadius={project.styling.roundness ?? 8}>
-              <Fragment key={surveyKey}>
-                <SurveyInline
-                  appUrl={publicDomain}
-                  isPreviewMode={true}
-                  survey={{ ...survey, type: "app" }}
-                  isBrandingEnabled={project.inAppSurveyBranding}
-                  isRedirectDisabled={true}
-                  onFileUpload={async (file) => file.name}
-                  styling={styling}
-                  isCardBorderVisible={!highlightBorderColor}
-                  languageCode="default"
-                />
-              </Fragment>
-            </Modal>
-          ) : (
-            <MediaBackground
-              surveyType={survey.type}
-              styling={styling}
-              ContentRef={ContentRef as React.MutableRefObject<HTMLDivElement> | null}
-              isEditorView>
-              {!project.styling?.isLogoHidden && (
-                <button className="absolute left-5 top-5" onClick={scrollToEditLogoSection}>
-                  <ClientLogo projectLogo={project.logo} previewSurvey />
-                </button>
-              )}
-              <div
-                key={surveyKey}
-                className={`${!project.styling.isLogoHidden && !isFullScreenPreview ? "mt-12" : ""} z-0 w-full max-w-md overflow-hidden rounded-lg p-4`}>
-                <SurveyInline
-                  appUrl={publicDomain}
-                  isPreviewMode={true}
-                  survey={{ ...survey, type: "link" }}
-                  isBrandingEnabled={project.linkSurveyBranding}
-                  isRedirectDisabled={true}
-                  onFileUpload={async (file) => file.name}
-                  responseCount={42}
-                  styling={styling}
-                  languageCode="default"
-                />
-              </div>
-            </MediaBackground>
-          )}
-        </div>
-      </motion.div>
+          <div className="flex w-full flex-1 flex-col rounded-b-lg">
+            {isAppSurvey ? (
+              <Modal
+                isOpen
+                placement={placement}
+                clickOutsideClose={clickOutsideClose}
+                overlay={overlay}
+                previewMode="desktop"
+                background={workspace.styling.cardBackgroundColor?.light}
+                borderRadius={workspace.styling.roundness ?? 8}>
+                <Fragment key={surveyKey}>
+                  <SurveyInline
+                    appUrl={publicDomain}
+                    isPreviewMode={true}
+                    survey={toJsWorkspaceStateSurvey({ ...survey, type: "app" })}
+                    isBrandingEnabled={workspace.inAppSurveyBranding}
+                    isRedirectDisabled={true}
+                    onFileUpload={async (file) => file.name}
+                    styling={styling}
+                    isCardBorderVisible={!highlightBorderColor}
+                    languageCode="default"
+                  />
+                </Fragment>
+              </Modal>
+            ) : (
+              <MediaBackground
+                surveyType={survey.type}
+                styling={styling}
+                ContentRef={ContentRef as React.MutableRefObject<HTMLDivElement> | null}
+                isEditorView>
+                {!workspace.styling?.isLogoHidden && (
+                  <button type="button" className="absolute left-5 top-5" onClick={scrollToEditLogoSection}>
+                    <ClientLogo workspaceLogo={workspace.logo} previewSurvey />
+                  </button>
+                )}
+                <div
+                  key={surveyKey}
+                  className={`${!workspace.styling.isLogoHidden && !isFullScreenPreview ? "mt-12" : ""} z-0 w-full max-w-md overflow-hidden rounded-lg p-4`}>
+                  <SurveyInline
+                    appUrl={publicDomain}
+                    isPreviewMode={true}
+                    survey={toJsWorkspaceStateSurvey({ ...survey, type: "link" })}
+                    isBrandingEnabled={workspace.linkSurveyBranding}
+                    isRedirectDisabled={true}
+                    onFileUpload={async (file) => file.name}
+                    responseCount={42}
+                    styling={styling}
+                    languageCode="default"
+                  />
+                </div>
+              </MediaBackground>
+            )}
+          </div>
+        </motion.div>
 
-      {/* for toggling between mobile and desktop mode  */}
-      <div className="mt-2 flex rounded-full border-2 border-slate-300 p-1">
-        <button
-          type="button"
-          className={`${previewType === "link" ? "rounded-full bg-slate-200" : ""} cursor-pointer px-3 py-1 text-sm`}
-          onClick={() => setPreviewType("link")}>
-          {t("common.link_survey")}
-        </button>
+        {/* for toggling between mobile and desktop mode  */}
+        <div className="mt-2 flex rounded-full border-2 border-slate-300 p-1">
+          <button
+            type="button"
+            className={`${previewType === "link" ? "rounded-full bg-slate-200" : ""} cursor-pointer px-3 py-1 text-sm`}
+            onClick={() => setPreviewType("link")}>
+            {t("common.link_survey")}
+          </button>
 
-        <button
-          type="button"
-          className={`${isAppSurvey ? "rounded-full bg-slate-200" : ""} cursor-pointer px-3 py-1 text-sm`}
-          onClick={() => setPreviewType("app")}>
-          {t("common.app_survey")}
-        </button>
+          <button
+            type="button"
+            className={`${isAppSurvey ? "rounded-full bg-slate-200" : ""} cursor-pointer px-3 py-1 text-sm`}
+            onClick={() => setPreviewType("app")}>
+            {t("common.app_survey")}
+          </button>
+        </div>
       </div>
-    </div>
+    </MotionConfig>
   );
 };

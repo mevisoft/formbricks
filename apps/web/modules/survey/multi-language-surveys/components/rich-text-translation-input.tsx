@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { TSurvey } from "@formbricks/types/surveys/types";
 import { md } from "@/lib/markdownIt";
 import { Editor } from "@/modules/ui/components/editor";
@@ -12,6 +12,7 @@ interface RichTextTranslationInputProps {
   localSurvey: TSurvey;
   languageCode: string;
   elementId: string;
+  disabled?: boolean;
 }
 
 export const RichTextTranslationInput = ({
@@ -21,22 +22,45 @@ export const RichTextTranslationInput = ({
   localSurvey,
   languageCode,
   elementId,
+  disabled,
 }: RichTextTranslationInputProps) => {
   const [firstRender, setFirstRender] = useState(true);
+  const [editorKey, setEditorKey] = useState(0);
+  // Separates external value changes (e.g. AI fill) from the editor's own write-back so we
+  // only remount for the former.
+  const lastWrittenRef = useRef(value);
+  // Suppresses Lexical's mount-time empty listener fire which would otherwise clobber an
+  // externally-applied value back to "".
+  const initialContentSetRef = useRef(false);
+
+  useEffect(() => {
+    if (value !== lastWrittenRef.current) {
+      lastWrittenRef.current = value;
+      initialContentSetRef.current = false;
+      setEditorKey((k) => k + 1);
+      setFirstRender(true);
+    }
+  }, [value]);
 
   return (
-    <div className="rounded-md">
+    <div className={disabled ? "cursor-not-allowed rounded-md opacity-60" : "rounded-md"}>
       <Editor
-        key={path}
+        key={`${path}-${editorKey}`}
         disableLists
         excludedToolbarItems={["blockType"]}
         firstRender={firstRender}
         setFirstRender={setFirstRender}
         getText={() => md.render(value)}
-        setText={(v: string) => onChange(path, v)}
+        setText={(v: string) => {
+          if (!initialContentSetRef.current && v === "") return;
+          initialContentSetRef.current = true;
+          lastWrittenRef.current = v;
+          onChange(path, v);
+        }}
         localSurvey={localSurvey}
         elementId={elementId}
         selectedLanguageCode={languageCode}
+        editable={!disabled}
       />
     </div>
   );

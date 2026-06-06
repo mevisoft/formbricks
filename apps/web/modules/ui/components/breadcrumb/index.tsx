@@ -16,7 +16,7 @@ const BreadcrumbList = React.forwardRef<HTMLOListElement, React.ComponentPropsWi
     <ol
       ref={ref}
       className={cn(
-        "flex flex-wrap items-center gap-1.5 text-sm break-words text-slate-500 hover:text-slate-700",
+        "flex flex-wrap items-center gap-1.5 break-words text-sm text-slate-500 hover:text-slate-700",
         className
       )}
       {...props}
@@ -80,7 +80,7 @@ BreadcrumbSeparator.displayName = "BreadcrumbSeparator";
 
 const BreadcrumbEllipsis = ({ className, ...props }: React.ComponentProps<"span">) => (
   <span aria-hidden="true" className={cn("flex h-9 w-9 items-center justify-center", className)} {...props}>
-    <EllipsisIcon className="h-4 w-4" />
+    <EllipsisIcon className="size-4" />
     <span className="sr-only">More</span>
   </span>
 );

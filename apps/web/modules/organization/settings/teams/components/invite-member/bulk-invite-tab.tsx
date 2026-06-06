@@ -66,7 +66,7 @@ export const BulkInviteTab = ({
           ZInvitees.parse(members);
           onSubmit(members);
         } catch (err) {
-          toast.error(t("environments.settings.general.please_check_csv_file"));
+          toast.error(t("workspace.settings.general.please_check_csv_file"));
         }
         setOpen(false);
       },
@@ -114,10 +114,10 @@ export const BulkInviteTab = ({
         />
 
         {csvFile && (
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center gap-x-2">
             <p className="text-sm font-semibold text-slate-900">{csvFile.name}</p>
             <Button variant="secondary" size="sm" type="button" onClick={removeFile}>
-              <XIcon className="h-4 w-4" />
+              <XIcon className="size-4" />
             </Button>
           </div>
         )}
@@ -127,7 +127,7 @@ export const BulkInviteTab = ({
             <AlertDescription className="ml-2">
               <p className="text-sm">
                 <strong>{t("common.warning")}: </strong>
-                {t("environments.settings.general.bulk_invite_warning_description")}
+                {t("workspace.settings.general.bulk_invite_warning_description")}
               </p>
             </AlertDescription>
           </Alert>
@@ -144,7 +144,7 @@ export const BulkInviteTab = ({
             {t("common.download")} CSV template
           </Button>
         </Link>
-        <div className="flex space-x-2">
+        <div className="flex gap-x-2">
           <Button
             size="default"
             type="button"

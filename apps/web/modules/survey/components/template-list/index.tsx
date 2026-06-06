@@ -1,55 +1,67 @@
 "use client";
 
-import { Project } from "@prisma/client";
+import { Workspace } from "@prisma/client";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import toast from "react-hot-toast";
 import { useTranslation } from "react-i18next";
-import { ZProjectConfigChannel, ZProjectConfigIndustry } from "@formbricks/types/project";
 import { TSurveyCreateInput, TSurveyType } from "@formbricks/types/surveys/types";
 import { TTemplate, TTemplateFilter, ZTemplateRole } from "@formbricks/types/templates";
+import { TUserLocale } from "@formbricks/types/user";
+import { ZWorkspaceConfigChannel, ZWorkspaceConfigIndustry } from "@formbricks/types/workspace";
 import { customSurveyTemplate, templates } from "@/app/lib/templates";
 import { getFormattedErrorMessage } from "@/lib/utils/helper";
+import type { TAIUnavailableReason } from "@/modules/ee/analysis/charts/lib/ai-availability";
 import { createSurveyAction } from "./actions";
+import { CreateWithAITemplate } from "./components/create-with-ai-template";
 import { StartFromScratchTemplate } from "./components/start-from-scratch-template";
 import { Template } from "./components/template";
 import { TemplateFilters } from "./components/template-filters";
 
 interface TemplateListProps {
   userId: string;
-  environmentId: string;
-  project: Project;
+  workspaceId: string;
+  workspace: Workspace;
   templateSearch?: string;
   showFilters?: boolean;
   onTemplateClick?: (template: TTemplate) => void;
   noPreview?: boolean; // single click to create survey
+  showAICreateCard?: boolean;
+  language?: TUserLocale;
+  isAIAvailable?: boolean;
+  aiUnavailableReason?: TAIUnavailableReason;
 }
 
 export const TemplateList = ({
   userId,
-  project,
-  environmentId,
+  workspace,
+  workspaceId,
   showFilters = true,
   templateSearch,
   onTemplateClick = () => {},
   noPreview,
+  showAICreateCard = false,
+  language = "en-US",
+  isAIAvailable = false,
+  aiUnavailableReason,
 }: TemplateListProps) => {
+  const workspaceBasePath = `/workspaces/${workspace.id}`;
   const { t } = useTranslation();
   const router = useRouter();
   const [activeTemplate, setActiveTemplate] = useState<TTemplate | null>(null);
   const [loading, setLoading] = useState(false);
   const [selectedFilter, setSelectedFilter] = useState<TTemplateFilter[]>([null, null, null]);
   const surveyType: TSurveyType = useMemo(() => {
-    if (project.config.channel) {
-      if (project.config.channel === "website") {
+    if (workspace.config.channel) {
+      if (workspace.config.channel === "website") {
         return "app";
       }
 
-      return project.config.channel;
+      return workspace.config.channel;
     }
 
     return "link";
-  }, [project.config.channel]);
+  }, [workspace.config.channel]);
 
   const createSurvey = async (activeTemplate: TTemplate) => {
     setLoading(true);
@@ -60,13 +72,13 @@ export const TemplateList = ({
     };
     const isBlank = activeTemplate.name === customSurveyTemplate(t).name;
     const createSurveyResponse = await createSurveyAction({
-      environmentId: environmentId,
+      workspaceId: workspaceId,
       surveyBody: augmentedTemplate,
       createdFrom: isBlank ? "blank" : "template",
     });
 
     if (createSurveyResponse?.data) {
-      router.push(`/environments/${environmentId}/surveys/${createSurveyResponse.data.id}/edit`);
+      router.push(`${workspaceBasePath}/surveys/${createSurveyResponse.data.id}/edit`);
     } else {
       const errorMessage = getFormattedErrorMessage(createSurveyResponse);
       toast.error(errorMessage);
@@ -80,8 +92,8 @@ export const TemplateList = ({
       }
 
       // Parse and validate the filters
-      const channelParseResult = ZProjectConfigChannel.nullable().safeParse(selectedFilter[0]);
-      const industryParseResult = ZProjectConfigIndustry.nullable().safeParse(selectedFilter[1]);
+      const channelParseResult = ZWorkspaceConfigChannel.nullable().safeParse(selectedFilter[0]);
+      const industryParseResult = ZWorkspaceConfigIndustry.nullable().safeParse(selectedFilter[1]);
       const roleParseResult = ZTemplateRole.nullable().safeParse(selectedFilter[2]);
 
       // Ensure all validations are successful
@@ -118,11 +130,19 @@ export const TemplateList = ({
           activeTemplate={activeTemplate}
           setActiveTemplate={setActiveTemplate}
           onTemplateClick={onTemplateClick}
-          project={project}
+          workspace={workspace}
           createSurvey={createSurvey}
           loading={loading}
           noPreview={noPreview}
         />
+        {showAICreateCard && (
+          <CreateWithAITemplate
+            workspaceId={workspaceId}
+            language={language}
+            isAIAvailable={isAIAvailable}
+            aiUnavailableReason={aiUnavailableReason}
+          />
+        )}
         {(process.env.NODE_ENV === "development" ? [...filteredTemplates()] : filteredTemplates()).map(
           (template: TTemplate) => {
             return (
@@ -132,7 +152,7 @@ export const TemplateList = ({
                 activeTemplate={activeTemplate}
                 setActiveTemplate={setActiveTemplate}
                 onTemplateClick={onTemplateClick}
-                project={project}
+                workspace={workspace}
                 createSurvey={createSurvey}
                 loading={loading}
                 selectedFilter={selectedFilter}
