@@ -6,6 +6,7 @@ import { useTranslation } from "react-i18next";
 import { type TI18nString } from "@formbricks/types/i18n";
 import { TSurveyElementTypeEnum } from "@formbricks/types/surveys/elements";
 import { TSurvey, TSurveyElementSummaryPictureSelection } from "@formbricks/types/surveys/types";
+import { isExternalImageSrc } from "@/lib/image-hosts";
 import { getChoiceIdByValue } from "@/lib/response/utils";
 import { IdBadge } from "@/modules/ui/components/id-badge";
 import { ProgressBar } from "@/modules/ui/components/progress-bar";
@@ -29,7 +30,7 @@ export const PictureChoiceSummary = ({ elementSummary, survey, setFilter }: Pict
   const { t } = useTranslation();
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
+    <div className="rounded-xl border border-slate-200 bg-white shadow-xs">
       <ElementSummaryHeader
         elementSummary={elementSummary}
         survey={survey}
@@ -42,7 +43,7 @@ export const PictureChoiceSummary = ({ elementSummary, survey, setFilter }: Pict
           ) : undefined
         }
       />
-      <div className="space-y-5 px-4 pb-6 pt-4 text-sm md:px-6 md:text-base">
+      <div className="space-y-5 px-4 pt-4 pb-6 text-sm md:px-6 md:text-base">
         {results.map((result, index) => {
           const choiceId = getChoiceIdByValue(result.imageUrl, elementSummary.element);
           return (
@@ -68,6 +69,7 @@ export const PictureChoiceSummary = ({ elementSummary, survey, setFilter }: Pict
                       layout="fill"
                       objectFit="cover"
                       className="rounded-md"
+                      unoptimized={isExternalImageSrc(result.imageUrl)}
                     />
                   </div>
                   <div className="self-end">{choiceId && <IdBadge id={choiceId} />}</div>

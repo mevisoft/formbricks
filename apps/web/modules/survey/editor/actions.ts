@@ -6,15 +6,22 @@ import { ZActionClassInput } from "@formbricks/types/action-classes";
 import { ZId } from "@formbricks/types/common";
 import { OperationNotAllowedError, ResourceNotFoundError } from "@formbricks/types/errors";
 import { TSurvey, TSurveyVariable, ZSurvey } from "@formbricks/types/surveys/types";
-import { POSTHOG_KEY, UNSPLASH_ACCESS_KEY, UNSPLASH_ALLOWED_DOMAINS } from "@/lib/constants";
+import {
+  IS_FORMBRICKS_SURVEYS_CONFIGURED,
+  POSTHOG_KEY,
+  UNSPLASH_ACCESS_KEY,
+  UNSPLASH_ALLOWED_DOMAINS,
+} from "@/lib/constants";
 import { capturePostHogEvent } from "@/lib/posthog";
-import { actionClient, authenticatedActionClient } from "@/lib/utils/action-client";
+import { authenticatedActionClient } from "@/lib/utils/action-client";
 import { checkAuthorizationUpdated } from "@/lib/utils/action-client/action-client-middleware";
 import {
   getOrganizationIdFromSurveyId,
   getOrganizationIdFromWorkspaceId,
   getWorkspaceIdFromSurveyId,
 } from "@/lib/utils/helper";
+import { applyRateLimit } from "@/modules/core/rate-limit/helpers";
+import { rateLimitConfigs } from "@/modules/core/rate-limit/rate-limit-configs";
 import { withAuditLogging } from "@/modules/ee/audit-logs/lib/handler";
 import { createActionClass } from "@/modules/survey/editor/lib/action-class";
 import { checkExternalUrlsPermission } from "@/modules/survey/editor/lib/check-external-urls-permission";
@@ -24,6 +31,7 @@ import { getSurveyFollowUpsPermission } from "@/modules/survey/follow-ups/lib/ut
 import { getElementsFromBlocks } from "@/modules/survey/lib/client-utils";
 import { checkSpamProtectionPermission } from "@/modules/survey/lib/permission";
 import { getOrganizationBilling, getSurvey } from "@/modules/survey/lib/survey";
+import { getSurveyCount } from "@/modules/survey/list/lib/survey";
 import { getWorkspace, getWorkspaceLanguages } from "./lib/workspace";
 
 type SurveyEditDiffContext = {
@@ -290,10 +298,10 @@ export const updateSurveyAction = authenticatedActionClient.inputSchema(ZSurvey)
       workspaceId: result.workspaceId,
     });
 
+    const isPublish = oldObject?.status === "draft" && result.status === "inProgress";
+
     if (POSTHOG_KEY) {
       if (result.status !== "draft") {
-        const isPublish = oldObject?.status === "draft" && result.status === "inProgress";
-
         const posthogEventMetadata = {
           survey_id: result.id,
           survey_type: result.type,
@@ -315,9 +323,24 @@ export const updateSurveyAction = authenticatedActionClient.inputSchema(ZSurvey)
       }
     }
 
+    // Detect the acting user's second published survey so the editor can fire an in-app
+    // code action. Computed here (only on a genuine draft→publish) to reuse the auth and
+    // ids this action already resolved and avoid an extra client round-trip. Scoped to
+    // the current user's own surveys so it's correct in shared workspaces. Gated on the
+    // in-app surveys config so it's a true no-op (no extra count query) when the widget
+    // isn't enabled, mirroring the POSTHOG_KEY gate above.
+    let isSecondPublish = false;
+    if (isPublish && IS_FORMBRICKS_SURVEYS_CONFIGURED) {
+      const publishedCount = await getSurveyCount(result.workspaceId, {
+        status: ["inProgress", "paused", "completed"],
+        createdBy: { userId: ctx.user.id, value: ["you"] },
+      });
+      isSecondPublish = publishedCount === 2;
+    }
+
     revalidatePath(`/workspaces/${result.workspaceId}/surveys/${result.id}`);
 
-    return result;
+    return { ...result, isSecondPublish };
   })
 );
 
@@ -378,9 +401,16 @@ const ZGetImagesFromUnsplashAction = z.object({
   page: z.number().optional(),
 });
 
-export const getImagesFromUnsplashAction = actionClient
+// Authenticated: these spend the instance's UNSPLASH_ACCESS_KEY quota on the caller's behalf, and
+// plain `actionClient` left them reachable by anyone on the internet. Both are only ever called
+// from the survey editor, which already requires a session.
+export const getImagesFromUnsplashAction = authenticatedActionClient
   .inputSchema(ZGetImagesFromUnsplashAction)
-  .action(async ({ parsedInput }) => {
+  .action(async ({ parsedInput, ctx }) => {
+    // Per-user: neither action carries a workspace or survey id, so a session is the only thing to
+    // scope against, and the quota being spent belongs to the whole instance.
+    await applyRateLimit(rateLimitConfigs.actions.unsplash, ctx.user.id);
+
     if (!UNSPLASH_ACCESS_KEY) {
       throw new Error("Unsplash access key is not set");
     }
@@ -440,9 +470,14 @@ const ZTriggerDownloadUnsplashImageAction = z.object({
   downloadUrl: z.url(),
 });
 
-export const triggerDownloadUnsplashImageAction = actionClient
+// Authenticated: these spend the instance's UNSPLASH_ACCESS_KEY quota on the caller's behalf, and
+// plain `actionClient` left them reachable by anyone on the internet. Both are only ever called
+// from the survey editor, which already requires a session.
+export const triggerDownloadUnsplashImageAction = authenticatedActionClient
   .inputSchema(ZTriggerDownloadUnsplashImageAction)
-  .action(async ({ parsedInput }) => {
+  .action(async ({ parsedInput, ctx }) => {
+    await applyRateLimit(rateLimitConfigs.actions.unsplash, ctx.user.id);
+
     if (!isValidUnsplashUrl(parsedInput.downloadUrl)) {
       throw new Error("Invalid Unsplash URL");
     }

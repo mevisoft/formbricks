@@ -45,10 +45,14 @@ vi.mock("@/lib/utils/helper", () => ({
 vi.mock("@formbricks/logger", () => ({
   logger: {
     error: vi.fn(),
+    warn: vi.fn(),
   },
 }));
 
-vi.mock("@/lib/crypto", () => ({
+// Stub only `symmetricDecrypt`. The rest of the module stays real because the single-use signature
+// check on this path runs through `constantTimeEqual` — stubbing it out would reject valid signatures.
+vi.mock("@/lib/crypto", async (importOriginal: () => Promise<typeof import("@/lib/crypto")>) => ({
+  ...(await importOriginal()),
   symmetricDecrypt: vi.fn(),
 }));
 vi.mock("@/lib/constants", () => ({
@@ -91,13 +95,14 @@ const mockSurvey: TSurvey = {
   endings: [],
   followUps: [],
   isBackButtonHidden: false,
-  isSingleResponsePerEmailEnabled: false,
   isVerifyEmailEnabled: false,
   workspaceOverwrites: null,
   showLanguageSwitch: false,
   blocks: [],
   isCaptureIpEnabled: false,
   isAutoProgressingEnabled: true,
+  publishOn: null,
+  closeOn: null,
   metadata: {},
   slug: null,
 };
@@ -169,7 +174,8 @@ describe("checkSurveyValidity", () => {
     const result = await checkSurveyValidity(survey, "ws-1", responseInputWithoutToken);
     expect(result).toBeInstanceOf(Response);
     expect(result?.status).toBe(400);
-    expect(logger.error).toHaveBeenCalledWith("Missing recaptcha token");
+    // warn, not error: a missing token on a public endpoint is caller-controlled, not a fault.
+    expect(logger.warn).toHaveBeenCalledWith("Missing recaptcha token");
     expect(responses.badRequestResponse).toHaveBeenCalledWith(
       "Missing recaptcha token",
       { code: "recaptcha_verification_failed" },
@@ -188,7 +194,8 @@ describe("checkSurveyValidity", () => {
     });
     expect(result).toBeInstanceOf(Response);
     expect(result?.status).toBe(404);
-    expect(responses.notFoundResponse).toHaveBeenCalledWith("Organization", null);
+    // cors: true, matching every other response this path returns.
+    expect(responses.notFoundResponse).toHaveBeenCalledWith("Organization", null, true);
     expect(getOrganizationBillingByWorkspaceId).toHaveBeenCalledWith("ws-1");
   });
 
@@ -202,7 +209,7 @@ describe("checkSurveyValidity", () => {
       recaptchaToken: "test-token",
     });
     expect(result).toBeNull();
-    expect(logger.error).toHaveBeenCalledWith("Spam protection is not enabled for this organization");
+    expect(logger.warn).toHaveBeenCalledWith("Spam protection is not enabled for this organization");
   });
 
   test("should return badRequestResponse if recaptcha verification fails", async () => {

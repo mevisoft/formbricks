@@ -9,9 +9,9 @@ import { useTranslation } from "react-i18next";
 import { TOrganization } from "@formbricks/types/organizations";
 import { TAllowedFileExtension } from "@formbricks/types/storage";
 import { TUser } from "@formbricks/types/user";
-import { useWorkspace } from "@/app/(app)/workspaces/[workspaceId]/context/workspace-context";
 import { SettingsCard } from "@/app/(app)/workspaces/[workspaceId]/settings/components/SettingsCard";
 import { cn } from "@/lib/cn";
+import { isExternalImageSrc } from "@/lib/image-hosts";
 import { getFormattedErrorMessage } from "@/lib/utils/helper";
 import {
   removeOrganizationEmailLogoUrlAction,
@@ -52,8 +52,6 @@ export const EmailCustomizationSettings = ({
   isStorageConfigured,
   enterpriseLicenseRequestFormUrl,
 }: EmailCustomizationSettingsProps) => {
-  const { workspace } = useWorkspace();
-  const workspaceBasePath = `/workspaces/${workspace?.id}`;
   const { t } = useTranslation();
 
   const [logoFile, setLogoFile] = useState<File | null>(null);
@@ -189,14 +187,14 @@ export const EmailCustomizationSettings = ({
     {
       text: isFormbricksCloud ? t("common.upgrade_plan") : t("common.request_trial_license"),
       href: isFormbricksCloud
-        ? `${workspaceBasePath}/settings/organization/billing`
+        ? `/organizations/${organization.id}/settings/billing`
         : enterpriseLicenseRequestFormUrl,
     },
     {
       text: t("common.learn_more"),
       href: isFormbricksCloud
-        ? `${workspaceBasePath}/settings/organization/billing`
-        : "https://example.com/learn-more-self-hosting-license",
+        ? `/organizations/${organization.id}/settings/billing`
+        : "https://example.com/learn-more-self-hosting-license?utm_source=formbricks-app&utm_medium=webapp&utm_campaign=ee_lock_email_whitelabel",
     },
   ];
 
@@ -205,14 +203,14 @@ export const EmailCustomizationSettings = ({
       className="overflow-hidden pb-0"
       title={t("workspace.look.email_customization")}
       description={t("workspace.look.email_customization_description")}
-      noPadding>
+      bodyVariant="bleed">
       <div className="px-6 pt-6">
         {hasWhiteLabelPermission ? (
           <div className="flex items-end justify-between gap-4">
             <div className="mb-10">
               <Small>{t("workspace.settings.general.logo_in_email_header")}</Small>
 
-              <div className="mb-6 mt-2 flex items-center gap-4">
+              <div className="mt-2 mb-6 flex items-center gap-4">
                 {logoUrl && (
                   <div className="flex flex-col gap-2">
                     <div className="flex w-max items-center justify-center rounded-lg border border-slate-200 px-4 py-2">
@@ -222,6 +220,7 @@ export const EmailCustomizationSettings = ({
                         className="max-h-24 max-w-full object-contain"
                         width={192}
                         height={192}
+                        unoptimized={isExternalImageSrc(logoUrl)}
                       />
                     </div>
 
@@ -282,7 +281,7 @@ export const EmailCustomizationSettings = ({
                 </Button>
               </div>
             </div>
-            <div className="min-h-52 w-[446px] rounded-t-lg border border-slate-100 px-10 pb-4 pt-10 shadow-card-xl">
+            <div className="min-h-52 w-[446px] rounded-t-lg border border-slate-100 px-10 pt-10 pb-4 shadow-card-xl">
               <Image
                 data-testid="email-customization-preview-image"
                 src={logoUrl || fbLogoUrl}
@@ -290,6 +289,7 @@ export const EmailCustomizationSettings = ({
                 className="mx-auto max-h-[100px] max-w-full object-contain"
                 width={192}
                 height={192}
+                unoptimized={isExternalImageSrc(logoUrl || fbLogoUrl)}
               />
               <P className="font-bold">
                 {t("workspace.settings.general.email_customization_preview_email_heading", {
@@ -311,7 +311,7 @@ export const EmailCustomizationSettings = ({
         )}
 
         {hasWhiteLabelPermission && isReadOnly && (
-          <Alert variant="warning" className="mb-6 mt-4">
+          <Alert variant="warning" className="mt-4 mb-6" role="status">
             <AlertDescription>
               {t("common.only_owners_managers_and_manage_access_members_can_perform_this_action")}
             </AlertDescription>

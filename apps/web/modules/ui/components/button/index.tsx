@@ -5,15 +5,16 @@ import * as React from "react";
 import { cn } from "@/modules/ui/lib/utils";
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50 disabled:cursor-not-allowed [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50 disabled:cursor-not-allowed [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
   {
     variants: {
       variant: {
-        default: "bg-primary text-primary-foreground shadow enabled:hover:bg-primary/90",
-        destructive: "bg-destructive text-destructive-foreground shadow-sm enabled:hover:bg-destructive/90",
+        default: "bg-primary text-primary-foreground enabled:hover:bg-primary/80",
+        destructive: "bg-destructive text-destructive-foreground enabled:hover:bg-destructive/80",
         outline:
-          "border border-input bg-background shadow-sm enabled:hover:bg-accent enabled:hover:text-accent-foreground",
-        secondary: "bg-secondary text-secondary-foreground shadow-sm enabled:hover:bg-secondary/50",
+          "border border-input bg-background enabled:hover:bg-accent enabled:hover:text-accent-foreground",
+        secondary:
+          "bg-secondary text-secondary-foreground enabled:hover:bg-secondary/30 border border-primary/5 hover:border-primary/20",
         ghost: "enabled:hover:bg-accent enabled:hover:text-accent-foreground text-primary",
         link: "text-primary underline-offset-4 enabled:hover:underline",
       },
@@ -25,7 +26,7 @@ const buttonVariants = cva(
         tall: "h-10 rounded-md px-3 text-xs",
       },
       loading: {
-        true: "cursor-not-allowed opacity-50",
+        true: "relative cursor-not-allowed opacity-50",
       },
     },
     defaultVariants: {
@@ -52,9 +53,11 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
         {...props}
         disabled={loading || disabled}>
         {loading ? (
+          // Keep the label in the layout but invisible and center the spinner over it, so the
+          // button's width never changes between idle and loading (no layout shift).
           <>
-            <Loader2 className="animate-spin" />
-            {children}
+            <Loader2 className="absolute inset-0 m-auto animate-spin" />
+            <span className="invisible inline-flex items-center gap-2">{children}</span>
           </>
         ) : (
           children

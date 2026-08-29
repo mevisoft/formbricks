@@ -1,6 +1,6 @@
-import { Prisma, Response } from "@prisma/client";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { prisma } from "@formbricks/database";
+import { Prisma, Response } from "@formbricks/database/prisma";
 import { logger } from "@formbricks/logger";
 import { TSurveyQuota } from "@formbricks/types/quota";
 import { TResponseData, TResponseVariables } from "@formbricks/types/responses";
@@ -99,6 +99,9 @@ describe("Quota Evaluation Service", () => {
     delay: 0,
     displayPercentage: null,
     isBackButtonHidden: false,
+    isAutoProgressingEnabled: false,
+    publishOn: null,
+    closeOn: null,
     workspaceOverwrites: null,
     styling: null,
     showLanguageSwitch: null,
@@ -111,7 +114,6 @@ describe("Quota Evaluation Service", () => {
     createdBy: null,
     followUps: [],
     isVerifyEmailEnabled: false,
-    isSingleResponsePerEmailEnabled: false,
     surveyClosedMessage: null,
     singleUse: null,
     pin: null,

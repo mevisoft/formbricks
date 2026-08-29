@@ -3,11 +3,11 @@
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { useAutoAnimate } from "@formkit/auto-animate/react";
-import { Workspace } from "@prisma/client";
 import * as Collapsible from "@radix-ui/react-collapsible";
 import { ChevronDownIcon, ChevronRightIcon, GripIcon } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Workspace } from "@formbricks/database/prisma-browser";
 import { TI18nString } from "@formbricks/types/i18n";
 import { TSurveyBlock, TSurveyBlockLogic } from "@formbricks/types/surveys/blocks";
 import { TSurveyElement, TSurveyElementTypeEnum } from "@formbricks/types/surveys/elements";
@@ -23,6 +23,7 @@ import { BlockMenu } from "@/modules/survey/editor/components/block-menu";
 import { BlockSettings } from "@/modules/survey/editor/components/block-settings";
 import { CalElementForm } from "@/modules/survey/editor/components/cal-element-form";
 import { CESElementForm } from "@/modules/survey/editor/components/ces-element-form";
+import { ConditionalLogic } from "@/modules/survey/editor/components/conditional-logic";
 import { ConsentElementForm } from "@/modules/survey/editor/components/consent-element-form";
 import { ContactInfoElementForm } from "@/modules/survey/editor/components/contact-info-element-form";
 import { CSATElementForm } from "@/modules/survey/editor/components/csat-element-form";
@@ -127,12 +128,12 @@ export const BlockCard = ({
   const isBlockOpen = block.elements.some((element) => element.id === activeElementId);
 
   const hasInvalidElement = block.elements.some((element) => invalidElements?.includes(element.id));
-  const isBlockInvalid = hasInvalidElement;
+  const hasInvalidLogic = blockLogic.some((logicItem) => invalidElements?.includes(logicItem.id));
+  const isBlockInvalid = hasInvalidElement || hasInvalidLogic;
 
   const [isBlockCollapsed, setIsBlockCollapsed] = useState(false);
   const [openAdvanced, setOpenAdvanced] = useState(blockLogic.length > 0);
 
-  const [parent] = useAutoAnimate();
   const [elementsParent] = useAutoAnimate();
 
   const getElementHeadline = (
@@ -246,7 +247,8 @@ export const BlockCard = ({
     <div
       className={cn(
         isBlockOpen ? "shadow-lg" : "shadow-md",
-        "flex w-full flex-row rounded-lg bg-white duration-300"
+        // scroll-mt clears the fixed tabs bar (h-12) when scrolled into view on validation errors
+        "flex w-full scroll-mt-16 flex-row rounded-lg bg-white duration-300"
       )}
       ref={setNodeRef}
       style={style}
@@ -266,7 +268,7 @@ export const BlockCard = ({
 
         <button
           type="button"
-          className="opacity-0 hover:cursor-move group-hover:opacity-100"
+          className="opacity-0 group-hover:opacity-100 hover:cursor-move"
           aria-label="Drag to reorder block">
           <GripIcon className="size-4" />
         </button>
@@ -319,7 +321,7 @@ export const BlockCard = ({
                   <div
                     key={element.id}
                     id={element.id}
-                    className={cn(elementIndex > 0 && "border-t border-slate-200")}>
+                    className={cn("scroll-mt-16", elementIndex > 0 && "border-t border-slate-200")}>
                     <Collapsible.Root
                       open={isOpen}
                       onOpenChange={() => {
@@ -394,7 +396,7 @@ export const BlockCard = ({
                       </Collapsible.CollapsibleTrigger>
                       <Collapsible.CollapsibleContent className={`flex flex-col px-4 ${isOpen && "pb-4"}`}>
                         {shouldShowCautionAlert(element.type) && (
-                          <Alert variant="warning" size="small" className="w-fill mt-2" role="alert">
+                          <Alert variant="warning" size="small" className="w-fill mt-2" role="status">
                             <AlertTitle>{t("workspace.surveys.edit.caution_text")}</AlertTitle>
                             <AlertButton onClick={() => onAlertTrigger()}>
                               {t("common.learn_more")}
@@ -420,7 +422,7 @@ export const BlockCard = ({
                                 : t("workspace.surveys.edit.show_question_settings")}
                             </Collapsible.CollapsibleTrigger>
 
-                            <Collapsible.CollapsibleContent className="flex flex-col gap-4" ref={parent}>
+                            <Collapsible.CollapsibleContent className="flex flex-col gap-4 overflow-hidden data-[state=closed]:animate-collapsible-up data-[state=open]:animate-collapsible-down">
                               {element.type !== TSurveyElementTypeEnum.NPS &&
                               element.type !== TSurveyElementTypeEnum.Rating &&
                               element.type !== TSurveyElementTypeEnum.CTA ? (
@@ -460,6 +462,20 @@ export const BlockCard = ({
 
             <hr className="border-dashed border-slate-200" />
 
+            {/* Conditional Logic */}
+            {block.elements[0] && (
+              <div className="p-4 pb-0">
+                <ConditionalLogic
+                  localSurvey={localSurvey}
+                  block={block}
+                  blockIdx={blockIdx}
+                  updateBlockLogic={updateBlockLogic}
+                  updateBlockLogicFallback={updateBlockLogicFallback}
+                  invalidElements={invalidElements}
+                />
+              </div>
+            )}
+
             {/* Block Settings */}
             <div className="p-4">
               <BlockSettings
@@ -468,8 +484,6 @@ export const BlockCard = ({
                 blockIndex={blockIdx}
                 selectedLanguageCode={selectedLanguageCode}
                 updateBlockButtonLabel={updateBlockButtonLabel}
-                updateBlockLogic={updateBlockLogic}
-                updateBlockLogicFallback={updateBlockLogicFallback}
                 locale={locale}
                 isStorageConfigured={isStorageConfigured}
                 isLastBlock={blockIdx === totalBlocks - 1}

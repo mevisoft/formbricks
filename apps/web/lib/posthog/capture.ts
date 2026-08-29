@@ -41,6 +41,24 @@ export function capturePostHogEvent(
   }
 }
 
+export function identifyPostHogPerson(distinctId: string, properties?: PostHogEventProperties): void {
+  if (!posthogServerClient) return;
+
+  try {
+    posthogServerClient.identify({ distinctId, properties });
+  } catch (error) {
+    logger.warn({ error }, "Failed to identify PostHog person");
+  }
+}
+
+/**
+ * Extracts the lowercased domain part of an email address for use as a PostHog
+ * property. Returns undefined when the email has no domain part.
+ */
+export function getEmailDomain(email: string): string | undefined {
+  return email.split("@")[1]?.toLowerCase() || undefined;
+}
+
 type PostHogGroupType = "organization" | "workspace";
 
 export function groupIdentifyPostHog(

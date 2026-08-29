@@ -1,13 +1,15 @@
 import "server-only";
-import { randomInt } from "node:crypto";
+import { randomInt, randomUUID } from "node:crypto";
 import { z } from "zod";
+import { logger } from "@formbricks/logger";
 import { type TResponseData, type TResponseInput, type TResponseTtc } from "@formbricks/types/responses";
 import { type TSurveyElement, TSurveyElementTypeEnum } from "@formbricks/types/surveys/elements";
 import { type TSurvey } from "@formbricks/types/surveys/types";
 import { generateOrganizationAIObject } from "@/lib/ai/service";
 import { getLocalizedValue } from "@/lib/i18n/utils";
+import { AI_TRACING_FEATURE } from "@/lib/posthog/ai-tracing-feature";
 
-export const EXAMPLE_RESPONSE_COUNT = 10;
+export const EXAMPLE_RESPONSE_COUNT = 20;
 // Impression-only displays simulate respondents who saw the survey but didn't
 // submit. Combined with the response count, the dashboard's completion rate
 // lands around 62% — close to typical web survey benchmarks.
@@ -18,6 +20,9 @@ export const EXAMPLE_AI_GENERATED_TAG_NAME = "AI-generated example response";
 // abandonment. The remaining ~80% are finished.
 const DROP_OFF_RATE = 0.2;
 const RESPONSE_TIME_SPREAD_DAYS = 10;
+const OPEN_TEXT_AI_TIMEOUT_MS = 45_000;
+const OPEN_TEXT_AI_MAX_OUTPUT_TOKENS = 4096;
+const OPEN_TEXT_AI_MAX_REQUESTED_ANSWERS_PER_CHUNK = 20;
 
 // Realistic distributions for synthetic response metadata. Weighted toward
 // common values so charts don't look uniformly random.
@@ -314,13 +319,62 @@ export type TExampleResponseSchemaContext = {
   openTextElementIds: string[];
 };
 
+type TOpenTextAIAnswer = {
+  elementId: string;
+  answer: string;
+};
+
+type TOpenTextAIResponse = {
+  rowId: string;
+  answers: TOpenTextAIAnswer[];
+};
+
+type TOpenTextAIResult = {
+  responses: TOpenTextAIResponse[];
+};
+
+const chunkOpenTextRows = (rows: TExampleResponsePlanRow[]): TExampleResponsePlanRow[][] => {
+  const chunks: TExampleResponsePlanRow[][] = [];
+  let currentChunk: TExampleResponsePlanRow[] = [];
+  let currentRequestedAnswerCount = 0;
+
+  for (const row of rows) {
+    const rowRequestedAnswerCount = row.openTextElementIds.length;
+    const wouldExceedChunk =
+      currentChunk.length > 0 &&
+      currentRequestedAnswerCount + rowRequestedAnswerCount > OPEN_TEXT_AI_MAX_REQUESTED_ANSWERS_PER_CHUNK;
+
+    if (wouldExceedChunk) {
+      chunks.push(currentChunk);
+      currentChunk = [];
+      currentRequestedAnswerCount = 0;
+    }
+
+    currentChunk.push(row);
+    currentRequestedAnswerCount += rowRequestedAnswerCount;
+  }
+
+  if (currentChunk.length > 0) {
+    chunks.push(currentChunk);
+  }
+
+  return chunks;
+};
+
 const buildOpenTextResponsesSchema = (): z.ZodTypeAny =>
   z.object({
     responses: z
       .array(
         z.object({
           rowId: z.string().min(1),
-          answers: z.record(z.string(), z.string().min(1)),
+          answers: z
+            .array(
+              z.object({
+                elementId: z.string().min(1),
+                answer: z.string().min(1),
+              })
+            )
+            .default([]),
         })
       )
       .default([]),
@@ -440,13 +494,18 @@ Style:
 
 Example output shape:
 { "responses": [
-  { "rowId": "row_0", "answers": { "<elementId1>": "...", "<elementId2>": "..." } },
+  { "rowId": "row_0", "answers": [
+    { "elementId": "<elementId1>", "answer": "..." },
+    { "elementId": "<elementId2>", "answer": "..." }
+  ] },
   ...
 ] }`;
 
 export type TGenerateExampleResponsesArgs = {
   survey: TSurvey;
   organizationId: string;
+  workspaceId: string;
+  userId: string;
 };
 
 export type TGeneratedExampleResponse = {
@@ -872,36 +931,56 @@ const buildFallbackOpenTextAnswer = (
 const fillOpenTextAnswers = async (
   survey: TSurvey,
   organizationId: string,
+  workspaceId: string,
+  userId: string,
+  traceId: string,
   planRows: TExampleResponsePlanRow[]
 ): Promise<TExampleResponsePlanRow[]> => {
   const rowsNeedingText = planRows.filter((row) => row.openTextElementIds.length > 0);
   if (rowsNeedingText.length === 0) return planRows;
   const elementsById = new Map(collectSurveyElements(survey).map((element) => [element.id, element]));
 
-  const { object } = await generateOrganizationAIObject<{
-    responses: Array<{ rowId: string; answers: Record<string, string> }>;
-  }>({
-    organizationId,
-    schema: buildOpenTextResponsesSchema() as z.ZodType<{
-      responses: Array<{ rowId: string; answers: Record<string, string> }>;
-    }>,
-    system: SYSTEM_PROMPT,
-    prompt: `Write one short answer for each requestedOpenTextAnswers entry in every row below. Every requested elementId must map to a non-empty string in your output. Stay grounded in the actual question headline for each elementId.
+  const aiResponses: TOpenTextAIResponse[] = [];
+
+  for (const rowsChunk of chunkOpenTextRows(rowsNeedingText)) {
+    try {
+      const result = await generateOrganizationAIObject<TOpenTextAIResult>({
+        organizationId,
+        aiTracing: { distinctId: userId, feature: AI_TRACING_FEATURE.ExampleResponses, workspaceId, traceId },
+        schema: buildOpenTextResponsesSchema() as z.ZodType<TOpenTextAIResult>,
+        system: SYSTEM_PROMPT,
+        prompt: `Write one short answer for each requestedOpenTextAnswers entry in every row below. Every requested elementId must map to a non-empty string in your output. Stay grounded in the actual question headline for each elementId.
 
 Survey context (JSON):
-${JSON.stringify(buildOpenTextLlmContext(survey, rowsNeedingText), null, 2)}`,
-  });
+${JSON.stringify(buildOpenTextLlmContext(survey, rowsChunk), null, 2)}`,
+        temperature: 0,
+        maxOutputTokens: OPEN_TEXT_AI_MAX_OUTPUT_TOKENS,
+        timeout: OPEN_TEXT_AI_TIMEOUT_MS,
+      });
+      aiResponses.push(...result.object.responses);
+    } catch (err) {
+      logger.error(
+        { err, organizationId },
+        "Failed to generate open-text example responses with AI; using fallback answers"
+      );
+    }
+  }
 
-  const answersByRowId = new Map(object.responses.map((response) => [response.rowId, response.answers]));
+  const answersByRowId = new Map(
+    aiResponses.map((response) => [
+      response.rowId,
+      new Map(response.answers.map(({ elementId, answer }) => [elementId, answer])),
+    ])
+  );
 
   return planRows.map((row) => {
     if (row.openTextElementIds.length === 0) return row;
 
-    const llmAnswers = answersByRowId.get(row.rowId) ?? {};
+    const llmAnswers = answersByRowId.get(row.rowId);
     const openTextAnswers: Record<string, string> = {};
     for (const elementId of row.openTextElementIds) {
       openTextAnswers[elementId] =
-        llmAnswers[elementId] || buildFallbackOpenTextAnswer(row.profile, elementsById.get(elementId));
+        llmAnswers?.get(elementId) || buildFallbackOpenTextAnswer(row.profile, elementsById.get(elementId));
     }
 
     // Belt-and-suspenders: even with the prompt rules and varied fallbacks,
@@ -938,13 +1017,25 @@ const toGeneratedResponse = (row: TExampleResponsePlanRow): TGeneratedExampleRes
 export const generateExampleResponseDataset = async ({
   survey,
   organizationId,
+  workspaceId,
+  userId,
 }: TGenerateExampleResponsesArgs): Promise<TGeneratedExampleDataset> => {
   const planRows = buildExampleResponsePlan(survey);
   if (planRows.length === 0) {
     return { responses: [], displays: [], tagName: EXAMPLE_AI_GENERATED_TAG_NAME };
   }
 
-  const rowsWithText = await fillOpenTextAnswers(survey, organizationId, planRows);
+  // Shared across every chunked AI call below so PostHog groups them under one
+  // $ai_trace per "Generate examples" click instead of N disconnected traces.
+  const traceId = randomUUID();
+  const rowsWithText = await fillOpenTextAnswers(
+    survey,
+    organizationId,
+    workspaceId,
+    userId,
+    traceId,
+    planRows
+  );
 
   return {
     responses: rowsWithText.map(toGeneratedResponse),

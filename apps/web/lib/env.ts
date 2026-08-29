@@ -1,6 +1,8 @@
 import { createEnv } from "@t3-oss/env-nextjs";
 import { z } from "zod";
 import { AI_PROVIDERS } from "@formbricks/types/ai";
+import { isValidIanaTimeZone } from "@formbricks/types/common";
+import { throwEnvValidationError } from "./env-validation-error";
 
 const ZActiveAIProvider = z.enum(AI_PROVIDERS);
 
@@ -181,17 +183,8 @@ const validateActiveAIProviderConfiguration = (values: TAIConfigurationEnv, ctx:
   providerValidators[values.AI_PROVIDER](values, ctx);
 };
 
-const isValidIanaTimeZone = (value: string): boolean => {
-  try {
-    new Intl.DateTimeFormat("en-US", { timeZone: value });
-    return true;
-  } catch {
-    return false;
-  }
-};
-
 const ZSurveySchedulingTimeZone = z.string().trim().min(1).refine(isValidIanaTimeZone, {
-  message: "NEXT_PUBLIC_SURVEY_SCHEDULING_TIME_ZONE must be a valid IANA time zone",
+  message: "SURVEY_SCHEDULING_TIME_ZONE must be a valid IANA time zone",
 });
 
 const ZSurveySchedulingLocalHour = z.coerce.number().int().min(0).max(23);
@@ -201,6 +194,7 @@ const emptyStringToUndefined = (value: unknown) =>
 const ZOptionalNonEmptyString = z.preprocess(emptyStringToUndefined, z.string().trim().min(1).optional());
 
 const parsedEnv = createEnv({
+  onValidationError: throwEnvValidationError,
   /*
    * Serverside Environment variables, not available on the client.
    * Will throw if you access these variables on the client.
@@ -216,7 +210,6 @@ const parsedEnv = createEnv({
     BREVO_API_KEY: z.string().optional(),
     BREVO_LIST_ID: z.string().optional(),
     DATABASE_URL: z.url(),
-    DISABLE_ACCOUNT_DELETION_SSO_CONFIRMATION: z.enum(["1", "0"]).optional(),
     DANGEROUSLY_ALLOW_WEBHOOK_INTERNAL_URLS: z.enum(["1", "0"]).optional(),
     DEBUG_SHOW_RESET_LINK: z.enum(["1", "0"]).optional(),
     // DEBUG is a common ambient env var in CI/tooling, so we accept arbitrary strings here
@@ -224,6 +217,9 @@ const parsedEnv = createEnv({
     DEBUG: z.string().optional(),
     AUTH_DEFAULT_TEAM_ID: z.string().optional(),
     AUTH_SKIP_INVITE_FOR_SSO: z.enum(["1", "0"]).optional(),
+    // Cloud-only: when "1", the personal-email sign-up block also applies to invited users.
+    // Default (unset/"0") exempts invites — see isSignupEmailDomainBlocked.
+    SIGNUP_DOMAIN_CHECK_ON_INVITES: z.enum(["1", "0"]).optional(),
     BULLMQ_WORKER_CONCURRENCY: z.coerce.number().int().min(1).optional(),
     BULLMQ_WORKER_COUNT: z.coerce.number().int().min(1).optional(),
     BULLMQ_EXTERNAL_WORKER_ENABLED: z.enum(["1", "0"]).optional(),
@@ -274,14 +270,25 @@ const parsedEnv = createEnv({
       .or(z.string().refine((str) => str === "")),
     IMPRINT_ADDRESS: z.string().optional(),
     INVITE_DISABLED: z.enum(["1", "0"]).optional(),
-    CHATWOOT_WEBSITE_TOKEN: z.string().optional(),
-    CHATWOOT_BASE_URL: z.url().optional(),
+    PLAIN_APP_ID: z.string().optional(),
+    PLAIN_CHAT_HMAC_SECRET: z.string().optional(),
+    PLAIN_ACTIVE_CUSTOMER_LABEL_TYPE_ID: z.string().optional(),
+    // Formbricks-in-Formbricks: dogfood in-app surveys. Points at the Formbricks
+    // instance that hosts the surveys (defaults to Formbricks Cloud). When
+    // FORMBRICKS_WORKSPACE_ID is set, the survey widget is mounted in the app.
+    FORMBRICKS_WORKSPACE_ID: z.string().optional(),
+    FORMBRICKS_APP_URL: z.url().optional(),
     IS_FORMBRICKS_CLOUD: z.enum(["1", "0"]).optional(),
     POSTHOG_KEY: z.string().optional(),
     LOG_LEVEL: z.enum(["debug", "info", "warn", "error", "fatal"]).optional(),
     MAIL_FROM: z.email().optional(),
     NEXTAUTH_URL: z.url().optional(),
     NEXTAUTH_SECRET: z.string().optional(),
+    // Better Auth (ENG-1054). Optional during the additive migration; BA requires a strong
+    // (>=32 char) secret in production and throws if unset there. Enforce the floor when set so a
+    // weak secret can't silently ship (it stays optional for the pre-cutover rollout).
+    BETTER_AUTH_SECRET: z.string().min(32).optional(),
+    BETTER_AUTH_URL: z.url().optional(),
     MAIL_FROM_NAME: z.string().optional(),
     NOTION_OAUTH_CLIENT_ID: z.string().optional(),
     NOTION_OAUTH_CLIENT_SECRET: z.string().optional(),
@@ -294,6 +301,7 @@ const parsedEnv = createEnv({
       process.env.NODE_ENV === "test"
         ? z.string().optional()
         : z.url("REDIS_URL is required for caching, rate limiting, and audit logging"),
+    PASSWORD_HIBP_CHECK_DISABLED: z.enum(["1", "0"]).optional(),
     PASSWORD_RESET_DISABLED: z.enum(["1", "0"]).optional(),
     PASSWORD_RESET_TOKEN_LIFETIME_MINUTES: z.coerce.number().int().min(5).max(120).optional().default(30),
     PRIVACY_URL: z
@@ -301,6 +309,18 @@ const parsedEnv = createEnv({
       .optional()
       .or(z.string().refine((str) => str === "")),
     RATE_LIMITING_DISABLED: z.enum(["1", "0"]).optional(),
+    // Number of reverse proxies in front of the app whose X-Forwarded-For entries can be believed.
+    // Unset falls back to 1 (see TRUSTED_PROXY_HOP_COUNT in lib/constants.ts); an explicit 0 trusts no
+    // forwarding header at all. See resolveClientIp in lib/utils/client-ip.ts.
+    // Preprocessed because `z.coerce.number()` turns "" into 0, and 0 is a *valid* value here (the
+    // explicit "trust nothing" opt-out) rather than something `.min()` would reject. A deployment that
+    // renders the variable empty when unset — the common docker-compose / Helm shape — would otherwise
+    // silently opt out of trusting any forwarding header, collapsing every request into one rate-limit
+    // bucket. The neighbouring numeric vars only fail loudly on "" because their minimums exceed 0.
+    TRUSTED_PROXY_HOP_COUNT: z.preprocess(
+      (value) => (value === "" ? undefined : value),
+      z.coerce.number().int().min(0).max(10).optional()
+    ),
     TELEMETRY_DISABLED: z.enum(["1", "0"]).optional(),
     S3_ACCESS_KEY: z.string().optional(),
     S3_BUCKET_NAME: z.string().optional(),
@@ -360,12 +380,11 @@ const parsedEnv = createEnv({
       .transform((val) => Number.parseInt(val, 10))
       .optional(),
     SENTRY_ENVIRONMENT: z.string().optional(),
+    SURVEY_SCHEDULING_TIME_ZONE: ZSurveySchedulingTimeZone.optional().default("Europe/Berlin"),
+    SURVEY_SCHEDULING_LOCAL_HOUR: ZSurveySchedulingLocalHour.optional().default(0),
+    SURVEY_SCHEDULING_LOCAL_MINUTE: ZSurveySchedulingLocalMinute.optional().default(0),
   },
-  client: {
-    NEXT_PUBLIC_SURVEY_SCHEDULING_TIME_ZONE: ZSurveySchedulingTimeZone.optional().default("Europe/Berlin"),
-    NEXT_PUBLIC_SURVEY_SCHEDULING_LOCAL_HOUR: ZSurveySchedulingLocalHour.optional().default(0),
-    NEXT_PUBLIC_SURVEY_SCHEDULING_LOCAL_MINUTE: ZSurveySchedulingLocalMinute.optional().default(0),
-  },
+  client: {},
 
   /*
    * Due to how Next.js bundles environment variables on Edge and Client,
@@ -380,16 +399,18 @@ const parsedEnv = createEnv({
     AZUREAD_CLIENT_ID: process.env.AZUREAD_CLIENT_ID,
     AZUREAD_CLIENT_SECRET: process.env.AZUREAD_CLIENT_SECRET,
     AZUREAD_TENANT_ID: process.env.AZUREAD_TENANT_ID,
+    BETTER_AUTH_SECRET: process.env.BETTER_AUTH_SECRET,
+    BETTER_AUTH_URL: process.env.BETTER_AUTH_URL,
     BREVO_API_KEY: process.env.BREVO_API_KEY,
     BREVO_LIST_ID: process.env.BREVO_LIST_ID,
     CRON_SECRET: process.env.CRON_SECRET,
     DATABASE_URL: process.env.DATABASE_URL,
-    DISABLE_ACCOUNT_DELETION_SSO_CONFIRMATION: process.env.DISABLE_ACCOUNT_DELETION_SSO_CONFIRMATION,
     DANGEROUSLY_ALLOW_WEBHOOK_INTERNAL_URLS: process.env.DANGEROUSLY_ALLOW_WEBHOOK_INTERNAL_URLS,
     DEBUG: process.env.DEBUG,
     DEBUG_SHOW_RESET_LINK: process.env.DEBUG_SHOW_RESET_LINK,
     AUTH_DEFAULT_TEAM_ID: process.env.AUTH_SSO_DEFAULT_TEAM_ID,
     AUTH_SKIP_INVITE_FOR_SSO: process.env.AUTH_SKIP_INVITE_FOR_SSO,
+    SIGNUP_DOMAIN_CHECK_ON_INVITES: process.env.SIGNUP_DOMAIN_CHECK_ON_INVITES,
     BULLMQ_EXTERNAL_WORKER_ENABLED: process.env.BULLMQ_EXTERNAL_WORKER_ENABLED,
     BULLMQ_WORKER_CONCURRENCY: process.env.BULLMQ_WORKER_CONCURRENCY,
     BULLMQ_WORKER_COUNT: process.env.BULLMQ_WORKER_COUNT,
@@ -438,8 +459,11 @@ const parsedEnv = createEnv({
     IMPRINT_URL: process.env.IMPRINT_URL,
     IMPRINT_ADDRESS: process.env.IMPRINT_ADDRESS,
     INVITE_DISABLED: process.env.INVITE_DISABLED,
-    CHATWOOT_WEBSITE_TOKEN: process.env.CHATWOOT_WEBSITE_TOKEN,
-    CHATWOOT_BASE_URL: process.env.CHATWOOT_BASE_URL,
+    PLAIN_APP_ID: process.env.PLAIN_APP_ID,
+    PLAIN_CHAT_HMAC_SECRET: process.env.PLAIN_CHAT_HMAC_SECRET,
+    PLAIN_ACTIVE_CUSTOMER_LABEL_TYPE_ID: process.env.PLAIN_ACTIVE_CUSTOMER_LABEL_TYPE_ID,
+    FORMBRICKS_WORKSPACE_ID: process.env.FORMBRICKS_WORKSPACE_ID,
+    FORMBRICKS_APP_URL: process.env.FORMBRICKS_APP_URL,
     IS_FORMBRICKS_CLOUD: process.env.IS_FORMBRICKS_CLOUD,
     POSTHOG_KEY: process.env.POSTHOG_KEY,
     LOG_LEVEL: process.env.LOG_LEVEL,
@@ -447,9 +471,9 @@ const parsedEnv = createEnv({
     MAIL_FROM_NAME: process.env.MAIL_FROM_NAME,
     NEXTAUTH_URL: process.env.NEXTAUTH_URL,
     NEXTAUTH_SECRET: process.env.NEXTAUTH_SECRET,
-    NEXT_PUBLIC_SURVEY_SCHEDULING_LOCAL_HOUR: process.env.NEXT_PUBLIC_SURVEY_SCHEDULING_LOCAL_HOUR,
-    NEXT_PUBLIC_SURVEY_SCHEDULING_LOCAL_MINUTE: process.env.NEXT_PUBLIC_SURVEY_SCHEDULING_LOCAL_MINUTE,
-    NEXT_PUBLIC_SURVEY_SCHEDULING_TIME_ZONE: process.env.NEXT_PUBLIC_SURVEY_SCHEDULING_TIME_ZONE,
+    SURVEY_SCHEDULING_LOCAL_HOUR: process.env.SURVEY_SCHEDULING_LOCAL_HOUR,
+    SURVEY_SCHEDULING_LOCAL_MINUTE: process.env.SURVEY_SCHEDULING_LOCAL_MINUTE,
+    SURVEY_SCHEDULING_TIME_ZONE: process.env.SURVEY_SCHEDULING_TIME_ZONE,
     SENTRY_DSN: process.env.SENTRY_DSN,
     NOTION_OAUTH_CLIENT_ID: process.env.NOTION_OAUTH_CLIENT_ID,
     NOTION_OAUTH_CLIENT_SECRET: process.env.NOTION_OAUTH_CLIENT_SECRET,
@@ -459,10 +483,12 @@ const parsedEnv = createEnv({
     OIDC_ISSUER: process.env.OIDC_ISSUER,
     OIDC_SIGNING_ALGORITHM: process.env.OIDC_SIGNING_ALGORITHM,
     REDIS_URL: process.env.REDIS_URL,
+    PASSWORD_HIBP_CHECK_DISABLED: process.env.PASSWORD_HIBP_CHECK_DISABLED,
     PASSWORD_RESET_DISABLED: process.env.PASSWORD_RESET_DISABLED,
     PASSWORD_RESET_TOKEN_LIFETIME_MINUTES: process.env.PASSWORD_RESET_TOKEN_LIFETIME_MINUTES,
     PRIVACY_URL: process.env.PRIVACY_URL,
     RATE_LIMITING_DISABLED: process.env.RATE_LIMITING_DISABLED,
+    TRUSTED_PROXY_HOP_COUNT: process.env.TRUSTED_PROXY_HOP_COUNT,
     TELEMETRY_DISABLED: process.env.TELEMETRY_DISABLED,
     S3_ACCESS_KEY: process.env.S3_ACCESS_KEY,
     S3_BUCKET_NAME: process.env.S3_BUCKET_NAME,

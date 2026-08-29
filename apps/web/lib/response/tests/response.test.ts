@@ -1,6 +1,7 @@
 import {
   getMockUpdateResponseInput,
   mockContact,
+  mockContactId,
   mockDisplay,
   mockResponse,
   mockResponseData,
@@ -12,9 +13,9 @@ import {
   mockWorkspaceId,
 } from "./__mocks__/data.mock";
 import { prisma } from "@/lib/__mocks__/database";
-import { Prisma } from "@prisma/client";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { testInputValidation } from "vitestSetup";
+import { Prisma } from "@formbricks/database/prisma";
 import { PrismaErrorType } from "@formbricks/database/types/error";
 import { DatabaseError, ResourceNotFoundError } from "@formbricks/types/errors";
 import { TResponse } from "@formbricks/types/responses";
@@ -31,6 +32,8 @@ import {
   getResponseBySingleUseId,
   getResponseCountBySurveyId,
   getResponseDownloadFile,
+  getResponseWithQuotas,
+  getResponsesByContactId,
   getResponsesByWorkspaceId,
   responseSelection,
   updateResponse,
@@ -166,6 +169,70 @@ describe("Tests for getResponse service", () => {
       prisma.response.findUnique.mockRejectedValue(new Error(mockErrorMessage));
 
       await expect(getResponse(mockResponse.id)).rejects.toThrow(Error);
+    });
+  });
+});
+
+describe("Tests for getResponseWithQuotas service", () => {
+  describe("Happy Path", () => {
+    test("Returns the response with screened-in quotas", async () => {
+      prisma.response.findUnique.mockResolvedValue(mockResponseWithQuotas);
+
+      const result = await getResponseWithQuotas(mockResponseWithQuotas.id);
+
+      expect(result).toEqual({
+        ...expectedResponseWithoutPerson,
+        quotas: mockResponseWithQuotas.quotaLinks.map(
+          (ql: { quota: { id: string; name: string } }) => ql.quota
+        ),
+      });
+    });
+
+    test("Returns an empty quotas array when no quotaLinks are screened in", async () => {
+      prisma.response.findUnique.mockResolvedValue({ ...mockResponse, quotaLinks: [] } as any);
+
+      const result = await getResponseWithQuotas(mockResponse.id);
+
+      expect(result).toEqual({ ...expectedResponseWithoutPerson, quotas: [] });
+    });
+
+    test("Selects only screened-in quotaLinks", async () => {
+      prisma.response.findUnique.mockResolvedValue({ ...mockResponse, quotaLinks: [] } as any);
+
+      await getResponseWithQuotas(mockResponse.id);
+
+      const findUniqueCall = prisma.response.findUnique.mock.calls.at(-1)?.[0];
+      expect(findUniqueCall?.select?.quotaLinks).toEqual({
+        where: { status: "screenedIn" },
+        include: { quota: { select: { id: true, name: true } } },
+      });
+    });
+  });
+
+  describe("Sad Path", () => {
+    testInputValidation(getResponseWithQuotas, "123#");
+
+    test("Returns null when no response is found", async () => {
+      prisma.response.findUnique.mockResolvedValue(null);
+
+      const result = await getResponseWithQuotas(mockResponse.id);
+      expect(result).toBeNull();
+    });
+
+    test("Throws DatabaseError on PrismaClientKnownRequestError", async () => {
+      const errToThrow = new Prisma.PrismaClientKnownRequestError("Mock error", {
+        code: PrismaErrorType.UniqueConstraintViolation,
+        clientVersion: "0.0.1",
+      });
+      prisma.response.findUnique.mockRejectedValue(errToThrow);
+
+      await expect(getResponseWithQuotas(mockResponse.id)).rejects.toThrow(DatabaseError);
+    });
+
+    test("Rethrows generic errors", async () => {
+      prisma.response.findUnique.mockRejectedValue(new Error("boom"));
+
+      await expect(getResponseWithQuotas(mockResponse.id)).rejects.toThrow("boom");
     });
   });
 });
@@ -468,4 +535,28 @@ describe("Tests for getResponseCountBySurveyId service", () => {
       await expect(getResponseCountBySurveyId(mockSurveyId)).rejects.toThrow(Error);
     });
   });
+});
+
+// ENG-2290: a contact id alone is not a tenant boundary. The contact detail page is reached through
+// a workspace id in the URL, so the responses it loads must be filtered through the workspace of the
+// contact they belong to — otherwise an authorized workspace id paired with a foreign contact id
+// reads that contact's answers.
+describe("getResponsesByContactId", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  test("scopes the query to the workspace of the contact", async () => {
+    prisma.response.findMany.mockResolvedValue([]);
+
+    await getResponsesByContactId(mockContactId, mockWorkspaceId);
+
+    expect(prisma.response.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { contactId: mockContactId, contact: { workspaceId: mockWorkspaceId } },
+      })
+    );
+  });
+
+  testInputValidation(getResponsesByContactId, "123#", mockWorkspaceId);
 });

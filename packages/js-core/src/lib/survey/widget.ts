@@ -1,6 +1,5 @@
-/* eslint-disable no-console -- Required for error logging */
 import { Config } from "@/lib/common/config";
-import { CONTAINER_ID } from "@/lib/common/constants";
+import { CONTAINER_ID, LIVE_REGION_ID } from "@/lib/common/constants";
 import { Logger } from "@/lib/common/logger";
 import { executeRecaptcha, loadRecaptchaScript } from "@/lib/common/recaptcha";
 import { TimeoutStack } from "@/lib/common/timeout-stack";
@@ -20,6 +19,39 @@ let isSurveyRunning = false;
 
 export const setIsSurveyRunning = (value: boolean): void => {
   isSurveyRunning = value;
+};
+
+type TInteractionSource = keyof NonNullable<TWorkspaceStateSurvey["interactionRefresh"]>;
+
+/**
+ * Refresh server-computed segment membership after a survey interaction (display / response / finish).
+ *
+ * A `surveyInteraction` segment can change who a contact is in the moment they interact (e.g. "have
+ * seen X", "have completed X"), so we pull fresh `segments` instead of waiting for the state TTL.
+ * But that refresh is a heavy `/user` recompute, so it is:
+ *   - Gated per survey and per event via `survey.interactionRefresh`: only interactions that can
+ *     actually change some live survey's membership trigger a refetch. E.g. a survey referenced only
+ *     by a "have seen" filter refreshes on display but not on response/finish, and a survey referenced
+ *     by no interaction filter never refreshes.
+ *   - Routed through the UpdateQueue instead of a raw `sendUpdates`: the display → response → finish
+ *     burst coalesces into a single debounced call, and the ordered flush removes the last-writer-wins
+ *     race that concurrent `void sendUpdates` calls had (a stale snapshot could clobber fresh state).
+ *
+ * No-op for anonymous users (no `userId`) and when the interaction can't change membership.
+ */
+const refreshSegmentsAfterInteraction = (
+  userId: string | null,
+  survey: TWorkspaceStateSurvey,
+  source: TInteractionSource
+): void => {
+  if (!userId) return;
+
+  const shouldRefresh = survey.interactionRefresh?.[source] ?? false;
+  if (!shouldRefresh) return;
+
+  const updateQueue = UpdateQueue.getInstance();
+  updateQueue.updateUserId(userId);
+  void updateQueue.processUpdates();
 };
 
 export const triggerSurvey = async (
@@ -168,6 +200,12 @@ export const renderWidget = async (
           user: updatedUserState,
           filteredSurveys,
         });
+
+        // A new display can flip "have seen X" / "have not seen X" segments. The optimistic update
+        // above keeps recontact/display-cap correct locally; this pulls fresh `segments` (gated +
+        // coalesced) so interaction targeting is current by the time this survey closes and the next
+        // trigger evaluates. The display is already persisted (fires after createDisplay).
+        refreshSegmentsAfterInteraction(previousConfig.user.data.userId, survey, "onDisplay");
       },
       onResponseCreated: () => {
         const responses = config.get().user.data.responses;
@@ -187,6 +225,19 @@ export const renderWidget = async (
           user: newPersonState,
           filteredSurveys,
         });
+
+        // A created response flips "have started responding to X" segments. onResponseCreated fires
+        // once, on the first answer (not on subsequent question submits — see survey.tsx), so this is
+        // a single refresh covering "started". The "completed X" case is handled in onFinished below.
+        refreshSegmentsAfterInteraction(config.get().user.data.userId, survey, "onResponse");
+      },
+      onFinished: () => {
+        // Survey completion flips "have completed X" (and clears "have not completed X") segments.
+        // onFinished only fires after the finished response has been sent to the backend (it is gated
+        // on isResponseSendingFinished), so the server recompute sees finished=true — no race. Without
+        // this, a multi-question survey would only refresh at onResponseCreated (finished=false), so
+        // "completed X → show Y" targeting would never fire until the person-state TTL expired.
+        refreshSegmentsAfterInteraction(config.get().user.data.userId, survey, "onFinished");
       },
       onClose: closeSurvey,
       getSetIsResponseSendingFinished: (_f: (value: boolean) => void) => undefined,
@@ -223,6 +274,30 @@ export const addWidgetContainer = (): void => {
   document.body.appendChild(containerElement);
 };
 
+/**
+ * Mounts the persistent, visually hidden status region surveys announce their opening into
+ * (a no-overlay survey never takes focus, so this is the only signal assistive tech gets).
+ * Created at setup — not at survey open — because screen readers only reliably announce
+ * changes made to a live region that already existed; a region inserted together with its
+ * content is announced inconsistently. The surveys renderer writes the message
+ * (packages/surveys/src/lib/live-region.ts) and re-creates the region if an older embed
+ * script did not have this function.
+ */
+export const addLiveRegionContainer = (): void => {
+  // The SDK can be imported (not just script-tagged) and evaluated during SSR.
+  if (typeof document === "undefined") return;
+  if (document.getElementById(LIVE_REGION_ID)) return;
+
+  const liveRegion = document.createElement("div");
+  liveRegion.id = LIVE_REGION_ID;
+  liveRegion.setAttribute("role", "status");
+  liveRegion.setAttribute("aria-live", "polite");
+  liveRegion.setAttribute("aria-atomic", "true");
+  liveRegion.style.cssText =
+    "position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0";
+  document.body.appendChild(liveRegion);
+};
+
 export const removeWidgetContainer = (): void => {
   document.getElementById(CONTAINER_ID)?.remove();
 };
@@ -242,7 +317,7 @@ const waitForSurveysGlobal = (): Promise<TFormbricksSurveys> => {
       if (globalThis.window.formbricksSurveys) {
         const storedNonce = globalThis.window.__formbricksNonce;
         if (storedNonce) {
-          globalThis.window.formbricksSurveys.setNonce(storedNonce);
+          globalThis.window.formbricksSurveys.setNonce?.(storedNonce);
         }
         resolve(globalThis.window.formbricksSurveys);
         return;

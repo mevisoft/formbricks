@@ -1,5 +1,5 @@
-import type { Organization, OrganizationBilling } from "@prisma/client";
 import { z } from "zod";
+import type { Organization, OrganizationBilling } from "../src/prisma";
 
 export const ZOrganizationWhiteLabel = z.object({
   logoUrl: z.string().nullable(),
@@ -69,4 +69,5 @@ export const ZOrganization = z.object({
   name: z.string(),
   whitelabel: ZOrganizationWhiteLabel,
   isAISmartToolsEnabled: z.boolean().default(false) as z.ZodType<Organization["isAISmartToolsEnabled"]>,
+  displayTimeZone: z.string().nullable(),
 }) satisfies z.ZodType<Organization>;

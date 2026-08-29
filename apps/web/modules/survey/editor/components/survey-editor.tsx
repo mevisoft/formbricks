@@ -1,7 +1,7 @@
 "use client";
 
-import { ActionClass, Language, OrganizationRole, Workspace } from "@prisma/client";
 import { type Dispatch, type SetStateAction, useCallback, useEffect, useRef, useState } from "react";
+import { ActionClass, Language, OrganizationRole, Workspace } from "@formbricks/database/prisma-browser";
 import { TContactAttributeKey } from "@formbricks/types/contact-attribute-key";
 import { TSurveyQuota } from "@formbricks/types/quota";
 import { TSegment } from "@formbricks/types/segment";
@@ -21,6 +21,7 @@ import { SurveyMenuBar } from "@/modules/survey/editor/components/survey-menu-ba
 import { TFollowUpEmailToUser } from "@/modules/survey/editor/types/survey-follow-up";
 import { FollowUpsView } from "@/modules/survey/follow-ups/components/follow-ups-view";
 import { LanguageView } from "@/modules/survey/multi-language-surveys/components/language-view";
+import { type TSurveySchedulingConfig } from "@/modules/survey/scheduling/lib/config";
 import { PreviewSurvey } from "@/modules/ui/components/preview-survey";
 import { getWorkspaceLanguagesAction, refetchWorkspaceAction } from "../actions";
 
@@ -31,6 +32,7 @@ interface SurveyEditorProps {
   contactAttributeKeys: TContactAttributeKey[];
   segments: TSegment[];
   responseCount: number;
+  finishedResponseCount: number;
   membershipRole?: OrganizationRole;
   colors: string[];
   isUserTargetingAllowed?: boolean;
@@ -39,6 +41,7 @@ interface SurveyEditorProps {
   isUnsplashConfigured: boolean;
   isQuotasAllowed: boolean;
   isCxMode: boolean;
+  surveySchedulingConfig: TSurveySchedulingConfig;
   locale: TUserLocale;
   workspacePermission: TTeamPermission | null;
   mailFrom: string;
@@ -50,7 +53,6 @@ interface SurveyEditorProps {
   quotas: TSurveyQuota[];
   isExternalUrlsAllowed: boolean;
   publicDomain: string;
-  moveHiddenFieldsToSettingsTab?: boolean;
   enterpriseLicenseRequestFormUrl: string;
 }
 
@@ -62,6 +64,7 @@ export const SurveyEditor = ({
   contactAttributeKeys,
   segments,
   responseCount,
+  finishedResponseCount,
   membershipRole,
   colors,
   isUserTargetingAllowed = false,
@@ -70,6 +73,7 @@ export const SurveyEditor = ({
   isUnsplashConfigured,
   isQuotasAllowed,
   isCxMode = false,
+  surveySchedulingConfig,
   locale,
   workspacePermission,
   mailFrom,
@@ -80,13 +84,12 @@ export const SurveyEditor = ({
   quotas,
   isExternalUrlsAllowed,
   publicDomain,
-  moveHiddenFieldsToSettingsTab = false,
   enterpriseLicenseRequestFormUrl,
 }: SurveyEditorProps) => {
   const [activeView, setActiveView] = useState<TSurveyEditorTabs>("elements");
   const [activeElementId, setActiveElementId] = useState<string | null>(null);
   const [localSurvey, setLocalSurvey] = useState<TSurvey | null>(() => structuredClone(survey));
-  const [invalidElements, setInvalidElements] = useState<string[] | null>([]);
+  const [invalidElements, setInvalidElements] = useState<string[] | null>(null);
   const [hasIncompleteTranslations, setHasIncompleteTranslations] = useState(false);
 
   const [selectedLanguageCode, setSelectedLanguageCode] = useState<string>("default");
@@ -129,8 +132,6 @@ export const SurveyEditor = ({
         setActiveElementId(firstBlock.elements?.[0]?.id);
       }
     }
-
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [survey]);
 
   useEffect(() => {
@@ -157,7 +158,6 @@ export const SurveyEditor = ({
     if (firstBlock) {
       setActiveElementId(firstBlock.elements[0]?.id);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [localSurvey?.type]);
 
   useEffect(() => {
@@ -186,6 +186,7 @@ export const SurveyEditor = ({
         setInvalidElements={setInvalidElements}
         workspace={localWorkspace}
         responseCount={responseCount}
+        finishedResponseCount={finishedResponseCount}
         selectedLanguageCode={selectedLanguageCode}
         setSelectedLanguageCode={setSelectedLanguageCode}
         isCxMode={isCxMode}
@@ -195,7 +196,7 @@ export const SurveyEditor = ({
       />
       <div className="relative z-0 flex flex-1 overflow-hidden">
         <main
-          className="relative z-0 w-full overflow-y-auto bg-slate-50 focus:outline-none md:w-2/3"
+          className="relative z-0 w-full overflow-y-auto bg-slate-50 focus:outline-hidden md:w-2/3"
           ref={surveyEditorRef}>
           <SurveyEditorTabs
             activeId={activeView}
@@ -223,7 +224,6 @@ export const SurveyEditor = ({
               isStorageConfigured={isStorageConfigured}
               quotas={quotas}
               isExternalUrlsAllowed={isExternalUrlsAllowed}
-              moveHiddenFieldsToSettingsTab={moveHiddenFieldsToSettingsTab}
             />
           )}
 
@@ -262,6 +262,7 @@ export const SurveyEditor = ({
               contactAttributeKeys={contactAttributeKeys}
               segments={segments}
               responseCount={responseCount}
+              finishedResponseCount={finishedResponseCount}
               membershipRole={membershipRole}
               isUserTargetingAllowed={isUserTargetingAllowed}
               isSpamProtectionAllowed={isSpamProtectionAllowed}
@@ -269,12 +270,10 @@ export const SurveyEditor = ({
               isFormbricksCloud={isFormbricksCloud}
               isQuotasAllowed={isQuotasAllowed}
               quotas={quotas}
+              surveySchedulingConfig={surveySchedulingConfig}
               locale={locale}
               appSetupCompleted={localWorkspace.appSetupCompleted}
               enterpriseLicenseRequestFormUrl={enterpriseLicenseRequestFormUrl}
-              moveHiddenFieldsToSettingsTab={moveHiddenFieldsToSettingsTab}
-              activeElementId={activeElementId}
-              setActiveElementId={setActiveElementId}
             />
           )}
 
@@ -294,7 +293,7 @@ export const SurveyEditor = ({
           )}
         </main>
 
-        <aside className="group hidden w-1/3 flex-shrink-0 items-center justify-center overflow-hidden border-l border-slate-200 bg-slate-100 shadow-inner md:flex md:flex-col">
+        <aside className="group hidden w-1/3 shrink-0 items-center justify-center overflow-hidden border-l border-slate-200 bg-slate-100 shadow-inner md:flex md:flex-col">
           <PreviewSurvey
             survey={localSurvey}
             elementId={activeElementId}

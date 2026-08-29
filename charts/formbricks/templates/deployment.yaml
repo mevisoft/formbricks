@@ -89,6 +89,10 @@ spec:
           args:
             {{- toYaml .Values.deployment.args | nindent 12 }}
           {{- end }}
+          {{- with .Values.deployment.lifecycle }}
+          lifecycle:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           {{- if .Values.deployment.ports }}
           ports:
             {{- range $name, $config := .Values.deployment.ports }}
@@ -139,12 +143,38 @@ spec:
             - name: CUBEJS_API_URL
               value: "http://{{ include "formbricks.cubeName" . }}:{{ .Values.cube.service.port }}"
             {{- end }}
+            {{- if and .Values.llm.enabled .Values.llm.autoConfigureApp }}
+            {{- if not (hasKey .Values.deployment.env "AI_PROVIDER") }}
+            - name: AI_PROVIDER
+              value: "openai-compatible"
+            {{- end }}
+            {{- if not (hasKey .Values.deployment.env "AI_MODEL") }}
+            - name: AI_MODEL
+              value: {{ .Values.llm.formbricks.model | quote }}
+            {{- end }}
+            {{- if not (hasKey .Values.deployment.env "AI_OPENAI_COMPATIBLE_BASE_URL") }}
+            - name: AI_OPENAI_COMPATIBLE_BASE_URL
+              value: {{ include "formbricks.llmBaseUrl" . | quote }}
+            {{- end }}
+            {{- if not (hasKey .Values.deployment.env "AI_OPENAI_COMPATIBLE_PROVIDER_NAME") }}
+            - name: AI_OPENAI_COMPATIBLE_PROVIDER_NAME
+              value: {{ .Values.llm.formbricks.providerName | quote }}
+            {{- end }}
+            {{- if not (hasKey .Values.deployment.env "AI_OPENAI_COMPATIBLE_SUPPORTS_STRUCTURED_OUTPUTS") }}
+            - name: AI_OPENAI_COMPATIBLE_SUPPORTS_STRUCTURED_OUTPUTS
+              value: {{ .Values.llm.formbricks.supportsStructuredOutputs | quote }}
+            {{- end }}
+            {{- end }}
             {{- range $key, $value := .Values.deployment.env }}
             {{- include "formbricks.envVar" (dict "name" $key "value" $value "context" $) | nindent 12 }}
             {{- end }}
           {{- if .Values.deployment.resources }}
           resources:
               {{- toYaml .Values.deployment.resources | nindent 12 }}
+          {{- end }}
+          {{- with .Values.deployment.extraVolumeMounts }}
+          volumeMounts:
+            {{- toYaml . | nindent 12 }}
           {{- end }}
           {{- with .Values.deployment.probes }}
           {{- if .livenessProbe }}
@@ -160,3 +190,7 @@ spec:
             {{- toYaml .startupProbe | nindent 12 }}
           {{- end }}
           {{- end }}
+      {{- with .Values.deployment.extraVolumes }}
+      volumes:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

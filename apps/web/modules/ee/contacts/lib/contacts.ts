@@ -1,12 +1,13 @@
 import "server-only";
-import { Prisma } from "@prisma/client";
 import { cache as reactCache } from "react";
 import { prisma } from "@formbricks/database";
+import { Prisma } from "@formbricks/database/prisma";
 import { logger } from "@formbricks/logger";
 import { ZId, ZOptionalNumber, ZOptionalString } from "@formbricks/types/common";
 import { TContactAttributeDataType } from "@formbricks/types/contact-attribute-key";
 import { DatabaseError, ValidationError } from "@formbricks/types/errors";
 import { ITEMS_PER_PAGE } from "@/lib/constants";
+import { getSurvey } from "@/lib/survey/service";
 import { formatSnakeCaseToTitleCase, isSafeIdentifier } from "@/lib/utils/safe-identifier";
 import { validateInputs } from "@/lib/utils/validate";
 import {
@@ -16,6 +17,7 @@ import {
 import { prepareAttributeColumnsForStorage } from "@/modules/ee/contacts/lib/attribute-storage";
 import { getContactSurveyLink } from "@/modules/ee/contacts/lib/contact-survey-link";
 import { detectAttributeDataType } from "@/modules/ee/contacts/lib/detect-attribute-type";
+import { SEGMENT_SURVEY_WORKSPACE_MISMATCH_ERROR_CODE } from "@/modules/ee/contacts/lib/personal-link-errors";
 import { segmentFilterToPrismaQuery } from "@/modules/ee/contacts/segments/lib/filter/prisma-query";
 import { getSegment } from "@/modules/ee/contacts/segments/lib/segments";
 import {
@@ -189,6 +191,32 @@ export const getContact = reactCache(async (contactId: string): Promise<TContact
     throw error;
   }
 });
+
+/**
+ * Workspace-scoped variant of {@link getContact}: returns null when the contact exists but lives in
+ * another workspace, so a caller holding an authorized workspace id cannot read a foreign contact.
+ */
+export const getContactInWorkspace = reactCache(
+  async (contactId: string, workspaceId: string): Promise<TContact | null> => {
+    validateInputs([contactId, ZId], [workspaceId, ZId]);
+
+    try {
+      return await prisma.contact.findFirst({
+        where: {
+          id: contactId,
+          workspaceId,
+        },
+        select: selectContact,
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError) {
+        throw new DatabaseError(error.message);
+      }
+
+      throw error;
+    }
+  }
+);
 
 export const deleteContact = async (contactId: string): Promise<TContact | null> => {
   validateInputs([contactId, ZId]);
@@ -712,6 +740,28 @@ export const createContactsFromCSV = async (
 };
 
 export const generatePersonalLinks = async (surveyId: string, segmentId: string, expirationDays?: number) => {
+  const survey = await getSurvey(surveyId);
+
+  if (!survey) {
+    return null;
+  }
+
+  const segment = await getSegment(segmentId);
+
+  if (!segment) {
+    return null;
+  }
+
+  // Cross-tenant guard: the segment must belong to the same workspace as the
+  // survey the caller is authorized against. Without this, a caller with access
+  // to `surveyId`'s workspace could pass a `segmentId` from another workspace and
+  // exfiltrate that workspace's contact PII. Mirrors the v2 management API
+  // (contact-links/segments) which rejects the same mismatch. The message is a
+  // stable error code the client maps to a localized string.
+  if (survey.workspaceId !== segment.workspaceId) {
+    throw new ValidationError(SEGMENT_SURVEY_WORKSPACE_MISMATCH_ERROR_CODE);
+  }
+
   const contactsResult = await getContactsInSegment(segmentId);
 
   if (!contactsResult) {

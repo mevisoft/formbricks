@@ -193,6 +193,9 @@ export const SurveyAnalysisCTA = ({
     if (aiUnavailableReason === "instance_not_configured") {
       return t("workspace.surveys.summary.generate_example_responses_locked_instance");
     }
+    if (responseCount > 0) {
+      return t("workspace.surveys.summary.generate_example_responses_disabled_has_responses");
+    }
     return t("workspace.surveys.summary.generate_example_responses");
   })();
 
@@ -219,8 +222,8 @@ export const SurveyAnalysisCTA = ({
     {
       icon: BellRing,
       tooltip: t("workspace.surveys.summary.configure_alerts"),
-      onClick: () => router.push(`/workspaces/${workspace?.id}/settings/account/notifications`),
-      isVisible: !isReadOnly,
+      onClick: () => router.push(`/account/settings/notifications`),
+      isVisible: !isReadOnly && !survey.archivedAt,
     },
     {
       icon: Eye,
@@ -229,20 +232,20 @@ export const SurveyAnalysisCTA = ({
         const previewUrl = await getPreviewUrl();
         window.open(previewUrl, "_blank");
       },
-      isVisible: survey.type === "link",
+      isVisible: survey.type === "link" && !survey.archivedAt,
     },
     {
       icon: Wand2,
       tooltip: exampleResponsesTooltip,
       onClick: handleGenerateExampleResponses,
-      disabled: isGeneratingExamples || aiUnavailableReason !== null,
-      isVisible: !isReadOnly && responseCount === 0,
+      disabled: isGeneratingExamples || aiUnavailableReason !== null || responseCount > 0,
+      isVisible: !isReadOnly && !survey.archivedAt,
     },
     {
       icon: ListRestart,
       tooltip: t("workspace.surveys.summary.reset_survey"),
       onClick: () => setIsResetModalOpen(true),
-      isVisible: !isReadOnly,
+      isVisible: !isReadOnly && !survey.archivedAt,
     },
     {
       icon: SquarePenIcon,
@@ -252,7 +255,8 @@ export const SurveyAnalysisCTA = ({
           ? setIsCautionDialogOpen(true)
           : router.push(`/workspaces/${workspace?.id}/surveys/${survey.id}/edit`);
       },
-      isVisible: !isReadOnly,
+      // Archived surveys are read-only; editing is blocked server-side, so hide the entry point too.
+      isVisible: !isReadOnly && !survey.archivedAt,
     },
   ];
 
@@ -263,14 +267,16 @@ export const SurveyAnalysisCTA = ({
       )}
 
       <IconBar actions={iconActions} />
-      <Button
-        onClick={() => {
-          setModalState((prev) => ({ ...prev, share: true }));
-        }}>
-        {t("workspace.surveys.summary.share_survey")}
-      </Button>
+      {!survey.archivedAt && (
+        <Button
+          onClick={() => {
+            setModalState((prev) => ({ ...prev, share: true }));
+          }}>
+          {t("workspace.surveys.summary.share_survey")}
+        </Button>
+      )}
 
-      {user && (
+      {user && !survey.archivedAt && (
         <ShareSurveyModal
           survey={survey}
           publicDomain={publicDomain}
@@ -299,10 +305,13 @@ export const SurveyAnalysisCTA = ({
           open={isCautionDialogOpen}
           setOpen={setIsCautionDialogOpen}
           isLoading={loading}
-          primaryButtonAction={() => duplicateSurveyAndRoute(survey.id)}
-          primaryButtonText={t("workspace.surveys.edit.caution_edit_duplicate")}
-          secondaryButtonAction={() => router.push(`/workspaces/${workspace?.id}/surveys/${survey.id}/edit`)}
-          secondaryButtonText={t("common.edit")}
+          primaryButtonAction={async () => {
+            setIsCautionDialogOpen(false);
+            router.push(`/workspaces/${workspace?.id}/surveys/${survey.id}/edit`);
+          }}
+          primaryButtonText={t("common.edit")}
+          secondaryButtonAction={() => duplicateSurveyAndRoute(survey.id)}
+          secondaryButtonText={t("workspace.surveys.edit.caution_edit_duplicate")}
         />
       )}
 

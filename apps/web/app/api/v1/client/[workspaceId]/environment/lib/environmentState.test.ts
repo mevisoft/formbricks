@@ -88,6 +88,7 @@ vi.mock("@formbricks/cache", () => ({
 const workspaceId = "test-workspace-id";
 
 const mockWorkspace: TJsWorkspaceStateWorkspaceSetting = {
+  id: workspaceId,
   recontactDays: 30,
   inAppSurveyBranding: true,
   placement: "bottomRight",
@@ -110,7 +111,6 @@ const mockSurveys: TSurvey[] = [
     endings: [],
     followUps: [],
     isBackButtonHidden: false,
-    isSingleResponsePerEmailEnabled: false,
     isVerifyEmailEnabled: false,
     workspaceOverwrites: null,
     showLanguageSwitch: false,

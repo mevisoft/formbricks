@@ -18,22 +18,24 @@ import { getTranslate } from "@/lingodotdev/server";
 import { getSegments } from "@/modules/ee/contacts/segments/lib/segments";
 import { getIsContactsEnabled, getIsQuotasEnabled } from "@/modules/ee/license-check/lib/utils";
 import { getOrganizationBilling } from "@/modules/survey/lib/survey";
+import { getSurveyAuth } from "@/modules/survey/lib/survey-auth";
 import { IdBadge } from "@/modules/ui/components/id-badge";
 import { PageContentWrapper } from "@/modules/ui/components/page-content-wrapper";
 import { PageHeader } from "@/modules/ui/components/page-header";
-import { getWorkspaceAuth } from "@/modules/workspaces/lib/utils";
 
-const SurveyPage = async (props: { params: Promise<{ workspaceId: string; surveyId: string }> }) => {
+const SurveyPage = async (
+  props: Readonly<{ params: Promise<{ workspaceId: string; surveyId: string }> }>
+) => {
   const params = await props.params;
   const t = await getTranslate();
-
-  const { session, isReadOnly, workspace, organization } = await getWorkspaceAuth(params.workspaceId);
 
   const surveyId = params.surveyId;
 
   if (!surveyId) {
     return notFound();
   }
+
+  const { session, isReadOnly, workspace, organization } = await getSurveyAuth(params.workspaceId, surveyId);
 
   const survey = await getSurvey(params.surveyId);
 
@@ -93,6 +95,7 @@ const SurveyPage = async (props: { params: Promise<{ workspaceId: string; survey
         locale={user.locale ?? DEFAULT_LOCALE}
         initialSurveySummary={initialSurveySummary}
         isQuotasAllowed={isQuotasAllowed}
+        isReadOnly={isReadOnly}
       />
 
       <IdBadge id={surveyId} label={t("common.survey_id")} variant="column" />

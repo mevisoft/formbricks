@@ -1,9 +1,10 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useRef, useState, useTransition } from "react";
 import toast from "react-hot-toast";
 import { useTranslation } from "react-i18next";
+import type { TChartConfig } from "@formbricks/types/analysis";
 import { getFormattedErrorMessage } from "@/lib/utils/helper";
 import {
   createChartAction,
@@ -12,6 +13,7 @@ import {
   getChartAction,
   updateChartAction,
 } from "@/modules/ee/analysis/charts/actions";
+import { sanitizeChartDisplay } from "@/modules/ee/analysis/charts/lib/chart-display";
 import { resolveChartType } from "@/modules/ee/analysis/charts/lib/chart-utils";
 import { addChartToDashboardAction, getDashboardsAction } from "@/modules/ee/analysis/dashboards/actions";
 import type {
@@ -45,10 +47,16 @@ export function useChartDialog({
 }: Readonly<UseChartDialogProps>) {
   const { t } = useTranslation();
   const router = useRouter();
+  const pathname = usePathname();
+  const [, startTransition] = useTransition();
   const [selectedChartType, setSelectedChartType] = useState<TChartType | undefined>();
   const [chartData, setChartData] = useState<AnalyticsResponse | null>(null);
+  // Display settings saved alongside the chart (display type, bar direction).
+  const [chartConfig, setChartConfig] = useState<TChartConfig>({});
   const [isAddToDashboardDialogOpen, setIsAddToDashboardDialogOpen] = useState(false);
   const [chartName, setChartName] = useState("");
+  // Saved name of the chart being edited; unlike chartName it stays stable while the user types.
+  const [savedChartName, setSavedChartName] = useState("");
   const [dashboards, setDashboards] = useState<Array<{ id: string; name: string }>>([]);
   const [selectedDashboardId, setSelectedDashboardId] = useState<string | undefined>();
   const [isSaving, setIsSaving] = useState(false);
@@ -56,6 +64,9 @@ export function useChartDialog({
   const [chartLoadError, setChartLoadError] = useState<string | null>(null);
   const [currentChartId, setCurrentChartId] = useState<string | undefined>(chartId);
   const [selectedDirectoryId, setSelectedDirectoryId] = useState<string | null>(directories?.[0]?.id ?? null);
+  // Last name we prefilled from a suggestion; lets a regenerate replace its own
+  // stale suggestion without ever clobbering a name the user typed.
+  const lastSuggestedNameRef = useRef<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -82,8 +93,11 @@ export function useChartDialog({
     if (!chartId) {
       setChartData(null);
       setChartName("");
+      setSavedChartName("");
+      lastSuggestedNameRef.current = null;
       setSelectedChartType(undefined);
       setCurrentChartId(undefined);
+      setChartConfig({});
       setSelectedDirectoryId(directories?.[0]?.id ?? null);
       return;
     }
@@ -107,8 +121,10 @@ export function useChartDialog({
         if (cancelled) return;
 
         setChartName(chart.name);
+        setSavedChartName(chart.name);
         setSelectedChartType(resolveChartType(chart.type));
         setCurrentChartId(chart.id);
+        setChartConfig(chart.config ?? {});
         setSelectedDirectoryId(chart.feedbackDirectoryId);
 
         const queryResult = await executeQueryAction({
@@ -126,17 +142,22 @@ export function useChartDialog({
           return;
         }
 
-        if (!Array.isArray(queryResult?.data)) {
+        const queryRows = queryResult?.data;
+        if (!Array.isArray(queryRows?.rows)) {
           const errorMsg = t("workspace.analysis.charts.no_data_returned_for_chart");
           toast.error(errorMsg);
           setChartLoadError(errorMsg);
           return;
         }
 
+        // Use the server-rewritten effective query so the renderer's xAxisKey matches
+        // the returned data columns (e.g. valueText → valueId for single-select).
+        const effectiveQuery = queryRows.effectiveQuery ?? chart.query;
         setChartData({
-          query: chart.query,
+          query: effectiveQuery,
           chartType: resolveChartType(chart.type),
-          data: queryResult.data,
+          data: queryRows.rows,
+          ...(queryRows.optionLabels ? { optionLabels: queryRows.optionLabels } : {}),
         });
       } catch (error: unknown) {
         if (cancelled) return;
@@ -153,12 +174,26 @@ export function useChartDialog({
     return () => {
       cancelled = true;
     };
+    // Key on initialChart?.id, NOT the object reference. Every authenticated action here
+    // (getChartAction / executeQueryAction) re-sets the Better Auth session cookie → Next.js route
+    // refresh → new `initialChart` reference; depending on the object would re-fire executeQueryAction on
+    // every refresh → infinite loop. The id is the stable identity; content is unchanged across refreshes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, chartId, workspaceId, initialChart]);
+  }, [open, chartId, workspaceId, initialChart?.id]);
 
   const handleChartGenerated = (data: AnalyticsResponse) => {
     setChartData(data);
     setSelectedChartType(data.chartType);
+    const suggestedName = data.suggestedName?.trim();
+    if (suggestedName) {
+      // Functional updater: the AI response lands async, so a closure over chartName could be
+      // stale and clobber a name the user typed while the request was in flight.
+      setChartName((prev) => {
+        if (prev.trim() && prev !== lastSuggestedNameRef.current) return prev;
+        lastSuggestedNameRef.current = suggestedName;
+        return suggestedName;
+      });
+    }
   };
 
   const handleSaveChart = async () => {
@@ -174,6 +209,7 @@ export function useChartDialog({
 
     setIsSaving(true);
     let newlyCreatedChartId: string | null = null;
+    const configToSave = sanitizeChartDisplay(chartConfig, chartData.chartType);
     try {
       let savedChartId = currentChartId;
 
@@ -185,7 +221,7 @@ export function useChartDialog({
             name: chartName.trim(),
             type: chartData.chartType,
             query: chartData.query,
-            config: {},
+            config: configToSave,
           },
         });
 
@@ -203,7 +239,7 @@ export function useChartDialog({
             name: chartName.trim(),
             type: chartData.chartType,
             query: chartData.query,
-            config: {},
+            config: configToSave,
             feedbackDirectoryId: selectedDirectoryId,
           },
         });
@@ -241,9 +277,14 @@ export function useChartDialog({
 
       onOpenChange(false);
       if (autoAddToDashboardId) {
-        router.push(`/workspaces/${workspaceId}/dashboards/${autoAddToDashboardId}`);
+        const dashboardPath = `/workspaces/${workspaceId}/dashboards/${autoAddToDashboardId}`;
+        if (pathname !== dashboardPath) {
+          router.push(dashboardPath);
+        }
       }
-      router.refresh();
+      startTransition(() => {
+        router.refresh();
+      });
       onSuccess?.();
     } catch (error: unknown) {
       const message =
@@ -275,7 +316,7 @@ export function useChartDialog({
         name: chartName.trim(),
         type: data.chartType,
         query: data.query,
-        config: {},
+        config: sanitizeChartDisplay(chartConfig, data.chartType),
         feedbackDirectoryId: selectedDirectoryId,
       },
     });
@@ -328,7 +369,9 @@ export function useChartDialog({
       toast.success(t("workspace.analysis.charts.chart_added_to_dashboard"));
       setIsAddToDashboardDialogOpen(false);
       onOpenChange(false);
-      router.refresh();
+      startTransition(() => {
+        router.refresh();
+      });
       onSuccess?.();
     } catch (error: unknown) {
       const message =
@@ -346,8 +389,11 @@ export function useChartDialog({
     if (!isSaving) {
       setChartData(null);
       setChartName("");
+      setSavedChartName("");
+      lastSuggestedNameRef.current = null;
       setSelectedChartType(undefined);
       setCurrentChartId(undefined);
+      setChartConfig({});
       setChartLoadError(null);
       setSelectedDirectoryId(directories?.[0]?.id ?? null);
       onOpenChange(false);
@@ -363,8 +409,11 @@ export function useChartDialog({
 
   return {
     chartData,
+    chartConfig,
+    setChartConfig,
     chartName,
     setChartName,
+    savedChartName,
     selectedChartType,
     initialQuery,
     setSelectedChartType,

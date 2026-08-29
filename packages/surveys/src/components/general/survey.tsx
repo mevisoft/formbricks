@@ -1,5 +1,6 @@
 import { type JSX } from "preact";
 import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
+import { useTranslation } from "react-i18next";
 import { SurveyContainerProps } from "@formbricks/types/formbricks-surveys";
 import { TJsFileUploadParams, type TJsWorkspaceStateSurvey } from "@formbricks/types/js";
 import type {
@@ -9,6 +10,7 @@ import type {
   TResponseVariables,
 } from "@formbricks/types/responses";
 import { TUploadFileConfig } from "@formbricks/types/storage";
+import { getLinkSurveyCardMaxWidth } from "@formbricks/types/styling";
 import { TSurveyBlock, TSurveyBlockLogic } from "@formbricks/types/surveys/blocks";
 import { TSurveyElement } from "@formbricks/types/surveys/elements";
 import { BlockConditional } from "@/components/general/block-conditional";
@@ -19,11 +21,14 @@ import { LanguageSwitch } from "@/components/general/language-switch";
 import { ProgressBar } from "@/components/general/progress-bar";
 import { RecaptchaBranding } from "@/components/general/recaptcha-branding";
 import { ResponseErrorComponent } from "@/components/general/response-error-component";
+import { Subheader } from "@/components/general/subheader";
 import { SurveyCloseButton } from "@/components/general/survey-close-button";
 import { WelcomeCard } from "@/components/general/welcome-card";
 import { AutoCloseWrapper } from "@/components/wrappers/auto-close-wrapper";
+import { CardlessSurveyLayout } from "@/components/wrappers/cardless-survey-layout";
 import { StackedCardsContainer } from "@/components/wrappers/stacked-cards-container";
 import { ApiClient } from "@/lib/api-client";
+import { getLocalizedValue } from "@/lib/i18n";
 import { evaluateLogic, performActions } from "@/lib/logic";
 import {
   type SerializedSurveyState,
@@ -32,8 +37,9 @@ import {
   patchSurveyProgressSnapshot,
   saveSurveyProgress,
 } from "@/lib/offline-storage";
-import { parseRecallInformation } from "@/lib/recall";
+import { parseRecallInformation, replaceRecallInfo } from "@/lib/recall";
 import { ResponseQueue } from "@/lib/response-queue";
+import { SURVEY_INSTRUCTIONS_ID, getSurveyPagePosition, hasSurveyInstructions } from "@/lib/survey-page";
 import { SurveyState } from "@/lib/survey-state";
 import { useOnlineStatus } from "@/lib/use-online-status";
 import { cn, findBlockByElementId, getDefaultLanguageCode, getElementsFromSurveyBlocks } from "@/lib/utils";
@@ -70,7 +76,10 @@ interface VariableStackEntry {
 
 export function Survey({
   appUrl,
-  workspaceId,
+  workspaceId: workspaceIdProp,
+  // Legacy SDKs (e.g. Android ≤ v1.2.0) pass `environmentId` instead of
+  // `workspaceId`. Accept it as a fallback so their response submission works.
+  environmentId,
   isPreviewMode = false,
   userId,
   contactId,
@@ -103,15 +112,21 @@ export function Survey({
   action,
   singleUseId,
   singleUseResponseId,
+  pinAuthToken,
   isWebEnvironment = true,
   getRecaptchaToken,
   isSpamProtectionEnabled,
   dir = "auto",
   setDir,
+  onLanguageChange,
+  onPageChange,
   placement,
   offlineSupport = false,
   onOfflineStatusChange,
-}: SurveyContainerProps) {
+  showCardlessPreviewLogoSlot = false,
+}: Readonly<SurveyContainerProps>) {
+  const { t } = useTranslation();
+  const workspaceId = workspaceIdProp ?? environmentId;
   let apiClient: ApiClient | null = null;
 
   if (appUrl && workspaceId) {
@@ -124,13 +139,23 @@ export function Survey({
   const surveyState = useMemo(() => {
     if (appUrl && workspaceId) {
       if (mode === "inline") {
-        return new SurveyState(survey.id, singleUseId, singleUseResponseId, userId, contactId);
+        return new SurveyState(survey.id, singleUseId, singleUseResponseId, userId, contactId, pinAuthToken);
       }
 
-      return new SurveyState(survey.id, null, null, userId, contactId);
+      return new SurveyState(survey.id, null, null, userId, contactId, pinAuthToken);
     }
     return null;
-  }, [appUrl, workspaceId, mode, survey.id, userId, singleUseId, singleUseResponseId, contactId]);
+  }, [
+    appUrl,
+    workspaceId,
+    mode,
+    survey.id,
+    userId,
+    singleUseId,
+    singleUseResponseId,
+    contactId,
+    pinAuthToken,
+  ]);
 
   // Update the responseQueue to use the stored responseId
 
@@ -245,6 +270,11 @@ export function Survey({
     return localSurvey.blocks[0]?.id;
   });
 
+  // True once the user navigated between cards (Next/Back/auto-progress). Moving focus into
+  // the new card is then a response to a user action (safe under WCAG 3.2.x), unlike the
+  // initial render of an embedded survey, where stealing focus from the host page is not.
+  const hasUserNavigatedRef = useRef(false);
+
   const [errorType, setErrorType] = useState<TResponseErrorCodesEnum | undefined>(undefined);
   const [showError, setShowError] = useState(false);
   const [isRetrying, setIsRetrying] = useState(false);
@@ -276,6 +306,9 @@ export function Survey({
     }
     return styling.cardArrangement?.appSurveys ?? "straight";
   }, [localSurvey.type, styling.cardArrangement?.linkSurveys, styling.cardArrangement?.appSurveys]);
+  const isCardless = cardArrangement === "cardless";
+  const linkSurveyCardMaxWidth =
+    localSurvey.type === "link" ? getLinkSurveyCardMaxWidth(styling.linkSurveyCardWidth) : undefined;
 
   // Current block tracking (replaces currentQuestionIndex)
   const currentBlockIndex = localSurvey.blocks.findIndex((b) => b.id === blockId);
@@ -373,6 +406,11 @@ export function Survey({
   // restoration so we can skip creating a new display if a session was restored.
   const displayCreatedRef = useRef(false);
 
+  // `onResponseCreateOrUpdate` runs on every question submit, but a response is only *created* on the
+  // first submit — later submits update it. `onResponseCreated` must therefore fire once, not per
+  // question, otherwise a 5-question survey triggers 5 downstream `/user` refreshes in js-core.
+  const responseCreatedRef = useRef(false);
+
   useEffect(() => {
     if (offlinePersistEnabled && !progressRestored) return;
 
@@ -428,6 +466,27 @@ export function Survey({
   useEffect(() => {
     setSelectedLanguage(languageCode);
   }, [languageCode]);
+
+  // Report the active language (initial value + every switch) so a link-survey
+  // host can keep the page lang/dir in sync (WCAG 3.1.1). Embedded widgets pass
+  // no callback, so the host page is never touched.
+  useEffect(() => {
+    onLanguageChange?.(selectedLanguage);
+  }, [selectedLanguage, onLanguageChange]);
+
+  // Report the respondent's position (initial card + every navigation) so a link-survey host can
+  // title the document per step (WCAG 2.4.2). The label is localized HERE rather than by the host:
+  // the survey knows its own active language, while the host's i18n is in the viewer's UI locale,
+  // so a title assembled there would mix the two. Embedded widgets pass no callback.
+  useEffect(() => {
+    if (!onPageChange) return;
+    const { index, total } = getSurveyPagePosition(localSurvey, blockId);
+    onPageChange({
+      index,
+      total,
+      label: t("common.page_x_of_y", { current: index, total }),
+    });
+  }, [blockId, localSurvey, onPageChange, t]);
 
   // --- Offline support: restore progress from IndexedDB on mount ---
   useEffect(() => {
@@ -816,6 +875,14 @@ export function Survey({
     };
   }, [isWebEnvironment]);
 
+  // Fire onResponseCreated exactly once per survey lifecycle. The queue creates the response on the
+  // first add and updates it on later submits, so a multi-question survey must not re-trigger it.
+  const triggerResponseCreatedOnce = useCallback(() => {
+    if (responseCreatedRef.current) return;
+    responseCreatedRef.current = true;
+    onResponseCreated?.();
+  }, [onResponseCreated]);
+
   const onResponseCreateOrUpdate = useCallback(
     async (responseUpdate: TResponseUpdate) => {
       // Always trigger the onResponse callback even in preview mode
@@ -831,9 +898,9 @@ export function Survey({
         return;
       }
 
-      // Skip response creation in preview mode but still trigger the onResponseCreated callback
+      // Skip response creation in preview mode but still trigger the onResponseCreated callback (once)
       if (isPreviewMode) {
-        onResponseCreated?.();
+        triggerResponseCreatedOnce();
 
         // When in preview mode, set isResponseSendingFinished to true if the response is finished
         if (responseUpdate.finished) {
@@ -868,7 +935,7 @@ export function Survey({
           hiddenFields: hiddenFieldsRecord,
         });
 
-        onResponseCreated?.();
+        triggerResponseCreatedOnce();
       }
     },
     [
@@ -878,7 +945,7 @@ export function Survey({
       surveyState,
       responseQueue,
       onResponse,
-      onResponseCreated,
+      triggerResponseCreatedOnce,
       contactId,
       userId,
       survey,
@@ -915,8 +982,19 @@ export function Survey({
     }
   }, [isResponseSendingFinished, isSurveyFinished, onFinished]);
 
+  // The outgoing card stays visible while the card transition cross-fades, so a
+  // control that kept focus would show its focus ring hanging mid-fade before
+  // vanishing with the card. Drop focus when navigation starts; the incoming
+  // card focuses its first control on mount.
+  const blurOutgoingCard = (): void => {
+    const active = document.activeElement;
+    if (active instanceof HTMLElement) active.blur();
+  };
+
   const onSubmit = async (surveyResponseData: TResponseData, responsettc: TResponseTtc) => {
     isNavigatingBackRef.current = false;
+    hasUserNavigatedRef.current = true;
+    blurOutgoingCard();
 
     // Get the first responded element ID for tracking
     const respondedElementIds = Object.keys(surveyResponseData);
@@ -938,14 +1016,23 @@ export function Survey({
 
     pushVariableState(firstRespondedElementId);
 
-    const { nextBlockId, calculatedVariables } = evaluateLogicAndGetNextBlockId(surveyResponseData);
+    const { nextBlockId: rawNextBlockId, calculatedVariables } =
+      evaluateLogicAndGetNextBlockId(surveyResponseData);
+    // A jump target may reference a deleted block or ending; treat such stale ids as "no target"
+    // so the shown ending and the persisted endingId stay in sync
+    const targetIsBlock = localSurvey.blocks.some((block) => block.id === rawNextBlockId);
+    const targetIsEnding = localSurvey.endings.some((ending) => ending.id === rawNextBlockId);
+    const isValidTarget = targetIsBlock || targetIsEnding;
+    const nextBlockId = isValidTarget ? rawNextBlockId : undefined;
     const finished =
       nextBlockId === undefined || !localSurvey.blocks.map((block) => block.id).includes(nextBlockId);
 
     setIsSurveyFinished(finished);
 
-    const endingId = nextBlockId
-      ? localSurvey.endings.find((ending) => ending.id === nextBlockId)?.id
+    // The ending that will be shown: an explicit jump target, or the first ending when the survey
+    // falls off the last block (mirrors the display fallback below so the persisted endingId matches it)
+    const endingId = finished
+      ? (localSurvey.endings.find((ending) => ending.id === nextBlockId)?.id ?? localSurvey.endings[0]?.id)
       : undefined;
 
     onChange(surveyResponseData);
@@ -1006,6 +1093,8 @@ export function Survey({
 
   const onBack = (): void => {
     isNavigatingBackRef.current = true;
+    hasUserNavigatedRef.current = true;
+    blurOutgoingCard();
 
     let prevBlockId: string | undefined;
     // use history if available
@@ -1071,6 +1160,8 @@ export function Survey({
           );
         case TResponseErrorCodesEnum.RecaptchaError:
         case TResponseErrorCodesEnum.InvalidDeviceError:
+        case TResponseErrorCodesEnum.ResponseAlreadyCompleted:
+        case TResponseErrorCodesEnum.ResponseSendingErrorPermanent:
           return (
             <>
               {localSurvey.type !== "link" ? (
@@ -1104,12 +1195,13 @@ export function Survey({
             survey={localSurvey}
             languageCode={selectedLanguage}
             responseCount={responseCount}
-            autoFocusEnabled={autoFocusEnabled}
+            autoFocusEnabled={autoFocusEnabled || hasUserNavigatedRef.current}
             isCurrent={offset === 0}
             responseData={responseData}
             variablesData={currentVariables}
             isPreviewMode={isPreviewMode}
             fullSizeCards={fullSizeCards}
+            isCardless={isCardless}
           />
         );
       } else if (blockIdx >= localSurvey.blocks.length) {
@@ -1122,7 +1214,7 @@ export function Survey({
               survey={localSurvey}
               endingCard={endingCard}
               isRedirectDisabled={isRedirectDisabled}
-              autoFocusEnabled={autoFocusEnabled}
+              autoFocusEnabled={autoFocusEnabled || hasUserNavigatedRef.current}
               isCurrent={offset === 0}
               languageCode={selectedLanguage}
               isResponseSendingFinished={isResponseSendingFinished}
@@ -1131,6 +1223,7 @@ export function Survey({
               onOpenExternalURL={onOpenExternalURL}
               isPreviewMode={isPreviewMode}
               fullSizeCards={fullSizeCards}
+              isCardless={isCardless}
               isOfflineWithPending={offlinePersistEnabled && !isOnline && isSurveyFinished}
             />
           );
@@ -1162,11 +1255,13 @@ export function Survey({
               isLastBlock={block.id === localSurvey.blocks[localSurvey.blocks.length - 1].id}
               languageCode={selectedLanguage}
               autoFocusEnabled={autoFocusEnabled}
+              shouldFocusOnMount={autoFocusEnabled || hasUserNavigatedRef.current}
               isBackButtonHidden={localSurvey.isBackButtonHidden}
               isAutoProgressingEnabled={localSurvey.isAutoProgressingEnabled}
               onOpenExternalURL={onOpenExternalURL}
               dir={dir}
               fullSizeCards={fullSizeCards}
+              isCardless={isCardless}
             />
           )
         );
@@ -1185,44 +1280,52 @@ export function Survey({
         setHasInteracted={setHasInteracted}>
         <div
           className={cn(
-            "no-scrollbar bg-survey-bg flex h-full w-full flex-col justify-between overflow-hidden transition-opacity duration-1000 ease-in-out",
-            offset === 0 || cardArrangement === "simple" ? "opacity-100" : "opacity-0"
+            "no-scrollbar flex w-full flex-col justify-between transition-opacity duration-1000 ease-in-out",
+            isCardless ? "" : "bg-survey-bg h-full overflow-hidden",
+            offset === 0 || cardArrangement === "simple" || isCardless ? "opacity-100" : "opacity-0"
           )}>
           <div className={cn("relative")}>
-            <div className="flex w-full flex-col items-end">
-              {showProgressBar ? <ProgressBar survey={localSurvey} blockId={blockId} /> : null}
+            {(!isCardless && showProgressBar) || isLanguageSwitchVisible || isCloseButtonVisible ? (
+              <div className="flex w-full flex-col items-end">
+                {!isCardless && showProgressBar ? (
+                  <ProgressBar survey={localSurvey} blockId={blockId} />
+                ) : null}
 
-              <div
-                className={cn(
-                  "relative w-full",
-                  isCloseButtonVisible || isLanguageSwitchVisible ? "h-8" : "h-5"
-                )}>
-                <div className={cn("flex w-full items-center justify-end")}>
-                  {isLanguageSwitchVisible && (
-                    <LanguageSwitch
-                      survey={localSurvey}
-                      surveyLanguages={localSurvey.languages}
-                      setSelectedLanguageCode={setSelectedLanguage}
-                      hoverColor={styling.inputBgColor?.light ?? "#f8fafc"}
-                      borderRadius={styling.roundness ?? 8}
-                      setDir={setDir}
-                      dir={dir}
-                    />
-                  )}
-                  {isLanguageSwitchVisible && isCloseButtonVisible && (
-                    <div aria-hidden="true" className="z-1001 h-5 w-px bg-slate-200" />
-                  )}
+                {isCloseButtonVisible || isLanguageSwitchVisible ? (
+                  <div
+                    className={cn(
+                      "relative w-full",
+                      isCloseButtonVisible || isLanguageSwitchVisible ? "h-8" : "h-5"
+                    )}>
+                    <div className={cn("flex w-full items-center justify-end")}>
+                      {isLanguageSwitchVisible && (
+                        <LanguageSwitch
+                          survey={localSurvey}
+                          surveyLanguages={localSurvey.languages}
+                          selectedLanguageCode={selectedLanguage}
+                          setSelectedLanguageCode={setSelectedLanguage}
+                          hoverColor={styling.inputBgColor?.light ?? "#f8fafc"}
+                          borderRadius={styling.roundness ?? 8}
+                          setDir={setDir}
+                          dir={dir}
+                        />
+                      )}
+                      {isLanguageSwitchVisible && isCloseButtonVisible && (
+                        <div aria-hidden="true" className="z-1001 h-5 w-px bg-slate-200" />
+                      )}
 
-                  {isCloseButtonVisible && (
-                    <SurveyCloseButton
-                      onClose={onClose}
-                      hoverColor={styling.inputBgColor?.light ?? "#f8fafc"}
-                      borderRadius={styling.roundness ?? 8}
-                    />
-                  )}
-                </div>
+                      {isCloseButtonVisible && (
+                        <SurveyCloseButton
+                          onClose={onClose}
+                          hoverColor={styling.inputBgColor?.light ?? "#f8fafc"}
+                          borderRadius={styling.roundness ?? 8}
+                        />
+                      )}
+                    </div>
+                  </div>
+                ) : null}
               </div>
-            </div>
+            ) : null}
             <div
               ref={contentRef}
               className={cn(
@@ -1246,7 +1349,29 @@ export function Survey({
     );
   };
 
-  return (
+  // Survey instructions, available on every page. They live on the welcome card, which the
+  // respondent leaves after one click and can never get back to — so the text that explains what the
+  // survey is for was gone for the rest of it (the second half of the 2.4.2 VPAT finding).
+  //
+  // Rendered once here rather than inside getCardContent, which runs per card and would emit a
+  // duplicate id for every peeking card in the stacked layout. Visually hidden: the card designs
+  // have no room for a persistent block, and a sighted respondent has already read it on the
+  // welcome card. SurveyContainer points the form's aria-describedby at this id, so a screen reader
+  // announces it on entry to each page.
+  const instructions = hasSurveyInstructions(localSurvey) ? (
+    <div id={SURVEY_INSTRUCTIONS_ID} className="sr-only">
+      <Subheader
+        subheader={replaceRecallInfo(
+          getLocalizedValue(localSurvey.welcomeCard.subheader, selectedLanguage),
+          responseData,
+          currentVariables,
+          selectedLanguage
+        )}
+      />
+    </div>
+  ) : null;
+
+  const stackedCardsContainer = (
     <StackedCardsContainer
       cardArrangement={cardArrangement}
       currentBlockId={blockId}
@@ -1258,5 +1383,30 @@ export function Survey({
       fullSizeCards={fullSizeCards}
       placement={placement}
     />
+  );
+
+  if (isCardless) {
+    return (
+      <CardlessSurveyLayout
+        survey={localSurvey}
+        blockId={blockId}
+        styling={styling}
+        showProgressBar={showProgressBar}
+        isPreviewMode={isPreviewMode}
+        showCardlessPreviewLogoSlot={showCardlessPreviewLogoSlot}
+        linkSurveyCardMaxWidth={linkSurveyCardMaxWidth}>
+        <>
+          {instructions}
+          {stackedCardsContainer}
+        </>
+      </CardlessSurveyLayout>
+    );
+  }
+
+  return (
+    <>
+      {instructions}
+      {stackedCardsContainer}
+    </>
   );
 }

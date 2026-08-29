@@ -8,12 +8,12 @@ export const SecurityListTip = () => {
   const { t } = useTranslation();
   return (
     <div className="max-w-4xl">
-      <div className="flex items-center gap-x-3 rounded-lg border border-blue-100 bg-blue-50 p-4 text-sm text-blue-900 shadow-sm">
-        <ShieldCheckIcon className="size-5 flex-shrink-0 text-blue-400" />
+      <div className="flex items-center gap-x-3 rounded-lg border border-blue-100 bg-blue-50 p-4 text-sm text-blue-900 shadow-xs">
+        <ShieldCheckIcon className="size-5 shrink-0 text-blue-400" />
         <p className="text-sm">
           {t("workspace.settings.general.security_list_tip")}{" "}
           <Link
-            href="https://formbricks.com/security#stay-informed-with-formbricks-security-updates"
+            href="https://formbricks.com/security?utm_source=formbricks-app&utm_medium=webapp&utm_campaign=security_tip#stay-informed-with-formbricks-security-updates"
             target="_blank"
             rel="noopener noreferrer"
             className="underline hover:text-blue-700">

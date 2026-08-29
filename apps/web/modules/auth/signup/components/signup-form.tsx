@@ -3,15 +3,24 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { FormProvider, useForm } from "react-hook-form";
 import toast from "react-hot-toast";
 import { useTranslation } from "react-i18next";
 import Turnstile, { useTurnstile } from "react-turnstile";
 import { z } from "zod";
+import {
+  INVITE_TOKEN_INVALID_ERROR_CODE,
+  PASSWORD_COMPROMISED_ERROR_CODE,
+  SIGNUP_EMAIL_DOMAIN_BLOCKED_ERROR_CODE,
+} from "@formbricks/types/errors";
 import { TUserLocale, ZUserName, ZUserPassword } from "@formbricks/types/user";
 import { getFormattedErrorMessage } from "@/lib/utils/helper";
-import { buildVerificationRequestedPath } from "@/modules/auth/lib/verification-links";
+import { buildAttributionQuerySuffix } from "@/modules/auth/lib/attribution";
+import {
+  buildSignupWithoutVerificationSuccessPath,
+  buildVerificationRequestedPath,
+} from "@/modules/auth/lib/verification-links";
 import { createUserAction } from "@/modules/auth/signup/actions";
 import { TermsPrivacyLinks } from "@/modules/auth/signup/components/terms-privacy-links";
 import { SSOOptions } from "@/modules/ee/sso/components/sso-options";
@@ -47,8 +56,6 @@ interface SignupFormProps {
   isSsoEnabled: boolean;
   samlSsoEnabled: boolean;
   isTurnstileConfigured: boolean;
-  samlTenant: string;
-  samlProduct: string;
   turnstileSiteKey?: string;
   isFormbricksCloud: boolean;
 }
@@ -69,11 +76,9 @@ export const SignupForm = ({
   isSsoEnabled,
   samlSsoEnabled,
   isTurnstileConfigured,
-  samlTenant,
-  samlProduct,
   turnstileSiteKey,
   isFormbricksCloud,
-}: SignupFormProps) => {
+}: Readonly<SignupFormProps>) => {
   const [showLogin, setShowLogin] = useState(false);
   const searchParams = useSearchParams();
   const { t } = useTranslation();
@@ -85,6 +90,19 @@ export const SignupForm = ({
 
   const turnstile = useTurnstile();
 
+  // An SSO sign-up rejected for a personal email domain redirects back here with ?error=<code>.
+  // Match the known code exactly (never echo the raw param). Track the last error value we toasted
+  // (rather than a permanent boolean) so strict-mode's double effect invocation and locale re-renders
+  // are deduped, but a fresh, distinct rejection value would still notify.
+  const oauthError = searchParams?.get("error");
+  const lastToastedOauthError = useRef<string | null>(null);
+  useEffect(() => {
+    if (oauthError !== SIGNUP_EMAIL_DOMAIN_BLOCKED_ERROR_CODE) return;
+    if (lastToastedOauthError.current === oauthError) return;
+    lastToastedOauthError.current = oauthError;
+    toast.error(t("auth.signup.company_email_required"));
+  }, [oauthError, t]);
+
   const returnToUrl = useMemo(() => {
     if (inviteToken) {
       return webAppUrl + "/invite?token=" + inviteToken;
@@ -92,6 +110,13 @@ export const SignupForm = ({
       return webAppUrl;
     }
   }, [inviteToken, webAppUrl]);
+
+  const loginHref = useMemo(() => {
+    const base = inviteToken ? `/auth/login?callbackUrl=${returnToUrl}` : "/auth/login";
+    const attributionSuffix = buildAttributionQuerySuffix(searchParams);
+    if (!attributionSuffix) return base;
+    return `${base}${base.includes("?") ? "&" : "?"}${attributionSuffix}`;
+  }, [inviteToken, returnToUrl, searchParams]);
 
   const form = useForm<TSignupInput>({
     defaultValues: {
@@ -102,15 +127,55 @@ export const SignupForm = ({
     resolver: zodResolver(ZSignupInput),
   });
 
+  /**
+   * Map a failed `createUserAction` to where the user should see it: the two field-level rejections go
+   * under the input that caused them, everything else is a toast. Each stable error code exists so the
+   * server can be specific without the message itself being an enumeration signal.
+   */
+  const surfaceSignupError = (errorMessage: string) => {
+    switch (errorMessage) {
+      case SIGNUP_EMAIL_DOMAIN_BLOCKED_ERROR_CODE:
+        form.setError("email", { type: "manual", message: t("auth.signup.company_email_required") });
+        return;
+      case PASSWORD_COMPROMISED_ERROR_CODE:
+        form.setError("password", { type: "manual", message: t("auth.password_compromised") });
+        return;
+      case INVITE_TOKEN_INVALID_ERROR_CODE:
+        // Reachable when the invite expires or is revoked between this page rendering and the form being
+        // submitted. Reuses the existing invite copy rather than naming the specific reason, matching the
+        // server, which returns one code for expired / revoked / wrong-address so it cannot be used to
+        // probe which invites exist.
+        toast.error(t("auth.invite.invite_not_found_description"));
+        return;
+      default:
+        // SIGNUP_DISABLED_ERROR_CODE lands here (#8681). CodeRabbit is right that a real user can see
+        // it — sign-up can be open when this page renders and closed before submit, the same
+        // render-then-revoke race that makes the invite branch above user-facing — so it should be
+        // translated rather than shown as a raw code. Deferred there because adding an en-US string
+        // needs the 14 target locales populated too, and doing it without that reddens
+        // `scan-translations`; tracked as a follow-up. (This PR hand-writes such strings with their
+        // i18n.lock checksums, so that route is open to whoever picks the follow-up up.)
+        toast.error(errorMessage);
+    }
+  };
+
   const handleSubmit = async (data: TSignupInput) => {
     try {
       if (isTurnstileConfigured && !turnstileToken) {
         throw new Error(t("auth.signup.please_verify_captcha"));
       }
 
+      const resetTurnstileIfConfigured = () => {
+        if (isTurnstileConfigured) {
+          setTurnstileToken(undefined);
+          turnstile.reset();
+        }
+      };
+      const normalizedEmail = data.email.toLowerCase();
+
       const createUserResponse = await createUserAction({
         name: data.name,
-        email: data.email,
+        email: normalizedEmail,
         password: data.password,
         userLocale,
         inviteToken: inviteToken ?? "",
@@ -119,37 +184,32 @@ export const SignupForm = ({
         subscribeToProductUpdates,
       });
 
-      const emailTokenActionResponse = await createEmailTokenAction({ email: data.email });
+      if (!createUserResponse?.data) {
+        resetTurnstileIfConfigured();
+        surfaceSignupError(getFormattedErrorMessage(createUserResponse));
+        return;
+      }
+
+      const emailTokenActionResponse = await createEmailTokenAction({ email: normalizedEmail });
       const token = emailTokenActionResponse?.data;
 
-      const url = emailVerificationDisabled
-        ? `/auth/signup-without-verification-success?token=${token}`
-        : buildVerificationRequestedPath({
-            token: token ?? "",
-            callbackUrl: inviteToken ? returnToUrl : undefined,
-          });
+      if (!token) {
+        resetTurnstileIfConfigured();
 
-      if (createUserResponse?.data) {
-        router.push(url);
-
-        if (!emailTokenActionResponse?.data) {
-          if (isTurnstileConfigured) {
-            setTurnstileToken(undefined);
-            turnstile.reset();
-          }
-
-          const errorMessage = getFormattedErrorMessage(emailTokenActionResponse);
-          toast.error(errorMessage);
-        }
-      } else {
-        if (isTurnstileConfigured) {
-          setTurnstileToken(undefined);
-          turnstile.reset();
-        }
-
-        const errorMessage = getFormattedErrorMessage(createUserResponse);
+        const errorMessage = getFormattedErrorMessage(emailTokenActionResponse);
         toast.error(errorMessage);
+        return;
       }
+
+      // Both branches carry the invite callback. The verification-disabled branch is the default for
+      // self-hosted, so omitting it there left invited users with an existing account unable to reach
+      // the invite from the screen they land on (ENG-2091, raised in review).
+      const callbackUrl = inviteToken ? returnToUrl : undefined;
+      const url = emailVerificationDisabled
+        ? buildSignupWithoutVerificationSuccessPath({ token, callbackUrl })
+        : buildVerificationRequestedPath({ token, callbackUrl });
+
+      router.push(url);
     } catch (e: any) {
       toast.error(e.message);
     }
@@ -224,7 +284,7 @@ export const SignupForm = ({
                               placeholder="*******"
                               aria-placeholder="password"
                               required
-                              className="block w-full rounded-md shadow-sm focus:border-brand-dark focus:ring-brand-dark sm:text-sm"
+                              className="block w-full rounded-md shadow-xs focus:border-brand-dark focus:ring-brand-dark sm:text-sm"
                             />
                             {error?.message && <FormError className="text-left">{error.message}</FormError>}
                           </div>
@@ -312,8 +372,6 @@ export const SignupForm = ({
           oidcOAuthEnabled={oidcOAuthEnabled}
           oidcDisplayName={oidcDisplayName}
           samlSsoEnabled={samlSsoEnabled}
-          samlTenant={samlTenant}
-          samlProduct={samlProduct}
           returnToUrl={returnToUrl}
           source="signup"
         />
@@ -322,9 +380,7 @@ export const SignupForm = ({
       <div className="mt-9 text-center text-xs">
         <span className="leading-5 text-slate-500">{t("auth.signup.have_an_account")}</span>
         <br />
-        <Link
-          href={inviteToken ? `/auth/login?callbackUrl=${returnToUrl}` : "/auth/login"}
-          className="font-semibold text-slate-600 underline hover:text-slate-700">
+        <Link href={loginHref} className="font-semibold text-slate-600 underline hover:text-slate-700">
           {t("auth.signup.log_in")}
         </Link>
       </div>

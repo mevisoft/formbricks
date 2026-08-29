@@ -1,11 +1,11 @@
 "use client";
 
-import { Language } from "@prisma/client";
 import { TFunction } from "i18next";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { toast } from "react-hot-toast";
 import { useTranslation } from "react-i18next";
+import { Language } from "@formbricks/database/prisma-browser";
 import { iso639Languages } from "@formbricks/i18n-utils/src/utils";
 import { TUserLocale } from "@formbricks/types/user";
 import type { TWorkspace } from "@formbricks/types/workspace";
@@ -175,7 +175,7 @@ export function EditLanguage({ workspace, locale, isReadOnly }: EditLanguageProp
           : updateLanguageAction({
               workspaceId: workspace.id,
               languageId: lang.id,
-              languageInput: { code: lang.code, alias: lang.alias },
+              languageInput: { alias: lang.alias },
             });
       })
     );
@@ -211,7 +211,7 @@ export function EditLanguage({ workspace, locale, isReadOnly }: EditLanguageProp
             ))}
           </>
         ) : (
-          <p className="text-sm italic text-slate-500">{t("workspace.languages.no_language_found")}</p>
+          <p className="text-sm text-slate-500 italic">{t("workspace.languages.no_language_found")}</p>
         )}
 
         <AddLanguageButton
@@ -232,7 +232,7 @@ export function EditLanguage({ workspace, locale, isReadOnly }: EditLanguageProp
         t={t}
       />
       {isReadOnly && (
-        <Alert variant="warning" className="mt-4">
+        <Alert variant="warning" className="mt-4" role="status">
           <AlertDescription>
             {t("common.only_owners_managers_and_manage_access_members_can_perform_this_action")}
           </AlertDescription>

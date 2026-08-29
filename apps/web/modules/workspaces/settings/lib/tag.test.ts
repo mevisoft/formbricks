@@ -1,6 +1,6 @@
-import { Prisma } from "@prisma/client";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { prisma } from "@formbricks/database";
+import { Prisma } from "@formbricks/database/prisma";
 import { PrismaErrorType } from "@formbricks/database/types/error";
 import { ok } from "@formbricks/types/error-handlers";
 import { TTag } from "@formbricks/types/tags";
@@ -66,7 +66,7 @@ describe("tag lib", () => {
     });
     test("returns tag_not_found on tag not found", async () => {
       const prismaError = new Prisma.PrismaClientKnownRequestError("Test Prisma Error", {
-        code: PrismaErrorType.RecordDoesNotExist,
+        code: PrismaErrorType.RecordNotFound,
         clientVersion: "test",
       });
       vi.mocked(prisma.tag.delete).mockRejectedValueOnce(prismaError);

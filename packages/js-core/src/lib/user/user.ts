@@ -4,8 +4,11 @@ import { tearDown } from "@/lib/common/setup";
 import { UpdateQueue } from "@/lib/user/update-queue";
 import { type ApiErrorResponse, type Result, okVoid } from "@/types/error";
 
-// eslint-disable-next-line @typescript-eslint/require-await -- we want to use promises here
-export const setUserId = async (userId: string): Promise<Result<void, ApiErrorResponse>> => {
+const MAX_USER_ID_LENGTH = 255;
+
+// Not `async` (nothing to await), but keeps the Promise return type: this is public
+// SDK API and callers rely on awaiting it.
+export const setUserId = (userId: string): Promise<Result<void, ApiErrorResponse>> => {
   const appConfig = Config.getInstance();
   const logger = Logger.getInstance();
   const updateQueue = UpdateQueue.getInstance();
@@ -14,10 +17,17 @@ export const setUserId = async (userId: string): Promise<Result<void, ApiErrorRe
     data: { userId: currentUserId },
   } = appConfig.get().user;
 
+  // Validate the new userId before mutating any state, so an invalid replacement
+  // does not tear down the existing valid user.
+  if (userId.length > MAX_USER_ID_LENGTH) {
+    logger.error(`UserId exceeds maximum length of ${String(MAX_USER_ID_LENGTH)} characters`);
+    return Promise.resolve(okVoid());
+  }
+
   // If the same userId is already set, no-op
   if (currentUserId === userId) {
     logger.debug("UserId is already set to the same value, skipping");
-    return okVoid();
+    return Promise.resolve(okVoid());
   }
 
   // If a different userId is set, clean up the previous user state first
@@ -26,15 +36,9 @@ export const setUserId = async (userId: string): Promise<Result<void, ApiErrorRe
     tearDown();
   }
 
-  const MAX_USER_ID_LENGTH = 255;
-  if (userId.length > MAX_USER_ID_LENGTH) {
-    logger.error(`UserId exceeds maximum length of ${String(MAX_USER_ID_LENGTH)} characters`);
-    return okVoid();
-  }
-
   updateQueue.updateUserId(userId);
   void updateQueue.processUpdates();
-  return okVoid();
+  return Promise.resolve(okVoid());
 };
 
 export const logout = (): Result<void> => {

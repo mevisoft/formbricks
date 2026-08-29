@@ -1,18 +1,23 @@
-import { describe, expect, test, vi } from "vitest";
+import type { TFunction } from "i18next";
+import { describe, expect, test } from "vitest";
 import type { FeedbackRecordData } from "@/modules/hub/types";
+import { FIELD_TYPE_ICON_MAP } from "./field-type-icons";
 import {
+  formatFieldType,
+  formatFieldTypeLabel,
   formatSourceType,
-  getCreateDefaults,
   getReadOnlyMetadataEntries,
   getValueFieldByType,
   isPresetSourceType,
   mapRecordToValues,
   parseNumberValue,
+  resolveFeedbackDisplayText,
   toISOOrUndefined,
   toLocalDateTimeInput,
 } from "./utils";
 
-vi.mock("uuid", () => ({ v7: () => "mock-uuid-v7" }));
+// Returns the key so the assertions can read which translation key the formatter picked.
+const t = ((key: string) => key) as TFunction;
 
 const makeRecord = (overrides: Partial<FeedbackRecordData> = {}): FeedbackRecordData => ({
   id: "rec-1",
@@ -69,22 +74,6 @@ describe("toISOOrUndefined", () => {
 
   test("returns undefined for invalid date", () => {
     expect(toISOOrUndefined("not-a-date")).toBeUndefined();
-  });
-});
-
-describe("getCreateDefaults", () => {
-  test("uses first directory as tenant_id", () => {
-    const dirs = [{ id: "dir-1", name: "Dir 1" }];
-    const result = getCreateDefaults(dirs);
-    expect(result.tenant_id).toBe("dir-1");
-    expect(result.submission_id).toBe("mock-uuid-v7");
-    expect(result.field_type).toBe("text");
-    expect(result.metadataEntries).toEqual([]);
-  });
-
-  test("handles empty directories", () => {
-    const result = getCreateDefaults([]);
-    expect(result.tenant_id).toBe("");
   });
 });
 
@@ -155,8 +144,6 @@ describe("isPresetSourceType", () => {
 });
 
 describe("formatSourceType", () => {
-  const t = ((key: string) => key) as any;
-
   test("maps known source types", () => {
     expect(formatSourceType("formbricks", t)).toBe("workspace.unify.formbricks_surveys");
     expect(formatSourceType("formbricks_survey", t)).toBe("workspace.unify.formbricks_surveys");
@@ -165,5 +152,110 @@ describe("formatSourceType", () => {
 
   test("returns raw value for unknown types", () => {
     expect(formatSourceType("custom", t)).toBe("custom");
+  });
+});
+
+describe("formatFieldType", () => {
+  test("capitalizes non-acronym types", () => {
+    expect(formatFieldType("text")).toBe("Text");
+    expect(formatFieldType("categorical")).toBe("Categorical");
+    expect(formatFieldType("number")).toBe("Number");
+    expect(formatFieldType("date")).toBe("Date");
+  });
+
+  test("upper-cases acronym types", () => {
+    expect(formatFieldType("nps")).toBe("NPS");
+    expect(formatFieldType("csat")).toBe("CSAT");
+    expect(formatFieldType("ces")).toBe("CES");
+  });
+
+  test("returns empty string unchanged", () => {
+    expect(formatFieldType("")).toBe("");
+  });
+});
+
+describe("formatFieldTypeLabel", () => {
+  test("maps every icon-mapped field type to a translation key", () => {
+    // The keys of FIELD_TYPE_ICON_MAP are the types the pick-list can render an icon for, and the
+    // icon's aria-label is their only textual form — so each one must resolve to a key, not to the
+    // re-cased raw value.
+    for (const fieldType of Object.keys(FIELD_TYPE_ICON_MAP)) {
+      expect(formatFieldTypeLabel(fieldType, t)).toBe(`workspace.unify.field_type_label_${fieldType}`);
+    }
+  });
+
+  test("falls back to the re-cased raw value for an unmapped type", () => {
+    expect(formatFieldTypeLabel("ranking", t)).toBe("Ranking");
+    expect(formatFieldTypeLabel("", t)).toBe("");
+  });
+});
+
+describe("resolveFeedbackDisplayText", () => {
+  test("prefers the translation when present and different from the original", () => {
+    const result = resolveFeedbackDisplayText(
+      makeRecord({
+        value_text: "Großartig",
+        value_text_translated: "Great",
+        translation_lang_key: "en",
+      })
+    );
+    expect(result).toEqual({
+      text: "Great",
+      original: "Großartig",
+      isTranslated: true,
+      langKey: "en",
+    });
+  });
+
+  test("falls back to the original when no translation exists", () => {
+    const result = resolveFeedbackDisplayText(makeRecord({ value_text: "Hello" }));
+    expect(result).toEqual({
+      text: "Hello",
+      original: "Hello",
+      isTranslated: false,
+      langKey: null,
+    });
+  });
+
+  test.each([["   "], [""]])(
+    "ignores empty/whitespace-only translations (%j) and shows the original",
+    (translated) => {
+      const result = resolveFeedbackDisplayText(
+        makeRecord({ value_text: "Original", value_text_translated: translated, translation_lang_key: "en" })
+      );
+      expect(result.text).toBe("Original");
+      expect(result.isTranslated).toBe(false);
+      expect(result.langKey).toBeNull();
+    }
+  );
+
+  test("does not flag a translation identical to the original", () => {
+    const result = resolveFeedbackDisplayText(
+      makeRecord({ value_text: "Same", value_text_translated: "Same", translation_lang_key: "en" })
+    );
+    expect(result.text).toBe("Same");
+    expect(result.isTranslated).toBe(false);
+    expect(result.langKey).toBeNull();
+  });
+
+  test("drops the language key when there is no usable translation", () => {
+    const result = resolveFeedbackDisplayText(
+      makeRecord({ value_text: "Hello", translation_lang_key: "en" })
+    );
+    expect(result.isTranslated).toBe(false);
+    expect(result.langKey).toBeNull();
+  });
+
+  test("returns null text when the record carries no text value at all", () => {
+    const result = resolveFeedbackDisplayText(makeRecord({ value_text: undefined }));
+    expect(result.text).toBeNull();
+    expect(result.original).toBeNull();
+    expect(result.isTranslated).toBe(false);
+  });
+
+  test("preserves an empty-string original (does not collapse to null)", () => {
+    const result = resolveFeedbackDisplayText(makeRecord({ value_text: "" }));
+    expect(result.text).toBe("");
+    expect(result.original).toBe("");
   });
 });

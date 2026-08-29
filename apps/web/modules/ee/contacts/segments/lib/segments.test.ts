@@ -19,9 +19,11 @@ import {
   createSegment,
   deleteSegment,
   evaluateSegment,
+  getExistingWorkspaceSurveyIds,
   getSegment,
   getSegments,
   getSegmentsByAttributeKey,
+  getSurveyWorkspaceIdMap,
   resetSegmentInSurvey,
   selectSegment,
   transformPrismaSegment,
@@ -42,6 +44,7 @@ vi.mock("@formbricks/database", () => ({
     },
     survey: {
       update: vi.fn(),
+      findMany: vi.fn(),
     },
     $transaction: vi.fn((callback) => callback(prisma)), // Mock transaction to execute the callback
   },
@@ -164,6 +167,128 @@ describe("Segment Service Tests", () => {
     test("should throw DatabaseError on Prisma error", async () => {
       vi.mocked(prisma.segment.findMany).mockRejectedValue(new Error("DB error"));
       await expect(getSegments("workspace-id-mock")).rejects.toThrow(Error);
+    });
+  });
+
+  describe("getSurveyWorkspaceIdMap", () => {
+    test("builds an id→workspaceId map, selecting only id and workspaceId", async () => {
+      vi.mocked(prisma.survey.findMany).mockResolvedValue([
+        { id: "survey1", workspaceId: "ws-a" },
+        { id: "survey2", workspaceId: "ws-b" },
+      ] as any);
+
+      const result = await getSurveyWorkspaceIdMap(["survey1", "survey2"]);
+
+      expect(result).toEqual(
+        new Map([
+          ["survey1", "ws-a"],
+          ["survey2", "ws-b"],
+        ])
+      );
+      expect(prisma.survey.findMany).toHaveBeenCalledWith({
+        where: { id: { in: ["survey1", "survey2"] } },
+        select: { id: true, workspaceId: true },
+      });
+    });
+
+    test("returns an empty map when no surveys match", async () => {
+      vi.mocked(prisma.survey.findMany).mockResolvedValue([] as any);
+
+      const result = await getSurveyWorkspaceIdMap(["missing"]);
+
+      expect(result.size).toBe(0);
+    });
+
+    test("short-circuits to an empty map without querying when no ids are given", async () => {
+      const result = await getSurveyWorkspaceIdMap([]);
+
+      expect(result.size).toBe(0);
+      expect(prisma.survey.findMany).not.toHaveBeenCalled();
+    });
+
+    test("deduplicates ids before querying", async () => {
+      vi.mocked(prisma.survey.findMany).mockResolvedValue([{ id: "survey1", workspaceId: "ws-a" }] as any);
+
+      const result = await getSurveyWorkspaceIdMap(["survey1", "survey1", "survey1"]);
+
+      expect(result).toEqual(new Map([["survey1", "ws-a"]]));
+      expect(prisma.survey.findMany).toHaveBeenCalledTimes(1);
+      expect(prisma.survey.findMany).toHaveBeenCalledWith({
+        where: { id: { in: ["survey1"] } },
+        select: { id: true, workspaceId: true },
+      });
+    });
+
+    test("splits an oversized id list into bounded batches and merges the results", async () => {
+      const surveyIds = Array.from({ length: 450 }, (_, index) => `survey_${index}`);
+      vi.mocked(prisma.survey.findMany).mockImplementation((async ({ where }: any) =>
+        where.id.in.map((id: string) => ({ id, workspaceId: "ws-a" }))) as any);
+
+      const result = await getSurveyWorkspaceIdMap(surveyIds);
+
+      // 450 ids at a batch size of 200 -> 200 / 200 / 50, every id still present in the merged map.
+      const batchSizes = vi
+        .mocked(prisma.survey.findMany)
+        .mock.calls.map(([args]: any) => args.where.id.in.length);
+      expect(batchSizes).toEqual([200, 200, 50]);
+      expect(result.size).toBe(450);
+      expect(result.get("survey_0")).toBe("ws-a");
+      expect(result.get("survey_449")).toBe("ws-a");
+    });
+  });
+
+  describe("getExistingWorkspaceSurveyIds", () => {
+    test("returns only the referenced ids that belong to the workspace, scoped by workspaceId", async () => {
+      vi.mocked(prisma.survey.findMany).mockResolvedValue([{ id: "survey_known" }] as any);
+
+      const result = await getExistingWorkspaceSurveyIds("ws_1", ["survey_known", "survey_foreign"]);
+
+      expect(result).toEqual(new Set(["survey_known"]));
+      expect(prisma.survey.findMany).toHaveBeenCalledWith({
+        where: { workspaceId: "ws_1", id: { in: ["survey_known", "survey_foreign"] } },
+        select: { id: true },
+      });
+    });
+
+    test("short-circuits to an empty set without querying when no ids are given", async () => {
+      const result = await getExistingWorkspaceSurveyIds("ws_1", []);
+
+      expect(result.size).toBe(0);
+      expect(prisma.survey.findMany).not.toHaveBeenCalled();
+    });
+
+    test("deduplicates ids before querying", async () => {
+      vi.mocked(prisma.survey.findMany).mockResolvedValue([{ id: "survey1" }] as any);
+
+      const result = await getExistingWorkspaceSurveyIds("ws_1", ["survey1", "survey1", "survey1"]);
+
+      expect(result).toEqual(new Set(["survey1"]));
+      expect(prisma.survey.findMany).toHaveBeenCalledTimes(1);
+      expect(prisma.survey.findMany).toHaveBeenCalledWith({
+        where: { workspaceId: "ws_1", id: { in: ["survey1"] } },
+        select: { id: true },
+      });
+    });
+
+    test("splits an oversized id list into bounded batches and still returns only the found subset", async () => {
+      const surveyIds = Array.from({ length: 450 }, (_, index) => `survey_${index}`);
+      // survey_449 (last batch) is foreign/unknown — everything else belongs to the workspace.
+      vi.mocked(prisma.survey.findMany).mockImplementation((async ({ where }: any) =>
+        where.id.in.filter((id: string) => id !== "survey_449").map((id: string) => ({ id }))) as any);
+
+      const result = await getExistingWorkspaceSurveyIds("ws_1", surveyIds);
+
+      // 450 ids at a batch size of 200 -> 200 / 200 / 50, each query scoped to the workspace.
+      const batchSizes = vi
+        .mocked(prisma.survey.findMany)
+        .mock.calls.map(([args]: any) => args.where.id.in.length);
+      expect(batchSizes).toEqual([200, 200, 50]);
+      for (const [args] of vi.mocked(prisma.survey.findMany).mock.calls) {
+        expect((args as any).where.workspaceId).toBe("ws_1");
+      }
+      expect(result.size).toBe(449);
+      expect(result.has("survey_0")).toBe(true);
+      expect(result.has("survey_449")).toBe(false);
     });
   });
 

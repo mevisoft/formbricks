@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { getLanguageDisplayName } from "./language-display-name";
+import { getLanguageDisplayName, getShortLanguageDisplayName } from "./language-display-name";
 
 describe("getLanguageDisplayName", () => {
   test("returns native name for common language codes", () => {
@@ -29,6 +29,13 @@ describe("getLanguageDisplayName", () => {
     expect(getLanguageDisplayName("bo")).toBe("བོད་སྐད་");
   });
 
+  test("falls back to the bare/script native name for region-tagged canonical codes", () => {
+    // no exact entry for these canonical codes → fall back to language(+script)
+    expect(getLanguageDisplayName("hi-IN")).toBe("हिन्दी");
+    expect(getLanguageDisplayName("zh-Hans-CN")).toBe("简体中文");
+    expect(getLanguageDisplayName("da-DK")).toBe("Dansk");
+  });
+
   test("returns raw code for unknown codes", () => {
     expect(getLanguageDisplayName("xx")).toBe("Xx");
     expect(getLanguageDisplayName("unknown")).toBe("Unknown");
@@ -36,5 +43,35 @@ describe("getLanguageDisplayName", () => {
 
   test("returns empty string for empty input", () => {
     expect(getLanguageDisplayName("")).toBe("");
+  });
+});
+
+describe("getShortLanguageDisplayName", () => {
+  test("drops the region from a region-named code", () => {
+    // The full names ("Deutsch (Deutschland)", "American English") do not fit a compact label.
+    expect(getLanguageDisplayName("de-DE")).toBe("Deutsch (Deutschland)");
+    expect(getShortLanguageDisplayName("de-DE")).toBe("Deutsch");
+    expect(getShortLanguageDisplayName("en-US")).toBe("English");
+    expect(getShortLanguageDisplayName("ar-EG")).toBe("العربية");
+  });
+
+  test("keeps the script, which is what tells the Chinese variants apart", () => {
+    expect(getShortLanguageDisplayName("zh-Hans-CN")).toBe("简体中文");
+    expect(getShortLanguageDisplayName("zh-Hant-TW")).toBe("繁體中文");
+  });
+
+  test("is a no-op for codes that carry no region", () => {
+    expect(getShortLanguageDisplayName("de")).toBe("Deutsch");
+    expect(getShortLanguageDisplayName("ja")).toBe("日本語");
+  });
+
+  test("keeps the full name when the bare language has no entry of its own", () => {
+    // Shortening must not trade a known name for an echoed code.
+    expect(getShortLanguageDisplayName("xx-YY")).toBe("Xx-YY");
+  });
+
+  test("falls back to the full-name behaviour for malformed and empty input", () => {
+    expect(getShortLanguageDisplayName("")).toBe("");
+    expect(getShortLanguageDisplayName("not a locale")).toBe("Not a locale");
   });
 });

@@ -59,6 +59,9 @@ describe("survey service scheduling", () => {
     vi.mocked(getActionClasses).mockResolvedValue([mockActionClass] as never);
     vi.mocked(getOrganizationByWorkspaceId).mockResolvedValue({ id: "org123" } as never);
     mockQueueAuditEventWithoutRequest.mockResolvedValue(undefined);
+    // createSurvey now wraps its core writes in prisma.$transaction; run the callback with the same
+    // mocked client so per-test prisma.survey/segment mocks still apply inside the transaction.
+    vi.mocked(prisma.$transaction).mockImplementation(async (callback) => callback(prisma));
   });
 
   afterEach(() => {
@@ -78,13 +81,15 @@ describe("survey service scheduling", () => {
       status: "inProgress",
     } as never);
 
+    // Publishing runs through updateSurveyAction -> updateSurvey, i.e. with validation. Leaving a
+    // draft is never allowed on the skip-validation path (ENG-2115).
     await updateSurveyInternal(
       {
         ...updateSurveyInput,
         publishOn: scheduledPublishSelection,
         status: "inProgress",
       },
-      true
+      false
     );
 
     expect(prisma.survey.update).toHaveBeenCalledWith(
@@ -116,7 +121,7 @@ describe("survey service scheduling", () => {
         closeOn: scheduledCloseSelection,
         status: "paused",
       },
-      true
+      false
     );
 
     expect(prisma.survey.update).toHaveBeenCalledWith(
@@ -149,6 +154,8 @@ describe("survey service scheduling", () => {
     } as never);
     prisma.survey.findMany.mockResolvedValueOnce([] as never).mockResolvedValueOnce([] as never);
 
+    // Scheduling a draft also runs through updateSurveyAction -> updateSurvey, i.e. with validation
+    // (ENG-2115: the skip-validation path may not move a survey out of draft).
     await updateSurveyInternal(
       {
         ...updateSurveyInput,
@@ -156,7 +163,7 @@ describe("survey service scheduling", () => {
         publishOn: scheduledPublishSelection,
         status: "paused",
       },
-      true
+      false
     );
 
     expect(prisma.survey.update).toHaveBeenCalledWith(
@@ -192,7 +199,7 @@ describe("survey service scheduling", () => {
         publishOn: scheduledSelection,
         status: "completed",
       },
-      true
+      false
     );
 
     expect(prisma.survey.update).toHaveBeenCalledWith(
@@ -243,7 +250,7 @@ describe("survey service scheduling", () => {
         publishOn: dueSelection,
         status: "paused",
       },
-      true
+      false
     );
 
     expect(updatedSurvey.status).toBe("inProgress");
@@ -351,7 +358,7 @@ describe("survey service scheduling", () => {
           publishOn: sameDaySelection,
           status: "paused",
         },
-        true
+        false
       )
     ).rejects.toThrow(ValidationError);
 

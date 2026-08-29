@@ -2,6 +2,8 @@
 
 set -e
 ubuntu_version=$(lsb_release -a 2>/dev/null | grep -v "No LSB modules are available." | grep "Description:" | awk -F "Description:\t" '{print $2}')
+legacy_valkey_image="valkey/valkey@sha256:12ba4f45a7c3e1d0f076acd616cb230834e75a77e8516dde382720af32832d6d"
+multi_arch_valkey_image="valkey/valkey@sha256:e0eb7c480958d32bdc4357a74bdd70653ae15f2f9b4c93c4a5a9fad1dc471c84"
 
 write_rustfs_init_script() {
   local target_path="${1:-rustfs-init.sh}"
@@ -161,6 +163,67 @@ write_rustfs_env_file() {
   upsert_dotenv_var "FORMBRICKS_RUSTFS_BUCKET_NAME" "$rustfs_bucket_name" "$env_file"
   upsert_dotenv_var "FORMBRICKS_RUSTFS_POLICY_NAME" "$rustfs_policy_name" "$env_file"
   upsert_dotenv_var "FORMBRICKS_RUSTFS_REGION" "us-east-1" "$env_file"
+}
+
+add_formbricks_traefik_labels() {
+  local compose_file="${1:-docker-compose.yml}"
+  local formbricks_domain_name="$2"
+  local formbricks_hsts_enabled="$3"
+  local formbricks_https_setup="$4"
+  local tmp_file="${compose_file}.tmp"
+
+  if ! awk -v domain_name="$formbricks_domain_name" -v hsts_enabled="$formbricks_hsts_enabled" -v https_setup="$formbricks_https_setup" '
+BEGIN { in_formbricks = 0; inserted = 0 }
+/^  formbricks:$/ { in_formbricks = 1 }
+in_formbricks && /^  [A-Za-z0-9_-]+:/ && !/^  formbricks:$/ { in_formbricks = 0 }
+{
+    if (in_formbricks && !inserted && $0 ~ /^    environment:$/) {
+        print "    labels:"
+        print "      - \"traefik.enable=true\""
+        print "      - \"traefik.http.routers.formbricks.rule=Host(`" domain_name "`)\""
+        print "      - \"traefik.http.routers.formbricks.entrypoints=websecure\""
+        print "      - \"traefik.http.routers.formbricks.tls=true\""
+        if (https_setup == "y") {
+            print "      - \"traefik.http.routers.formbricks.tls.certresolver=default\""
+        }
+        print "      - \"traefik.http.services.formbricks.loadbalancer.server.port=3000\""
+        print "      - \"traefik.http.routers.feedback-records-token.rule=Host(`" domain_name "`) && Path(`/api/v3/feedbackRecords/token`)\""
+        print "      - \"traefik.http.routers.feedback-records-token.entrypoints=websecure\""
+        print "      - \"traefik.http.routers.feedback-records-token.tls=true\""
+        if (https_setup == "y") {
+            print "      - \"traefik.http.routers.feedback-records-token.tls.certresolver=default\""
+        }
+        print "      - \"traefik.http.routers.feedback-records-token.service=formbricks\""
+        print "      - \"traefik.http.routers.feedback-records-token.priority=200\""
+        if (hsts_enabled == "y") {
+            print "      - \"traefik.http.middlewares.hstsHeader.headers.stsSeconds=31536000\""
+            print "      - \"traefik.http.middlewares.hstsHeader.headers.forceSTSHeader=true\""
+            print "      - \"traefik.http.middlewares.hstsHeader.headers.stsPreload=true\""
+            print "      - \"traefik.http.middlewares.hstsHeader.headers.stsIncludeSubdomains=true\""
+        } else {
+            print "      - \"traefik.http.routers.formbricks_http.entrypoints=web\""
+            print "      - \"traefik.http.routers.formbricks_http.rule=Host(`" domain_name "`)\""
+            print "      - \"traefik.http.routers.feedback-records-token-http.rule=Host(`" domain_name "`) && Path(`/api/v3/feedbackRecords/token`)\""
+            print "      - \"traefik.http.routers.feedback-records-token-http.entrypoints=web\""
+            print "      - \"traefik.http.routers.feedback-records-token-http.service=formbricks\""
+            print "      - \"traefik.http.routers.feedback-records-token-http.priority=200\""
+        }
+        inserted = 1
+    }
+    print
+}
+END {
+    if (!inserted) {
+        exit 1
+    }
+}
+' "$compose_file" >"$tmp_file"; then
+    rm -f "$tmp_file"
+    echo "❌ Failed to add Traefik labels to the formbricks service."
+    return 1
+  fi
+
+  mv "$tmp_file" "$compose_file"
 }
 
 install_formbricks() {
@@ -577,49 +640,13 @@ EOF
     echo "🚗 RustFS S3 configuration updated successfully!"
   fi
 
-  # SUPER SIMPLE: Use multiple simple operations instead of complex AWK
-
   # Step 1: Add Traefik labels to formbricks service
-  awk -v domain_name="$domain_name" -v hsts_enabled="$hsts_enabled" '
-/formbricks:/,/^ *$/ {
-    if ($0 ~ /<<: \*environment$/) {
-        print "    labels:"
-        print "      - \"traefik.enable=true\""
-        print "      - \"traefik.http.routers.formbricks.rule=Host(`" domain_name "`)\""
-        print "      - \"traefik.http.routers.formbricks.entrypoints=websecure\""
-        print "      - \"traefik.http.routers.formbricks.tls=true\""
-        print "      - \"traefik.http.routers.formbricks.tls.certresolver=default\""
-        print "      - \"traefik.http.services.formbricks.loadbalancer.server.port=3000\""
-        print "      - \"traefik.http.routers.feedback-records-token.rule=Host(`" domain_name "`) && Path(`/api/v3/feedbackRecords/token`)\""
-        print "      - \"traefik.http.routers.feedback-records-token.entrypoints=websecure\""
-        print "      - \"traefik.http.routers.feedback-records-token.tls=true\""
-        print "      - \"traefik.http.routers.feedback-records-token.tls.certresolver=default\""
-        print "      - \"traefik.http.routers.feedback-records-token.service=formbricks\""
-        print "      - \"traefik.http.routers.feedback-records-token.priority=200\""
-        if (hsts_enabled == "y") {
-            print "      - \"traefik.http.middlewares.hstsHeader.headers.stsSeconds=31536000\""
-            print "      - \"traefik.http.middlewares.hstsHeader.headers.forceSTSHeader=true\""
-            print "      - \"traefik.http.middlewares.hstsHeader.headers.stsPreload=true\""
-            print "      - \"traefik.http.middlewares.hstsHeader.headers.stsIncludeSubdomains=true\""
-        } else {
-            print "      - \"traefik.http.routers.formbricks_http.entrypoints=web\""
-            print "      - \"traefik.http.routers.formbricks_http.rule=Host(`" domain_name "`)\""
-            print "      - \"traefik.http.routers.feedback-records-token-http.rule=Host(`" domain_name "`) && Path(`/api/v3/feedbackRecords/token`)\""
-            print "      - \"traefik.http.routers.feedback-records-token-http.entrypoints=web\""
-            print "      - \"traefik.http.routers.feedback-records-token-http.service=formbricks\""
-            print "      - \"traefik.http.routers.feedback-records-token-http.priority=200\""
-        }
-        print $0
-    } else {
-        print $0
-    }
-    next
-}
-{ print }
-' docker-compose.yml >tmp.yml && mv tmp.yml docker-compose.yml
+  if ! add_formbricks_traefik_labels "docker-compose.yml" "$domain_name" "$hsts_enabled" "$https_setup"; then
+    exit 1
+  fi
 
   # Step 1b: Add FeedbackRecords gateway labels to the Hub service.
-  awk -v domain_name="$domain_name" -v hsts_enabled="$hsts_enabled" '
+  awk -v domain_name="$domain_name" -v hsts_enabled="$hsts_enabled" -v https_setup="$https_setup" '
 BEGIN { in_hub = 0; inserted = 0 }
 /^  hub:/ { in_hub = 1 }
 in_hub && /^  [A-Za-z0-9_-]+:/ && !/^  hub:/ { in_hub = 0 }
@@ -631,14 +658,18 @@ in_hub && /^  [A-Za-z0-9_-]+:/ && !/^  hub:/ { in_hub = 0 }
         print "      - \"traefik.http.routers.feedback-records-v3.rule=Host(`" domain_name "`) && PathPrefix(`/api/v3/feedbackRecords`)\""
         print "      - \"traefik.http.routers.feedback-records-v3.entrypoints=websecure\""
         print "      - \"traefik.http.routers.feedback-records-v3.tls=true\""
-        print "      - \"traefik.http.routers.feedback-records-v3.tls.certresolver=default\""
+        if (https_setup == "y") {
+            print "      - \"traefik.http.routers.feedback-records-v3.tls.certresolver=default\""
+        }
         print "      - \"traefik.http.routers.feedback-records-v3.service=feedback-records-hub\""
         print "      - \"traefik.http.routers.feedback-records-v3.priority=100\""
         print "      - \"traefik.http.routers.feedback-records-v3.middlewares=feedback-records-auth,feedback-records-v3-rewrite,feedback-records-hub-headers\""
         print "      - \"traefik.http.routers.feedback-records-sdk.rule=Host(`" domain_name "`) && PathPrefix(`/v1/feedback-records`)\""
         print "      - \"traefik.http.routers.feedback-records-sdk.entrypoints=websecure\""
         print "      - \"traefik.http.routers.feedback-records-sdk.tls=true\""
-        print "      - \"traefik.http.routers.feedback-records-sdk.tls.certresolver=default\""
+        if (https_setup == "y") {
+            print "      - \"traefik.http.routers.feedback-records-sdk.tls.certresolver=default\""
+        }
         print "      - \"traefik.http.routers.feedback-records-sdk.service=feedback-records-hub\""
         print "      - \"traefik.http.routers.feedback-records-sdk.priority=100\""
         print "      - \"traefik.http.routers.feedback-records-sdk.middlewares=feedback-records-auth,feedback-records-hub-headers\""
@@ -735,7 +766,7 @@ EOF
       cat >> "$services_snippet_file" << EOF
   rustfs:
     restart: always
-    image: rustfs/rustfs:1.0.0-alpha.93
+    image: rustfs/rustfs:1.0.0-rc.2@sha256:7d6d361c49c08d427250fb59aae5d78df83d644c3405d9ccf4b21cda0b0692d0
     depends_on:
       rustfs-perms:
         condition: service_completed_successfully
@@ -948,9 +979,89 @@ stop_formbricks() {
   echo "🎉 Formbricks instance stopped successfully!"
 }
 
+migrate_legacy_valkey_image() {
+  local compose_file="${1:-docker-compose.yml}"
+  local backup_file="${compose_file}.before-valkey-8.1.9"
+  local temp_file="${compose_file}.tmp"
+
+  if [[ ! -f "$compose_file" ]]; then
+    echo "❌ Cannot update Valkey because $compose_file does not exist."
+    return 1
+  fi
+
+  if ! awk -v legacy_image="$legacy_valkey_image" '
+    function indentation(line) {
+      match(line, /[^ ]/)
+      return RSTART - 1
+    }
+    /^services:[[:space:]]*$/ {
+      in_services=1
+      service_indent=-1
+      next
+    }
+    in_services && /^[^[:space:]#]/ {
+      in_services=0
+      in_redis=0
+    }
+    in_services && /^[ ]+[A-Za-z0-9_-]+:[[:space:]]*$/ {
+      line_indent=indentation($0)
+      if (service_indent < 0) service_indent=line_indent
+      if (line_indent == service_indent) in_redis=($0 ~ /^[ ]+redis:[[:space:]]*$/)
+    }
+    in_redis && /^[[:space:]]+image:[[:space:]]*/ && index($0, legacy_image) { found=1 }
+    END { exit(found ? 0 : 1) }
+  ' "$compose_file"; then
+    return 0
+  fi
+
+  cp -p "$compose_file" "$backup_file"
+  cp -p "$compose_file" "$temp_file"
+
+  if ! awk -v legacy_image="$legacy_valkey_image" -v replacement_image="$multi_arch_valkey_image" '
+    function indentation(line) {
+      match(line, /[^ ]/)
+      return RSTART - 1
+    }
+    /^services:[[:space:]]*$/ {
+      in_services=1
+      service_indent=-1
+    }
+    in_services && /^[^[:space:]#]/ && !/^services:[[:space:]]*$/ {
+      in_services=0
+      in_redis=0
+    }
+    in_services && /^[ ]+[A-Za-z0-9_-]+:[[:space:]]*$/ {
+      line_indent=indentation($0)
+      if (service_indent < 0) service_indent=line_indent
+      if (line_indent == service_indent) in_redis=($0 ~ /^[ ]+redis:[[:space:]]*$/)
+    }
+    in_redis && /^[[:space:]]+image:[[:space:]]*/ && index($0, legacy_image) {
+      sub(legacy_image, replacement_image)
+      replacements++
+    }
+    { print }
+    END { exit(replacements == 1 ? 0 : 1) }
+  ' "$compose_file" >"$temp_file"; then
+    rm -f "$temp_file"
+    echo "❌ Could not update the bundled Valkey image. The original Compose file is unchanged."
+    return 1
+  fi
+
+  mv "$temp_file" "$compose_file"
+
+  if ! sudo docker compose -f "$compose_file" config >/dev/null; then
+    cp -p "$backup_file" "$compose_file"
+    echo "❌ The updated Compose file is invalid. Restored $compose_file from $backup_file."
+    return 1
+  fi
+
+  echo "✅ Updated bundled Valkey to the native amd64/arm64 image. Backup: $backup_file"
+}
+
 update_formbricks() {
   echo "🔄 Updating Formbricks..."
   cd formbricks
+  migrate_legacy_valkey_image docker-compose.yml
   sudo docker compose pull
   sudo docker compose down
   sudo docker compose up -d

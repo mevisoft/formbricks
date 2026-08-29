@@ -1,6 +1,5 @@
 import { SettingsCard } from "@/app/(app)/workspaces/[workspaceId]/settings/components/SettingsCard";
 import { IS_FORMBRICKS_CLOUD } from "@/lib/constants";
-import { getWorkspaces } from "@/lib/workspace/service";
 import { getTranslate } from "@/lingodotdev/server";
 import { IdBadge } from "@/modules/ui/components/id-badge";
 import { PageContentWrapper } from "@/modules/ui/components/page-content-wrapper";
@@ -8,7 +7,7 @@ import { PageHeader } from "@/modules/ui/components/page-header";
 import { getWorkspaceAuth } from "@/modules/workspaces/lib/utils";
 import { CustomScriptsForm } from "./components/custom-scripts-form";
 import { DeleteWorkspace } from "./components/delete-workspace";
-import { EditWaitingTimeForm } from "./components/edit-waiting-time-form";
+import { EditCooldownPeriodForm } from "./components/edit-cooldown-period-form";
 import { EditWorkspaceNameForm } from "./components/edit-workspace-name-form";
 
 export const GeneralSettingsPage = async (props: { params: Promise<{ workspaceId: string }> }) => {
@@ -18,8 +17,6 @@ export const GeneralSettingsPage = async (props: { params: Promise<{ workspaceId
   const { isReadOnly, isOwner, isManager, workspace, organization } = await getWorkspaceAuth(
     params.workspaceId
   );
-
-  const organizationWorkspaces = await getWorkspaces(organization.id);
 
   const isOwnerOrManager = isOwner || isManager;
 
@@ -32,9 +29,9 @@ export const GeneralSettingsPage = async (props: { params: Promise<{ workspaceId
         <EditWorkspaceNameForm workspace={workspace} isReadOnly={isReadOnly} />
       </SettingsCard>
       <SettingsCard
-        title={t("workspace.general.recontact_waiting_time")}
-        description={t("workspace.general.recontact_waiting_time_settings_description")}>
-        <EditWaitingTimeForm workspace={workspace} isReadOnly={isReadOnly} />
+        title={t("workspace.general.recontact_cooldown_period")}
+        description={t("workspace.general.recontact_cooldown_period_settings_description")}>
+        <EditCooldownPeriodForm workspace={workspace} isReadOnly={isReadOnly} />
       </SettingsCard>
       {!IS_FORMBRICKS_CLOUD && (
         <SettingsCard
@@ -49,7 +46,6 @@ export const GeneralSettingsPage = async (props: { params: Promise<{ workspaceId
         <DeleteWorkspace
           organizationId={organization.id}
           currentWorkspace={workspace}
-          organizationWorkspaces={organizationWorkspaces}
           isOwnerOrManager={isOwnerOrManager}
         />
       </SettingsCard>

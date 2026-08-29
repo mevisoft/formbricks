@@ -1,7 +1,30 @@
 import { TFunction } from "i18next";
-import { v7 as uuidv7 } from "uuid";
 import type { FeedbackRecordData } from "@/modules/hub/types";
 import { SOURCE_TYPE_PRESET_OPTIONS, type TFeedbackRecordFormValues } from "./types";
+
+export interface ResolvedFeedbackText {
+  text: string | null; // translation if usable, else original value_text
+  original: string | null;
+  isTranslated: boolean; // non-empty translation that differs from the original
+  langKey: string | null; // set only when isTranslated
+}
+
+// Pick which feedback text to show (ENG-1253): the translation when usable, else the original.
+export const resolveFeedbackDisplayText = (
+  record: Pick<FeedbackRecordData, "value_text" | "value_text_translated" | "translation_lang_key">
+): ResolvedFeedbackText => {
+  const original = record.value_text ?? null;
+  const translated = record.value_text_translated;
+  const hasTranslation =
+    typeof translated === "string" && translated.trim().length > 0 && translated !== original;
+
+  return {
+    text: hasTranslation ? translated : original,
+    original,
+    isTranslated: hasTranslation,
+    langKey: hasTranslation ? (record.translation_lang_key ?? null) : null,
+  };
+};
 
 export const getValueFieldByType = (
   fieldType: TFeedbackRecordFormValues["field_type"]
@@ -48,35 +71,6 @@ export const toISOOrUndefined = (dateTimeValue: string | undefined): string | un
   }
 
   return parsed.toISOString();
-};
-
-export const getCreateDefaults = (directories: { id: string; name: string }[]): TFeedbackRecordFormValues => {
-  const now = new Date();
-  const defaultDirectoryId = directories[0]?.id ?? "";
-
-  return {
-    id: "",
-    tenant_id: defaultDirectoryId,
-    submission_id: uuidv7(),
-    collected_at: toLocalDateTimeInput(now.toISOString()),
-    created_at: "",
-    updated_at: "",
-    source_type: "survey",
-    source_id: "",
-    source_name: "",
-    field_id: "",
-    field_label: "",
-    field_type: "text",
-    field_group_id: "",
-    field_group_label: "",
-    value_text: "",
-    value_number: "",
-    value_boolean: undefined,
-    value_date: "",
-    language: "",
-    user_id: "",
-    metadataEntries: [],
-  };
 };
 
 export const mapRecordToValues = (record: FeedbackRecordData): TFeedbackRecordFormValues => {
@@ -129,6 +123,48 @@ export const parseNumberValue = (value: string): number | null => {
 
 export const isPresetSourceType = (value: string): value is (typeof SOURCE_TYPE_PRESET_OPTIONS)[number] =>
   (SOURCE_TYPE_PRESET_OPTIONS as readonly string[]).includes(value);
+
+// Field types that are acronyms and should render fully upper-cased (e.g. "nps" -> "NPS").
+const FIELD_TYPE_ACRONYMS = new Set(["nps", "csat", "ces"]);
+
+// Human-readable field type: acronyms upper-cased, everything else capitalized ("text" -> "Text").
+export const formatFieldType = (fieldType: string): string => {
+  if (!fieldType) return fieldType;
+  if (FIELD_TYPE_ACRONYMS.has(fieldType)) return fieldType.toUpperCase();
+  return fieldType.charAt(0).toUpperCase() + fieldType.slice(1);
+};
+
+/**
+ * Translated field-type name, for places where the type is read rather than shown as an icon.
+ *
+ * Unlike `formatFieldType`, which just re-cases the stored machine value, this is the user-facing
+ * spelling — so it is what belongs in an `aria-label`, where the icon has no other text to stand in
+ * for it. Falls back to the re-cased raw value for a type the map does not know yet.
+ */
+export const formatFieldTypeLabel = (fieldType: string, t: TFunction): string => {
+  switch (fieldType) {
+    case "text":
+      return t("workspace.unify.field_type_label_text");
+    case "categorical":
+      return t("workspace.unify.field_type_label_categorical");
+    case "nps":
+      return t("workspace.unify.field_type_label_nps");
+    case "csat":
+      return t("workspace.unify.field_type_label_csat");
+    case "ces":
+      return t("workspace.unify.field_type_label_ces");
+    case "rating":
+      return t("workspace.unify.field_type_label_rating");
+    case "number":
+      return t("workspace.unify.field_type_label_number");
+    case "boolean":
+      return t("workspace.unify.field_type_label_boolean");
+    case "date":
+      return t("workspace.unify.field_type_label_date");
+    default:
+      return formatFieldType(fieldType);
+  }
+};
 
 export const formatSourceType = (sourceType: string, t: TFunction): string => {
   switch (sourceType) {

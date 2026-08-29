@@ -22,13 +22,15 @@
     "dist"
   ],
   "exports": {
-    "types": "./dist/index.d.ts",
-    "import": "./dist/index.js"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
   },
   "scripts": {
     "clean": "rimraf .turbo node_modules coverage dist",
-    "lint": "eslint . --ext .ts,.js",
-    "lint:fix": "eslint . --ext .ts,.js --fix",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
     "lint:report": "eslint . --format json --output-file ../../lint-results/ai.json",
     "typecheck": "tsc --noEmit",
     "build": "rimraf dist && vite build && tsc --project tsconfig.build.json",
@@ -44,13 +46,15 @@
     "@aws-sdk/credential-providers": "3.1017.0",
     "@formbricks/logger": "workspace:*",
     "@formbricks/types": "workspace:*",
-    "ai": "6.0.177"
+    "ai": "catalog:"
   },
   "devDependencies": {
+    "@formbricks/config-eslint": "workspace:*",
     "@formbricks/config-typescript": "workspace:*",
-    "@formbricks/eslint-config": "workspace:*",
-    "@vitest/coverage-v8": "4.1.6",
-    "vite": "8.0.12",
-    "vitest": "4.1.6"
+    "@vitest/coverage-v8": "catalog:",
+    "rimraf": "catalog:",
+    "typescript": "catalog:",
+    "vite": "catalog:",
+    "vitest": "catalog:"
   }
 }

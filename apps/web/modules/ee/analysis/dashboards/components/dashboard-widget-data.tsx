@@ -2,18 +2,30 @@
 
 import { use } from "react";
 import { useTranslation } from "react-i18next";
-import { TChartQuery } from "@formbricks/types/analysis";
+import { TChartConfig, TChartQuery } from "@formbricks/types/analysis";
 import { ChartRenderer } from "@/modules/ee/analysis/charts/components/chart-renderer";
+import { DataViewer } from "@/modules/ee/analysis/charts/components/data-viewer";
+import { DEFAULT_WIDGET_VIEW, type TWidgetView } from "@/modules/ee/analysis/dashboards/lib/widget-view";
 import type { TChartDataRow, TChartType } from "@/modules/ee/analysis/types/analysis";
 import type { TDashboardWidgetError } from "../lib/widget-errors";
 
 interface DashboardWidgetDataProps {
-  dataPromise: Promise<{ data: TChartDataRow[] } | { error: TDashboardWidgetError }>;
+  dataPromise: Promise<
+    | { data: TChartDataRow[]; query: TChartQuery; optionLabels?: Record<string, string> }
+    | { error: TDashboardWidgetError }
+  >;
   chartType: TChartType;
-  query: TChartQuery;
+  /** Saved display settings of the chart behind this widget. */
+  config?: TChartConfig;
+  view?: TWidgetView;
 }
 
-export function DashboardWidgetData({ dataPromise, chartType, query }: Readonly<DashboardWidgetDataProps>) {
+export function DashboardWidgetData({
+  dataPromise,
+  chartType,
+  config,
+  view = DEFAULT_WIDGET_VIEW,
+}: Readonly<DashboardWidgetDataProps>) {
   const { t } = useTranslation();
   const result = use(dataPromise);
 
@@ -25,5 +37,22 @@ export function DashboardWidgetData({ dataPromise, chartType, query }: Readonly<
     );
   }
 
-  return <ChartRenderer chartType={chartType} data={result.data} query={query} />;
+  // The data view reuses the chart builder's table, so the numbers behind a widget read the same
+  // way in both places — bare, because the widget's own title bar and body already provide the
+  // heading and the scroll container.
+  if (view === "data") {
+    return <DataViewer data={result.data} optionLabels={result.optionLabels} bare />;
+  }
+
+  // Use the resolved query + option labels from the promise (not the raw saved query): the label
+  // lookup only fires when the x-axis dimension is the effective value_id dimension.
+  return (
+    <ChartRenderer
+      chartType={chartType}
+      data={result.data}
+      query={result.query}
+      optionLabels={result.optionLabels}
+      config={config}
+    />
+  );
 }

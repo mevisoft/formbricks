@@ -1,9 +1,7 @@
 import "server-only";
-import { ApiKeyPermission } from "@prisma/client";
 import { NextRequest } from "next/server";
 import { z } from "zod";
 import { logger } from "@formbricks/logger";
-import { TAuthenticationApiKey } from "@formbricks/types/auth";
 import { ZId } from "@formbricks/types/common";
 import { AuthorizationError } from "@formbricks/types/errors";
 import { RequestBodyTooLargeError, readRequestBodyWithLimit } from "@/app/lib/api/request-body";
@@ -12,19 +10,22 @@ import { checkAuthorizationUpdated } from "@/lib/utils/action-client/action-clie
 import { getBearerTokenFromHeaders } from "@/modules/api/lib/api-key-auth";
 import { getFeedbackDirectoryAuthContext } from "@/modules/ee/feedback-directory/lib/feedback-directory";
 import { getIsFeedbackDirectoriesEnabled } from "@/modules/ee/license-check/lib/utils";
+import type { TTeamPermission } from "@/modules/ee/teams/workspace-teams/types/team";
 import {
   TGatewayAuthenticatedPrincipal,
   TGatewayRequestAuthorizer,
   allowGatewayRequest,
   buildGatewayStatusResponse,
 } from "@/modules/gateway-auth/lib/request";
+import {
+  type TFeedbackRecordsGatewayPermission,
+  hasApiKeyImplicitFeedbackDirectoryAccess,
+} from "@/modules/hub/feedback-records-gateway-authz";
+import { normalizeFeedbackRecordsPath } from "@/modules/hub/feedback-records-routing";
 import { getFeedbackRecordTenant } from "@/modules/hub/service";
 
-const FEEDBACK_RECORDS_V3_PREFIX = "/api/v3/feedbackRecords";
-const FEEDBACK_RECORDS_SDK_PREFIX = "/v1/feedback-records";
 const ZFeedbackRecordId = z.uuid();
 
-type TFeedbackRecordsGatewayPermission = "read" | "write";
 type TFeedbackRecordsGatewayOperation =
   | "list"
   | "create"
@@ -42,41 +43,38 @@ type TParsedGatewayRoute = {
   tenantSource: "query" | "body" | "recordLookup";
 };
 
-const apiKeyPermissionWeight: Record<ApiKeyPermission, number> = {
-  read: 1,
-  write: 2,
-  manage: 3,
-};
+/**
+ * Operations that change or destroy records that already exist. A feedback directory is shared by
+ * every workspace it is assigned to and its records carry no workspace of their own, so a workspace
+ * permission cannot tell one workspace's records from another's — a `readWrite` member of workspace B
+ * would otherwise edit or delete records that workspace A's surveys ingested (ENG-1770). For session
+ * users these are restricted to organization owners and managers. `create` is deliberately not in
+ * this set: adding records to a shared directory is ordinary workspace work, like a CSV import.
+ *
+ * API keys are gated on this too, by a different rule: a key has no organization role to check, so it
+ * authorizes on its per-workspace permissions and may therefore mutate only a directory that is not
+ * shared at all (ENG-2189, see `canApiKeyMutateFeedbackDirectoryRecords`). Both rules answer the same
+ * question — a workspace permission cannot identify whose records these are — and neither applies to
+ * `create`.
+ */
+const RECORD_MUTATING_OPERATIONS = new Set<TFeedbackRecordsGatewayOperation>([
+  "update",
+  "delete",
+  "bulkDelete",
+]);
 
-const gatewayPermissionToApiKeyPermissionWeight: Record<TFeedbackRecordsGatewayPermission, number> = {
-  read: apiKeyPermissionWeight.read,
-  write: apiKeyPermissionWeight.write,
-};
-
-const stripFeedbackRecordsPrefix = (pathname: string, prefix: string): string | null => {
-  if (pathname === prefix) {
-    return "/";
-  }
-
-  if (!pathname.startsWith(`${prefix}/`)) {
-    return null;
-  }
-
-  return pathname.slice(prefix.length) || "/";
-};
-
-const normalizeFeedbackRecordsPath = (pathname: string): string | null => {
-  const v3Path = stripFeedbackRecordsPrefix(pathname, FEEDBACK_RECORDS_V3_PREFIX);
-  if (v3Path) {
-    return v3Path;
-  }
-
-  const sdkPath = stripFeedbackRecordsPrefix(pathname, FEEDBACK_RECORDS_SDK_PREFIX);
-  if (sdkPath) {
-    return sdkPath;
-  }
-
-  return null;
+/**
+ * What a session principal's workspace team membership must grant for a given route permission.
+ *
+ * Only consulted for non-mutating operations — mutations drop the workspace-team fallback entirely
+ * (ENG-1770) — so the `manage` entry is unreachable today, every `manage` route being a mutation. It is
+ * spelled out anyway because a Record forces the next permission value added to the union to be mapped
+ * deliberately, where a ternary would silently collapse it onto `readWrite`.
+ */
+const GATEWAY_PERMISSION_TO_TEAM_PERMISSION: Record<TFeedbackRecordsGatewayPermission, TTeamPermission> = {
+  read: "read",
+  write: "readWrite",
+  manage: "manage",
 };
 
 const parseFeedbackRecordsGatewayRoute = (method: string, pathname: string): TParsedGatewayRoute | null => {
@@ -92,7 +90,9 @@ const parseFeedbackRecordsGatewayRoute = (method: string, pathname: string): TPa
       case "POST":
         return { operation: "create", requiredPermission: "write", tenantSource: "body" };
       case "DELETE":
-        return { operation: "bulkDelete", requiredPermission: "write", tenantSource: "query" };
+        // `manage`, not `write`: everywhere else in the API `methodPermissionMap` reserves DELETE for
+        // `manage`, and feedback-record deletion is unrecoverable (ENG-2083).
+        return { operation: "bulkDelete", requiredPermission: "manage", tenantSource: "query" };
       default:
         return null;
     }
@@ -115,7 +115,13 @@ const parseFeedbackRecordsGatewayRoute = (method: string, pathname: string): TPa
       case "PATCH":
         return { operation: "update", requiredPermission: "write", tenantSource: "recordLookup", recordId };
       case "DELETE":
-        return { operation: "delete", requiredPermission: "write", tenantSource: "recordLookup", recordId };
+        // `manage` for the same reason as `bulkDelete` above (ENG-2083).
+        return {
+          operation: "delete",
+          requiredPermission: "manage",
+          tenantSource: "recordLookup",
+          recordId,
+        };
       default:
         return null;
     }
@@ -130,7 +136,7 @@ const parseFeedbackRecordsGatewayRoute = (method: string, pathname: string): TPa
     return {
       operation: "retrieveSimilar",
       requiredPermission: "read",
-      tenantSource: "query",
+      tenantSource: "recordLookup",
       recordId,
     };
   }
@@ -182,31 +188,6 @@ const parseJsonBody = async (
 
 const getFeedbackRecordsGatewayJwtFromHeaders = (headers: Headers): string | null => {
   return getBearerTokenFromHeaders(headers);
-};
-
-const hasApiKeyImplicitFeedbackDirectoryAccess = (
-  authentication: TAuthenticationApiKey,
-  workspaceIds: string[],
-  requiredPermission: TFeedbackRecordsGatewayPermission
-): boolean => {
-  const orgAccessControl = authentication.organizationAccess?.accessControl;
-  if (orgAccessControl?.write) {
-    return true;
-  }
-  if (orgAccessControl?.read && requiredPermission === "read") {
-    return true;
-  }
-
-  const matchingWeights = authentication.workspacePermissions
-    .filter((permission) => workspaceIds.includes(permission.workspaceId))
-    .map((permission) => apiKeyPermissionWeight[permission.permission]);
-
-  if (matchingWeights.length === 0) {
-    return false;
-  }
-
-  const maxWeight = Math.max(...matchingWeights);
-  return maxWeight >= gatewayPermissionToApiKeyPermissionWeight[requiredPermission];
 };
 
 const resolveTenantId = async (
@@ -281,8 +262,10 @@ const resolveTenantId = async (
 const authorizeFeedbackRecordsGatewayRequest = async (
   principal: TAuthenticatedGatewayPrincipal,
   feedbackDirectoryId: string,
-  requiredPermission: TFeedbackRecordsGatewayPermission
+  requiredPermission: TFeedbackRecordsGatewayPermission,
+  operation: TFeedbackRecordsGatewayOperation
 ): Promise<{ allowed: true } | { allowed: false }> => {
+  const isRecordMutation = RECORD_MUTATING_OPERATIONS.has(operation);
   const feedbackDirectory = await getFeedbackDirectoryAuthContext(feedbackDirectoryId);
   if (!feedbackDirectory || feedbackDirectory.isArchived) {
     return { allowed: false };
@@ -298,15 +281,17 @@ const authorizeFeedbackRecordsGatewayRequest = async (
   if (principal.type === "apiKey") {
     return hasApiKeyImplicitFeedbackDirectoryAccess(
       principal.authentication,
+      feedbackDirectory.organizationId,
       feedbackDirectory.workspaceIds,
-      requiredPermission
+      requiredPermission,
+      isRecordMutation
     )
       ? { allowed: true }
       : { allowed: false };
   }
 
   try {
-    const minPermission: "read" | "readWrite" = requiredPermission === "read" ? "read" : "readWrite";
+    const minPermission = GATEWAY_PERMISSION_TO_TEAM_PERMISSION[requiredPermission];
 
     await checkAuthorizationUpdated({
       userId: principal.userId,
@@ -316,11 +301,14 @@ const authorizeFeedbackRecordsGatewayRequest = async (
           type: "organization",
           roles: ["owner", "manager"],
         },
-        ...feedbackDirectory.workspaceIds.map((workspaceId) => ({
-          type: "workspaceTeam" as const,
-          workspaceId,
-          minPermission,
-        })),
+        // Mutating an existing record is owners/managers only, so no workspace-team fallback.
+        ...(isRecordMutation
+          ? []
+          : feedbackDirectory.workspaceIds.map((workspaceId) => ({
+              type: "workspaceTeam" as const,
+              workspaceId,
+              minPermission,
+            }))),
       ],
     });
 
@@ -360,7 +348,8 @@ export const feedbackRecordsGatewayAuthorizer: TGatewayRequestAuthorizer = {
     const authorizationResult = await authorizeFeedbackRecordsGatewayRequest(
       principal,
       tenantResolution.tenantId,
-      route.requiredPermission
+      route.requiredPermission,
+      route.operation
     );
     if (!authorizationResult.allowed) {
       logger.info(

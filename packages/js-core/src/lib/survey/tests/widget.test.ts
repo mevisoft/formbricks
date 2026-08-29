@@ -51,6 +51,8 @@ vi.mock("@/lib/common/utils", async (importOriginal) => {
 const mockUpdateQueue = {
   hasPendingWork: vi.fn().mockReturnValue(false),
   waitForPendingWork: vi.fn().mockResolvedValue(true),
+  updateUserId: vi.fn(),
+  processUpdates: vi.fn().mockResolvedValue(undefined),
 };
 
 vi.mock("@/lib/user/update-queue", () => ({
@@ -278,6 +280,40 @@ describe("widget-file", () => {
     expect(el).not.toBeNull();
   });
 
+  test("addLiveRegionContainer creates an accessible visually hidden status region", () => {
+    widget.addLiveRegionContainer();
+
+    expect(document.createElement).toHaveBeenCalledWith("div");
+    expect(document.body.appendChild).toHaveBeenCalledTimes(1);
+
+    const liveRegion = vi.mocked(document.body.appendChild).mock.calls[0][0] as HTMLElement;
+    expect(liveRegion.id).toBe("formbricks-live-region");
+    expect(liveRegion.setAttribute).toHaveBeenCalledWith("role", "status");
+    expect(liveRegion.setAttribute).toHaveBeenCalledWith("aria-live", "polite");
+    expect(liveRegion.setAttribute).toHaveBeenCalledWith("aria-atomic", "true");
+    expect(liveRegion.style.cssText).toContain("position:absolute");
+  });
+
+  test("addLiveRegionContainer reuses an existing region", () => {
+    vi.mocked(document.getElementById).mockReturnValueOnce({} as HTMLElement);
+
+    widget.addLiveRegionContainer();
+
+    expect(document.createElement).not.toHaveBeenCalled();
+    expect(document.body.appendChild).not.toHaveBeenCalled();
+  });
+
+  test("addLiveRegionContainer is safe during server-side rendering", () => {
+    const browserDocument = globalThis.document;
+    vi.stubGlobal("document", undefined);
+
+    try {
+      expect(() => widget.addLiveRegionContainer()).not.toThrow();
+    } finally {
+      vi.stubGlobal("document", browserDocument);
+    }
+  });
+
   test("removeWidgetContainer removes #formbricks-container if it exists", () => {
     document.body.innerHTML = `<div id="formbricks-container"></div>`;
     widget.removeWidgetContainer();
@@ -326,7 +362,7 @@ describe("widget-file", () => {
     await widget.renderWidget({
       ...mockSurvey,
       delay: 0,
-    } as unknown as TWorkspaceStateSurvey);
+    });
 
     expect(mockUpdateQueue.hasPendingWork).toHaveBeenCalled();
     expect(mockUpdateQueue.waitForPendingWork).toHaveBeenCalled();
@@ -383,7 +419,7 @@ describe("widget-file", () => {
     await widget.renderWidget({
       ...mockSurvey,
       delay: 0,
-    } as unknown as TWorkspaceStateSurvey);
+    });
 
     expect(mockUpdateQueue.hasPendingWork).toHaveBeenCalled();
     expect(mockUpdateQueue.waitForPendingWork).not.toHaveBeenCalled();
@@ -440,7 +476,7 @@ describe("widget-file", () => {
     await widget.renderWidget({
       ...mockSurvey,
       delay: 0,
-    } as unknown as TWorkspaceStateSurvey);
+    });
 
     vi.advanceTimersByTime(0);
 
@@ -506,7 +542,6 @@ describe("widget-file", () => {
 
     // Helper to get the script element passed to document.head.appendChild
     const getAppendedScript = (): Record<string, unknown> => {
-      // eslint-disable-next-line @typescript-eslint/unbound-method -- accessing mock for test assertions
       const appendChildMock = vi.mocked(document.head.appendChild);
       for (const call of appendChildMock.mock.calls) {
         const el = call[0] as unknown as Record<string, unknown>;
@@ -528,13 +563,12 @@ describe("widget-file", () => {
       getInstanceConfigMock.mockReturnValue(scriptLoadMockConfig as unknown as Config);
       widget.setIsSurveyRunning(false);
 
-      // eslint-disable-next-line @typescript-eslint/no-empty-function -- suppress console.error in test
       const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
       const renderPromise = widget.renderWidget({
         ...mockSurvey,
         delay: 0,
-      } as unknown as TWorkspaceStateSurvey);
+      });
 
       const scriptEl = getAppendedScript();
 
@@ -555,14 +589,13 @@ describe("widget-file", () => {
       getInstanceConfigMock.mockReturnValue(scriptLoadMockConfig as unknown as Config);
       widget.setIsSurveyRunning(false);
 
-      // eslint-disable-next-line @typescript-eslint/no-empty-function -- suppress console.error in test
       const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
       vi.useFakeTimers();
 
       const renderPromise = widget.renderWidget({
         ...mockSurvey,
         delay: 0,
-      } as unknown as TWorkspaceStateSurvey);
+      });
 
       const scriptEl = getAppendedScript();
 
@@ -595,7 +628,7 @@ describe("widget-file", () => {
       const renderPromise = widget.renderWidget({
         ...mockSurvey,
         delay: 0,
-      } as unknown as TWorkspaceStateSurvey);
+      });
 
       const scriptEl = getAppendedScript();
 
@@ -644,7 +677,7 @@ describe("widget-file", () => {
       await widget.renderWidget({
         ...mockSurvey,
         delay: 0,
-      } as unknown as TWorkspaceStateSurvey);
+      });
 
       vi.advanceTimersByTime(0);
 
@@ -723,7 +756,7 @@ describe("widget-file", () => {
       ...mockSurvey,
       delay: 0,
       segment: undefined,
-    } as unknown as TWorkspaceStateSurvey);
+    });
 
     expect(mockLogger.debug).toHaveBeenCalledWith(
       "User identification failed but survey has no segment filters. Proceeding."
@@ -733,5 +766,128 @@ describe("widget-file", () => {
     expect(getFormbricksSurveys().renderSurvey).toHaveBeenCalled();
 
     vi.useRealTimers();
+  });
+
+  describe("post-interaction segment refresh", () => {
+    // Renders the widget and returns the interaction callbacks handed to renderSurvey, so each test can
+    // trigger onDisplayCreated / onResponseCreated / onFinished directly and assert whether a refresh
+    // (updateUserId + processUpdates through the UpdateQueue) was enqueued.
+    const renderAndGetCallbacks = async ({
+      userId,
+      interactionRefresh,
+    }: {
+      userId: string | null;
+      interactionRefresh?: { onDisplay: boolean; onResponse: boolean; onFinished: boolean };
+    }): Promise<{
+      onDisplayCreated: () => void;
+      onResponseCreated: () => void;
+      onFinished: () => void;
+    }> => {
+      const mockConfigValue = {
+        get: vi.fn().mockReturnValue({
+          appUrl: "https://fake.app",
+          workspaceId: "env_123",
+          workspace: {
+            data: {
+              settings: { clickOutsideClose: true, overlay: "none", placement: "bottomRight" },
+            },
+          },
+          user: {
+            data: { userId, contactId: "contact_abc", displays: [], responses: [], lastDisplayAt: null },
+          },
+        }),
+        update: vi.fn(),
+      };
+
+      getInstanceConfigMock.mockReturnValue(mockConfigValue as unknown as Config);
+      (filterSurveys as Mock).mockReturnValue([]);
+      widget.setIsSurveyRunning(false);
+      window.formbricksSurveys = createMockFormbricksSurveys();
+
+      vi.useFakeTimers();
+      await widget.renderWidget({
+        ...mockSurvey,
+        delay: 0,
+        ...(interactionRefresh ? { interactionRefresh } : {}),
+      });
+      vi.advanceTimersByTime(0);
+      vi.useRealTimers();
+
+      return (getFormbricksSurveys().renderSurvey as Mock).mock.calls[0][0] as {
+        onDisplayCreated: () => void;
+        onResponseCreated: () => void;
+        onFinished: () => void;
+      };
+    };
+
+    test("refreshes on each interaction the survey's interactionRefresh enables", async () => {
+      const callbacks = await renderAndGetCallbacks({
+        userId: "user_abc",
+        interactionRefresh: { onDisplay: true, onResponse: true, onFinished: true },
+      });
+
+      callbacks.onDisplayCreated();
+      callbacks.onResponseCreated();
+      callbacks.onFinished();
+
+      expect(mockUpdateQueue.updateUserId).toHaveBeenCalledTimes(3);
+      expect(mockUpdateQueue.updateUserId).toHaveBeenCalledWith("user_abc");
+      expect(mockUpdateQueue.processUpdates).toHaveBeenCalledTimes(3);
+    });
+
+    test("skips every interaction when the survey has no interactionRefresh", async () => {
+      const callbacks = await renderAndGetCallbacks({ userId: "user_abc" });
+
+      callbacks.onDisplayCreated();
+      callbacks.onResponseCreated();
+      callbacks.onFinished();
+
+      expect(mockUpdateQueue.updateUserId).not.toHaveBeenCalled();
+      expect(mockUpdateQueue.processUpdates).not.toHaveBeenCalled();
+    });
+
+    test("skips the refresh for anonymous users even when interactionRefresh is enabled", async () => {
+      const callbacks = await renderAndGetCallbacks({
+        userId: null,
+        interactionRefresh: { onDisplay: true, onResponse: true, onFinished: true },
+      });
+
+      callbacks.onDisplayCreated();
+      callbacks.onResponseCreated();
+      callbacks.onFinished();
+
+      expect(mockUpdateQueue.updateUserId).not.toHaveBeenCalled();
+      expect(mockUpdateQueue.processUpdates).not.toHaveBeenCalled();
+    });
+
+    test("interactionRefresh gates each event independently (seen-only → display only)", async () => {
+      // Referenced only by a "have seen" filter, so only its display can change membership;
+      // response/finish must not trigger a refresh.
+      const callbacks = await renderAndGetCallbacks({
+        userId: "user_abc",
+        interactionRefresh: { onDisplay: true, onResponse: false, onFinished: false },
+      });
+
+      callbacks.onDisplayCreated();
+      callbacks.onResponseCreated();
+      callbacks.onFinished();
+
+      expect(mockUpdateQueue.updateUserId).toHaveBeenCalledTimes(1);
+      expect(mockUpdateQueue.processUpdates).toHaveBeenCalledTimes(1);
+    });
+
+    test("all-false interactionRefresh skips every event (survey referenced by nobody)", async () => {
+      const callbacks = await renderAndGetCallbacks({
+        userId: "user_abc",
+        interactionRefresh: { onDisplay: false, onResponse: false, onFinished: false },
+      });
+
+      callbacks.onDisplayCreated();
+      callbacks.onResponseCreated();
+      callbacks.onFinished();
+
+      expect(mockUpdateQueue.updateUserId).not.toHaveBeenCalled();
+      expect(mockUpdateQueue.processUpdates).not.toHaveBeenCalled();
+    });
   });
 });

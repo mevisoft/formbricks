@@ -1,12 +1,13 @@
 "use client";
 
-import { Workspace } from "@prisma/client";
 import { ArrowLeftIcon, SettingsIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import { useTranslation } from "react-i18next";
+import { Workspace } from "@formbricks/database/prisma-browser";
 import { getLanguageLabel } from "@formbricks/i18n-utils/src/utils";
+import formbricks from "@formbricks/js";
 import { TSegment } from "@formbricks/types/segment";
 import { TSurveyBlock } from "@formbricks/types/surveys/blocks";
 import {
@@ -19,6 +20,7 @@ import {
 import { getFormattedErrorMessage } from "@/lib/utils/helper";
 import { isDeepEqual } from "@/lib/utils/object";
 import { createSegmentAction } from "@/modules/ee/contacts/segments/actions";
+import { scrollElementCardIntoView } from "@/modules/survey/editor/lib/utils";
 import { TSurveyDraft } from "@/modules/survey/editor/types/survey";
 import { Alert, AlertButton, AlertTitle } from "@/modules/ui/components/alert";
 import { AlertDialog } from "@/modules/ui/components/alert-dialog";
@@ -37,6 +39,7 @@ interface SurveyMenuBarProps {
   setInvalidElements: React.Dispatch<React.SetStateAction<string[] | null>>;
   workspace: Workspace;
   responseCount: number;
+  finishedResponseCount: number;
   selectedLanguageCode: string;
   setSelectedLanguageCode: (selectedLanguage: string) => void;
   isCxMode: boolean;
@@ -54,6 +57,7 @@ export const SurveyMenuBar = ({
   setInvalidElements,
   workspace,
   responseCount,
+  finishedResponseCount,
   selectedLanguageCode,
   isCxMode,
   locale,
@@ -209,6 +213,10 @@ export const SurveyMenuBar = ({
     if (!localSurveyValidation.success) {
       const issues = localSurveyValidation.error.issues;
       const newInvalidIds: string[] = [];
+      // DOM id of the first invalid card so we can scroll it into view. For logic
+      // errors this is the block (the red bar lives on the block card); for element
+      // errors it's the element card itself.
+      let firstInvalidScrollId: string | null = null;
 
       for (const issue of issues) {
         if (issue.path[0] === "blocks") {
@@ -222,17 +230,41 @@ export const SurveyMenuBar = ({
             if (element && !newInvalidIds.includes(element.id)) {
               newInvalidIds.push(element.id);
             }
+            firstInvalidScrollId ??= element?.id ?? null;
+          } else if (issue.path[2] === "logic" && typeof issue.path[3] === "number") {
+            // Conditional logic error: flag the offending rule so the block card
+            // surfaces it. Uses the logic rule id (a CUID, distinct from element ids).
+            const logicIdx = issue.path[3];
+            const block: TSurveyBlock = localSurvey.blocks?.[blockIdx];
+            const logicItem = block?.logic?.[logicIdx];
+
+            if (logicItem && !newInvalidIds.includes(logicItem.id)) {
+              newInvalidIds.push(logicItem.id);
+            }
+            firstInvalidScrollId ??= block?.id ?? null;
+          } else if (issue.path[2] === "logic") {
+            // Block-scope logic error (e.g. a cyclic jump) with no specific rule index: flag every
+            // rule in the block so the Conditional Logic section still surfaces and auto-expands.
+            const block: TSurveyBlock = localSurvey.blocks?.[blockIdx];
+            for (const logicItem of block?.logic ?? []) {
+              if (!newInvalidIds.includes(logicItem.id)) {
+                newInvalidIds.push(logicItem.id);
+              }
+            }
+            firstInvalidScrollId ??= block?.id ?? null;
           }
         } else if (issue.path[0] === "welcomeCard") {
           if (!newInvalidIds.includes("start")) {
             newInvalidIds.push("start");
           }
+          firstInvalidScrollId ??= "start";
         } else if (issue.path[0] === "endings") {
           const endingIdx = typeof issue.path[1] === "number" ? issue.path[1] : -1;
           const endingId = localSurvey.endings[endingIdx]?.id;
           if (endingId && !newInvalidIds.includes(endingId)) {
             newInvalidIds.push(endingId);
           }
+          firstInvalidScrollId ??= endingId ?? null;
         }
       }
 
@@ -249,6 +281,10 @@ export const SurveyMenuBar = ({
         });
       }
 
+      if (firstInvalidScrollId) {
+        scrollElementCardIntoView(firstInvalidScrollId, "start");
+      }
+
       const firstError = issues[0];
       if (firstError.code === "custom") {
         const params = firstError.params ?? ({} as { invalidLanguageCodes: string[] });
@@ -263,7 +299,7 @@ export const SurveyMenuBar = ({
           setActiveId("language");
         } else {
           toast.error(firstError.message, {
-            className: "w-fit !max-w-md",
+            className: "w-fit max-w-md!",
           });
         }
 
@@ -374,7 +410,7 @@ export const SurveyMenuBar = ({
     }
 
     try {
-      const isSurveyValidResult = isSurveyValid(localSurvey, selectedLanguageCode, t, responseCount);
+      const isSurveyValidResult = isSurveyValid(localSurvey, selectedLanguageCode, t, finishedResponseCount);
       if (!isSurveyValidResult) {
         setIsSurveySaving(false);
         return false;
@@ -414,7 +450,10 @@ export const SurveyMenuBar = ({
 
       setIsSurveySaving(false);
       if (updatedSurveyResponse?.data) {
-        setLocalSurvey(updatedSurveyResponse.data);
+        // isSecondPublish is a transient action flag, not part of the survey — strip it so it
+        // doesn't linger in editor state and get echoed back on the next update.
+        const { isSecondPublish: _isSecondPublish, ...updatedSurvey } = updatedSurveyResponse.data;
+        setLocalSurvey(updatedSurvey);
         toast.success(t("workspace.surveys.edit.changes_saved"));
         // Set flag to prevent beforeunload warning during router.refresh()
         isSuccessfullySavedRef.current = true;
@@ -438,7 +477,22 @@ export const SurveyMenuBar = ({
     const isSurveySaved =
       localSurvey.status === "draft" ? await handleSurveySaveDraft() : await handleSurveySave();
     if (isSurveySaved) {
-      router.back();
+      // Navigate explicitly rather than router.back(): the editor is often reached without an
+      // in-app history entry behind it (new tab, pasted/bookmarked URL, hard reload), and back()
+      // silently no-ops there — the survey saves but the editor never closes. The publish path
+      // already navigates to the summary this way.
+      //
+      // Both branches navigate, but not to the same place, because the two callers arrive here from
+      // different pages. The "Save & Close" button renders only for a non-draft, and its editor is
+      // reached from the summary. A draft gets here only through the unsaved-changes dialog, opened
+      // by the back arrow, and its editor is reached from the survey list — the list deliberately
+      // never links a draft to /summary (see `linkHref` in `survey/list/components/survey-card.tsx`),
+      // since a draft has no responses to summarise. So a draft closes to the list.
+      router.push(
+        localSurvey.status === "draft"
+          ? `${workspaceBasePath}/surveys`
+          : `${workspaceBasePath}/surveys/${localSurvey.id}/summary`
+      );
     }
   };
 
@@ -455,7 +509,7 @@ export const SurveyMenuBar = ({
     }
 
     try {
-      const isSurveyValidResult = isSurveyValid(localSurvey, selectedLanguageCode, t, responseCount);
+      const isSurveyValidResult = isSurveyValid(localSurvey, selectedLanguageCode, t, finishedResponseCount);
       if (!isSurveyValidResult) {
         isSurveyPublishingRef.current = false;
         setIsSurveyPublishing(false);
@@ -481,6 +535,14 @@ export const SurveyMenuBar = ({
 
       isSurveyPublishingRef.current = false;
       setIsSurveyPublishing(false);
+
+      // When the user publishes their second survey, fire an in-app code action so a
+      // Formbricks survey can be triggered from the dashboard. The flag is computed
+      // server-side in updateSurveyAction, so there's no extra round-trip here.
+      if (publishResult.data.isSecondPublish) {
+        formbricks.track("second_survey_published").catch(() => undefined);
+      }
+
       // Set flag to prevent beforeunload warning during navigation
       isSuccessfullySavedRef.current = true;
       router.push(`${workspaceBasePath}/surveys/${localSurvey.id}/summary?success=true`);
@@ -505,7 +567,7 @@ export const SurveyMenuBar = ({
     }
 
     try {
-      const isSurveyValidResult = isSurveyValid(localSurvey, selectedLanguageCode, t, responseCount);
+      const isSurveyValidResult = isSurveyValid(localSurvey, selectedLanguageCode, t, finishedResponseCount);
       if (!isSurveyValidResult) {
         isSurveyPublishingRef.current = false;
         setIsSurveyPublishing(false);
@@ -567,15 +629,15 @@ export const SurveyMenuBar = ({
         />
       </div>
 
-      <div className="mt-3 flex items-center gap-2 sm:ml-4 sm:mt-0">
+      <div className="mt-3 flex items-center gap-2 sm:mt-0 sm:ml-4">
         <AutoSaveIndicator isDraft={localSurvey.status === "draft"} lastSaved={lastAutoSaved} />
         {!isStorageConfigured && (
           <div>
-            <Alert variant="warning" size="small">
+            <Alert variant="warning" size="small" role="status">
               <AlertTitle>{t("common.storage_not_configured")}</AlertTitle>
               <AlertButton className="flex items-center justify-center">
                 <a
-                  className="flex h-full w-full items-center justify-center !bg-white"
+                  className="flex h-full w-full items-center justify-center bg-white!"
                   href="https://example.com/docs/self-hosting/configuration/file-uploads"
                   target="_blank"
                   rel="noopener noreferrer">
@@ -587,7 +649,7 @@ export const SurveyMenuBar = ({
         )}
         {responseCount > 0 && (
           <div>
-            <Alert variant="warning" size="small">
+            <Alert variant="warning" size="small" role="status">
               <AlertTitle>{t("workspace.surveys.edit.caution_text")}</AlertTitle>
               <AlertButton onClick={() => setIsCautionDialogOpen(true)}>{t("common.learn_more")}</AlertButton>
             </Alert>

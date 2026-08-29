@@ -1,6 +1,5 @@
 "use client";
 
-import { useAutoAnimate } from "@formkit/auto-animate/react";
 import * as Collapsible from "@radix-ui/react-collapsible";
 import { CheckIcon } from "lucide-react";
 import Image from "next/image";
@@ -11,6 +10,7 @@ import { useTranslation } from "react-i18next";
 import { TSurveyStyling } from "@formbricks/types/surveys/types";
 import { TWorkspaceStyling } from "@formbricks/types/workspace";
 import { cn } from "@/lib/cn";
+import { isExternalImageSrc } from "@/lib/image-hosts";
 import { handleFileUpload } from "@/modules/storage/file-upload";
 import { showFileUploadErrorToast } from "@/modules/storage/file-upload-error";
 import { AdvancedOptionToggle } from "@/modules/ui/components/advanced-option-toggle";
@@ -40,7 +40,6 @@ export const LogoSettingsCard = ({
   isStorageConfigured,
 }: LogoSettingsCardProps) => {
   const { t } = useTranslation();
-  const [parent] = useAutoAnimate();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -125,7 +124,7 @@ export const LogoSettingsCard = ({
           disabled && "cursor-not-allowed opacity-60 hover:bg-white"
         )}>
         <div className="inline-flex w-full px-4 py-4">
-          <div className="flex items-center pl-2 pr-5">
+          <div className="flex items-center pr-5 pl-2">
             <CheckIcon
               strokeWidth={3}
               className="size-7 rounded-full border border-green-300 bg-green-100 p-1.5 text-green-600"
@@ -141,7 +140,7 @@ export const LogoSettingsCard = ({
         </div>
       </Collapsible.CollapsibleTrigger>
 
-      <Collapsible.CollapsibleContent className="flex flex-col" ref={parent}>
+      <Collapsible.CollapsibleContent className="flex flex-col overflow-hidden data-[state=closed]:animate-collapsible-up data-[state=open]:animate-collapsible-down">
         <hr className="py-1 text-slate-600" />
 
         <div className="flex flex-col gap-6 p-6 pt-2">
@@ -191,6 +190,7 @@ export const LogoSettingsCard = ({
                       height={56}
                       style={{ backgroundColor: logoBgColor || undefined }}
                       className="h-20 w-auto max-w-64 rounded-lg border object-contain p-1"
+                      unoptimized={isExternalImageSrc(logoUrl)}
                     />
                   </div>
 

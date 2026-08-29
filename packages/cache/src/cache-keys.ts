@@ -20,11 +20,15 @@ export const createCacheKey = {
     state: (workspaceId: string): CacheKey => makeCacheKey("env", workspaceId, "state"),
     config: (workspaceId: string): CacheKey => makeCacheKey("env", workspaceId, "config"),
     segments: (workspaceId: string): CacheKey => makeCacheKey("env", workspaceId, "segments"),
+    languages: (workspaceId: string): CacheKey => makeCacheKey("env", workspaceId, "languages"),
   },
 
   // Organization-related keys
   organization: {
     billing: (organizationId: string): CacheKey => makeCacheKey("org", organizationId, "billing"),
+    // Single-flight lock so only one process refreshes an org's stale billing snapshot at a time.
+    billingSyncLock: (organizationId: string): CacheKey =>
+      makeCacheKey("org", organizationId, "billing-sync-lock"),
   },
 
   // License and enterprise features

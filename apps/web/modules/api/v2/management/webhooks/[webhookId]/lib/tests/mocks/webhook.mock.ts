@@ -1,4 +1,4 @@
-import { Prisma, WebhookSource } from "@prisma/client";
+import { Prisma, WebhookSource } from "@formbricks/database/prisma";
 import { PrismaErrorType } from "@formbricks/database/types/error";
 
 export const mockedPrismaWebhookUpdateReturn = {
@@ -15,6 +15,6 @@ export const mockedPrismaWebhookUpdateReturn = {
 };
 
 export const prismaNotFoundError = new Prisma.PrismaClientKnownRequestError("Record does not exist", {
-  code: PrismaErrorType.RecordDoesNotExist,
+  code: PrismaErrorType.RelatedRecordNotFound,
   clientVersion: "PrismaClient 4.0.0",
 });

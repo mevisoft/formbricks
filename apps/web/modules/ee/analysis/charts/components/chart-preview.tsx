@@ -3,6 +3,7 @@
 import { BarChart, DatabaseIcon } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import type { TChartConfig } from "@formbricks/types/analysis";
 import { ChartErrorBoundary } from "@/modules/ee/analysis/charts/components/chart-error-boundary";
 import { ChartRenderer } from "@/modules/ee/analysis/charts/components/chart-renderer";
 import { DataViewer } from "@/modules/ee/analysis/charts/components/data-viewer";
@@ -12,11 +13,20 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/modules/ui/component
 
 interface ChartPreviewProps {
   chartData: AnalyticsResponse | null;
+  /** Display settings being edited, so the preview renders what will be saved. */
+  config?: TChartConfig;
   isLoading?: boolean;
   error?: string | null;
+  emptyMessage?: string;
 }
 
-export function ChartPreview({ chartData, isLoading = false, error }: Readonly<ChartPreviewProps>) {
+export function ChartPreview({
+  chartData,
+  config,
+  isLoading = false,
+  error,
+  emptyMessage,
+}: Readonly<ChartPreviewProps>) {
   const [activeTab, setActiveTab] = useState<"chart" | "data">("chart");
   const { t } = useTranslation();
 
@@ -47,8 +57,16 @@ export function ChartPreview({ chartData, isLoading = false, error }: Readonly<C
 
     if (!chartData) {
       return (
-        <div className="flex h-48 items-center justify-center text-sm text-gray-500">
-          {t("workspace.analysis.charts.no_data_available")}
+        <div className="flex h-48 items-center justify-center px-6 text-center text-sm text-gray-500">
+          {emptyMessage ?? t("workspace.analysis.charts.no_data_available")}
+        </div>
+      );
+    }
+
+    if (data.length === 0) {
+      return (
+        <div className="flex h-48 items-center justify-center px-6 text-center text-sm text-gray-500">
+          {t("workspace.analysis.charts.no_data_returned")}
         </div>
       );
     }
@@ -68,19 +86,25 @@ export function ChartPreview({ chartData, isLoading = false, error }: Readonly<C
 
         <TabsContent value="chart" className="mt-0">
           <ChartErrorBoundary fallbackMessage={t("workspace.analysis.charts.chart_render_error")}>
-            <ChartRenderer chartType={chartData.chartType} data={data} query={chartData.query} />
+            <ChartRenderer
+              chartType={chartData.chartType}
+              data={data}
+              query={chartData.query}
+              optionLabels={chartData.optionLabels}
+              config={config}
+            />
           </ChartErrorBoundary>
         </TabsContent>
 
         <TabsContent value="data" className="mt-0">
-          <DataViewer data={data} />
+          <DataViewer data={data} optionLabels={chartData.optionLabels} />
         </TabsContent>
       </Tabs>
     );
   };
 
   return (
-    <div className="rounded-lg border border-gray-200 bg-white p-6">
+    <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-xs">
       <h3 className="mb-4 font-semibold text-gray-900">{t("workspace.analysis.charts.chart_preview")}</h3>
       {renderContent()}
     </div>

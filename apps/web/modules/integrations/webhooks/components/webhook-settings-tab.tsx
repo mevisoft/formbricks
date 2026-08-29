@@ -1,6 +1,5 @@
 "use client";
 
-import { PipelineTriggers, Webhook } from "@prisma/client";
 import clsx from "clsx";
 import { CheckIcon, CopyIcon, ExternalLinkIcon, EyeIcon, EyeOff, TrashIcon } from "lucide-react";
 import Link from "next/link";
@@ -9,6 +8,7 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "react-hot-toast";
 import { useTranslation } from "react-i18next";
+import { PipelineTriggers, Webhook } from "@formbricks/database/prisma-browser";
 import { TSurvey } from "@formbricks/types/surveys/types";
 import { getFormattedErrorMessage } from "@/lib/utils/helper";
 import { SurveyCheckboxGroup } from "@/modules/integrations/webhooks/components/survey-checkbox-group";
@@ -76,6 +76,7 @@ export const WebhookSettingsTab = ({
       const testEndpointActionResult = await testEndpointAction({
         url: testEndpointInput,
         webhookId: webhook.id,
+        workspaceId: webhook.workspaceId,
       });
       if (!testEndpointActionResult?.data?.success) {
         const errorMessage = getFormattedErrorMessage(testEndpointActionResult);
@@ -240,7 +241,7 @@ export const WebhookSettingsTab = ({
                 />
                 <button
                   type="button"
-                  className="absolute right-3 top-1/2 -translate-y-1/2 transform"
+                  className="absolute top-1/2 right-3 -translate-y-1/2 transform"
                   onClick={() => setShowSecret(!showSecret)}>
                   {showSecret ? (
                     <EyeOff className="size-5 text-slate-400" />
@@ -271,7 +272,7 @@ export const WebhookSettingsTab = ({
               {t("workspace.integrations.webhooks.secret_description")}
             </p>
             <Link
-              href="https://formbricks.com/docs/xm-and-surveys/core-features/integrations/webhooks#webhook-security-with-standard-webhooks"
+              href="https://formbricks.com/docs/platform/features/integrations/webhooks#webhook-security-with-standard-webhooks"
               target="_blank"
               className="mt-1 inline-flex items-center gap-1 text-xs text-slate-600 underline hover:text-slate-800">
               {t("workspace.integrations.webhooks.learn_to_verify")}

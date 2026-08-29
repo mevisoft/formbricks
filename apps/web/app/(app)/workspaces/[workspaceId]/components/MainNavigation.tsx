@@ -1,14 +1,11 @@
 "use client";
 
 import {
-  ArrowUpRightIcon,
   BarChart3Icon,
   Building2Icon,
   ChevronRightIcon,
-  Cog,
   FoldersIcon,
   Loader2,
-  LogOutIcon,
   MessageCircle,
   MessageSquareTextIcon,
   PanelLeftCloseIcon,
@@ -16,12 +13,13 @@ import {
   PlusIcon,
   RocketIcon,
   SettingsIcon,
-  UserCircleIcon,
   UserIcon,
+  WorkflowIcon,
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import posthog from "posthog-js";
 import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
 import { useTranslation } from "react-i18next";
 import { TOrganizationRole } from "@formbricks/types/memberships";
@@ -38,20 +36,17 @@ import FBLogo from "@/images/formbricks-wordmark.svg";
 import { cn } from "@/lib/cn";
 import { getBillingFallbackPath } from "@/lib/membership/navigation";
 import { getAccessFlags } from "@/lib/membership/utils";
-import { getFormattedErrorMessage } from "@/lib/utils/helper";
-import { useSignOut } from "@/modules/auth/hooks/use-sign-out";
 import { TrialAlert } from "@/modules/ee/billing/components/trial-alert";
 import { TRIAL_BASE_RESPONSE_LIMIT, TrialBannerNew } from "@/modules/ee/billing/components/trial-banner-new";
-import { ProfileAvatar } from "@/modules/ui/components/avatars";
+import { SwitcherDropdownBody } from "@/modules/settings/components/switcher-dropdown-body";
+import { UserDropdown } from "@/modules/settings/components/user-dropdown";
+import { useSwitcherData } from "@/modules/settings/hooks/use-switcher-data";
 import { Badge } from "@/modules/ui/components/badge";
 import { Button } from "@/modules/ui/components/button";
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
-  DropdownMenuGroup,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/modules/ui/components/dropdown-menu";
 import { GoBackButton } from "@/modules/ui/components/go-back-button";
@@ -74,7 +69,27 @@ interface NavigationProps {
   isAccessControlAllowed: boolean;
   responseCount: number;
   newTrialBannerVariant: string | boolean;
+  isFormbricksSurveysConfigured: boolean;
 }
+
+/**
+ * A nav section header carrying a Beta badge.
+ *
+ * Analyze and Act are both pre-1.0 surfaces, and the badge is what tells someone the difference
+ * between "this is finished" and "this is early". Extracted rather than duplicated so the two
+ * sections cannot drift into looking subtly different from each other.
+ */
+const sectionLabelWithBeta = (label: React.ReactNode) => (
+  <span className="inline-flex items-center gap-2">
+    <span>{label}</span>
+    <Badge
+      text="Beta"
+      type="gray"
+      size="tiny"
+      className="text-[10px] font-semibold tracking-normal normal-case"
+    />
+  </span>
+);
 
 export const MainNavigation = ({
   organization,
@@ -89,6 +104,7 @@ export const MainNavigation = ({
   isAccessControlAllowed,
   responseCount,
   newTrialBannerVariant,
+  isFormbricksSurveysConfigured,
 }: NavigationProps) => {
   const router = useRouter();
   const pathname = usePathname();
@@ -96,7 +112,6 @@ export const MainNavigation = ({
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isTextVisible, setIsTextVisible] = useState(true);
   const [latestVersion, setLatestVersion] = useState("");
-  const { signOut: signOutWithAudit } = useSignOut({ id: user.id, email: user.email });
 
   const [isPending, startTransition] = useTransition();
   const { isManager, isOwner, isBilling } = getAccessFlags(membershipRole);
@@ -130,7 +145,8 @@ export const MainNavigation = ({
     () => [
       {
         id: "ask",
-        name: t("common.ask"),
+        // Product section (IA) label — intentionally not localized (kept in English across all locales)
+        name: "Ask",
         items: [
           {
             name: t("common.surveys"),
@@ -154,31 +170,41 @@ export const MainNavigation = ({
       },
       {
         id: "unify-feedback",
-        name: (
-          <span className="inline-flex items-center gap-2">
-            <span>{t("workspace.unify.unify_feedback")}</span>
-            <Badge
-              text="Beta"
-              type="gray"
-              size="tiny"
-              className="text-[10px] font-semibold normal-case tracking-normal"
-            />
-          </span>
-        ),
+        // Same policy as "Ask" above: product section labels stay English in every locale.
+        // Was "Unify" until ENG-2742 settled on Ask / Analyze / Act as the three pillars.
+        name: sectionLabelWithBeta("Analyze"),
         items: [
           {
-            name: t("workspace.unify.feedback_records"),
-            href: `/workspaces/${workspace.id}/unify/feedback-records`,
+            name: t("workspace.unify.feedback_data"),
+            href: `/workspaces/${workspace.id}/unify/sources`,
             icon: MessageSquareTextIcon,
             isActive: pathname?.includes("/unify/"),
             isHidden: false,
             disabled: isMembershipPending || isBilling,
           },
           {
-            name: t("common.dashboards"),
+            name: t("common.analysis"),
             href: `/workspaces/${workspace.id}/dashboards`,
             icon: BarChart3Icon,
             isActive: pathname?.includes("/dashboards") || pathname?.includes("/charts"),
+            isHidden: false,
+            disabled: isMembershipPending || isBilling,
+          },
+        ],
+      },
+      {
+        id: "act",
+        // Kept translated, unlike "Ask" and "Analyze" above. Those two are deliberately English in
+        // every locale; this one has been going through t() since it was added. Making the three
+        // consistent means dropping a string 15 locales already translate, which is a naming
+        // decision rather than a side effect of adding a badge — see ENG-2742.
+        name: sectionLabelWithBeta(t("common.act")),
+        items: [
+          {
+            name: t("common.workflows"),
+            href: `/workspaces/${workspace.id}/workflows`,
+            icon: WorkflowIcon,
+            isActive: pathname?.startsWith(`/workspaces/${workspace.id}/workflows`),
             isHidden: false,
             disabled: isMembershipPending || isBilling,
           },
@@ -199,129 +225,33 @@ export const MainNavigation = ({
     [t, workspace.id, isSettingsMode, isMembershipPending, isBilling]
   );
 
-  const dropdownNavigation = [
-    {
-      label: t("common.account"),
-      href: `/workspaces/${workspace.id}/settings/account/profile`,
-      icon: UserCircleIcon,
-    },
-    {
-      label: t("common.documentation"),
-      href: "https://formbricks.com/docs",
-      target: "_blank",
-      icon: ArrowUpRightIcon,
-    },
-    {
-      label: t("common.share_feedback"),
-      href: "https://github.com/formbricks/formbricks/issues",
-      target: "_blank",
-      icon: ArrowUpRightIcon,
-    },
-  ];
-
   const [isWorkspaceDropdownOpen, setIsWorkspaceDropdownOpen] = useState(false);
   const [isOrganizationDropdownOpen, setIsOrganizationDropdownOpen] = useState(false);
-  const [workspaces, setWorkspaces] = useState<{ id: string; name: string }[]>([]);
-  const [organizations, setOrganizations] = useState<{ id: string; name: string }[]>([]);
-  const [isLoadingWorkspaces, setIsLoadingWorkspaces] = useState(false);
-  const [hasInitializedWorkspaces, setHasInitializedWorkspaces] = useState(false);
-  const [isLoadingOrganizations, setIsLoadingOrganizations] = useState(false);
-  const [workspaceLoadError, setWorkspaceLoadError] = useState<string | null>(null);
-  const [organizationLoadError, setOrganizationLoadError] = useState<string | null>(null);
+  const workspaceSwitcher = useSwitcherData(
+    () => getWorkspacesForSwitcherAction({ organizationId: organization.id }),
+    t("common.failed_to_load_workspaces")
+  );
+  const organizationSwitcher = useSwitcherData(
+    () => getOrganizationsForSwitcherAction({ organizationId: organization.id }),
+    t("common.failed_to_load_organizations")
+  );
+  const { load: loadWorkspaces } = workspaceSwitcher;
+  const { load: loadOrganizations } = organizationSwitcher;
   const [openCreateWorkspaceModal, setOpenCreateWorkspaceModal] = useState(false);
   const [openWorkspaceLimitModal, setOpenWorkspaceLimitModal] = useState(false);
 
-  const renderSwitcherError = (error: string, onRetry: () => void, retryLabel: string) => (
-    <div className="px-2 py-4">
-      <p className="mb-2 text-sm text-red-600">{error}</p>
-      <button
-        type="button"
-        onClick={onRetry}
-        className="text-xs text-slate-600 underline hover:text-slate-800">
-        {retryLabel}
-      </button>
-    </div>
-  );
-
-  const loadWorkspaces = useCallback(async () => {
-    setIsLoadingWorkspaces(true);
-    setWorkspaceLoadError(null);
-
-    try {
-      const result = await getWorkspacesForSwitcherAction({ organizationId: organization.id });
-      if (result?.data) {
-        const sorted = [...result.data].sort((a, b) => a.name.localeCompare(b.name));
-        setWorkspaces(sorted);
-      } else {
-        setWorkspaceLoadError(getFormattedErrorMessage(result) || t("common.failed_to_load_workspaces"));
-      }
-    } catch (error) {
-      const formattedError =
-        typeof error === "object" && error !== null
-          ? getFormattedErrorMessage(error as { serverError?: string; validationErrors?: unknown })
-          : "";
-      setWorkspaceLoadError(
-        formattedError || (error instanceof Error ? error.message : t("common.failed_to_load_workspaces"))
-      );
-    } finally {
-      setIsLoadingWorkspaces(false);
-      setHasInitializedWorkspaces(true);
+  useEffect(() => {
+    // The hook guards against duplicate/looping loads internally.
+    if (isWorkspaceDropdownOpen) {
+      void loadWorkspaces();
     }
-  }, [organization.id, t]);
+  }, [isWorkspaceDropdownOpen, loadWorkspaces]);
 
   useEffect(() => {
-    if (!isWorkspaceDropdownOpen || workspaces.length > 0 || isLoadingWorkspaces || workspaceLoadError) {
-      return;
+    if (isOrganizationDropdownOpen) {
+      void loadOrganizations();
     }
-
-    loadWorkspaces();
-  }, [isWorkspaceDropdownOpen, workspaces.length, isLoadingWorkspaces, workspaceLoadError, loadWorkspaces]);
-
-  const loadOrganizations = useCallback(async () => {
-    setIsLoadingOrganizations(true);
-    setOrganizationLoadError(null);
-
-    try {
-      const result = await getOrganizationsForSwitcherAction({ organizationId: organization.id });
-      if (result?.data) {
-        const sorted = [...result.data].sort((a, b) => a.name.localeCompare(b.name));
-        setOrganizations(sorted);
-      } else {
-        setOrganizationLoadError(
-          getFormattedErrorMessage(result) || t("common.failed_to_load_organizations")
-        );
-      }
-    } catch (error) {
-      const formattedError =
-        typeof error === "object" && error !== null
-          ? getFormattedErrorMessage(error as { serverError?: string; validationErrors?: unknown })
-          : "";
-      setOrganizationLoadError(
-        formattedError || (error instanceof Error ? error.message : t("common.failed_to_load_organizations"))
-      );
-    } finally {
-      setIsLoadingOrganizations(false);
-    }
-  }, [organization.id, t]);
-
-  useEffect(() => {
-    if (
-      !isOrganizationDropdownOpen ||
-      organizations.length > 0 ||
-      isLoadingOrganizations ||
-      organizationLoadError
-    ) {
-      return;
-    }
-
-    loadOrganizations();
-  }, [
-    isOrganizationDropdownOpen,
-    organizations.length,
-    isLoadingOrganizations,
-    organizationLoadError,
-    loadOrganizations,
-  ]);
+  }, [isOrganizationDropdownOpen, loadOrganizations]);
 
   useEffect(() => {
     async function loadReleases() {
@@ -345,6 +275,7 @@ export const MainNavigation = ({
     const ts = new Date(trialEnd).getTime();
     if (!Number.isFinite(ts)) return null;
     const msPerDay = 86_400_000;
+    // eslint-disable-next-line react-hooks/purity -- migration ENG-2366
     return Math.ceil((ts - Date.now()) / msPerDay);
   }, [
     isFormbricksCloud,
@@ -353,7 +284,7 @@ export const MainNavigation = ({
   ]);
 
   const mainNavigationLink = isBilling
-    ? getBillingFallbackPath(workspace.id, isFormbricksCloud)
+    ? getBillingFallbackPath(organization.id, isFormbricksCloud)
     : `/workspaces/${workspace.id}/surveys/`;
 
   const handleWorkspaceChange = (workspaceId: string) => {
@@ -368,7 +299,7 @@ export const MainNavigation = ({
   const handleOrganizationChange = (organizationId: string) => {
     const targetPath =
       organizationId === organization.id
-        ? `/workspaces/${workspace.id}/settings/organization/general`
+        ? `/organizations/${organization.id}/settings/general`
         : `/organizations/${organizationId}/`;
     startTransition(() => {
       setIsOrganizationDropdownOpen(false);
@@ -376,18 +307,12 @@ export const MainNavigation = ({
     });
   };
 
-  const handleSettingNavigation = (href: string) => {
-    startTransition(() => {
-      router.push(href);
-    });
-  };
-
   const handleWorkspaceCreate = () => {
-    if (!hasInitializedWorkspaces || isLoadingWorkspaces) {
+    if (!workspaceSwitcher.hasLoaded || workspaceSwitcher.isLoading) {
       return;
     }
 
-    if (workspaces.length >= organizationWorkspacesLimit) {
+    if (workspaceSwitcher.items.length >= organizationWorkspacesLimit) {
       setOpenWorkspaceLimitModal(true);
       return;
     }
@@ -400,7 +325,7 @@ export const MainNavigation = ({
       return [
         {
           text: t("workspace.settings.billing.upgrade"),
-          href: `/workspaces/${workspace.id}/settings/organization/billing`,
+          href: `/organizations/${organization.id}/settings/billing`,
         },
         {
           text: t("common.cancel"),
@@ -413,8 +338,8 @@ export const MainNavigation = ({
       {
         text: t("workspace.settings.billing.upgrade"),
         href: isLicenseActive
-          ? `/workspaces/${workspace.id}/settings/organization/enterprise`
-          : "https://formbricks.com/upgrade-self-hosted-license",
+          ? `/organizations/${organization.id}/settings/enterprise`
+          : "https://formbricks.com/upgrade-self-hosted-license?utm_source=formbricks-app&utm_medium=webapp&utm_campaign=upgrade_prompt_nav",
       },
       {
         text: t("common.cancel"),
@@ -436,7 +361,7 @@ export const MainNavigation = ({
     (id: string) => {
       startTransition(() => {
         if (id === organization.id) {
-          router.push(`/workspaces/${workspace.id}/settings/organization/general`);
+          router.push(`/organizations/${organization.id}/settings/general`);
         } else {
           router.push(`/organizations/${id}/`);
         }
@@ -446,7 +371,7 @@ export const MainNavigation = ({
   );
 
   const switcherTriggerClasses = cn(
-    "w-full border-t px-3 py-3 text-left transition-colors duration-200 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-500 focus-visible:ring-inset",
+    "w-full border-t px-3 py-3 text-left transition-colors duration-200 hover:bg-slate-50 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-slate-500 focus-visible:ring-inset",
     isCollapsed ? "flex items-center justify-center" : ""
   );
 
@@ -454,7 +379,7 @@ export const MainNavigation = ({
     "flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-600";
   const mainNavIconClassName = "h-4 w-4 shrink-0";
   const isInitialWorkspacesLoading =
-    isWorkspaceDropdownOpen && !hasInitializedWorkspaces && !workspaceLoadError;
+    isWorkspaceDropdownOpen && !workspaceSwitcher.hasLoaded && !workspaceSwitcher.error;
 
   return (
     <>
@@ -480,21 +405,33 @@ export const MainNavigation = ({
                 isFormbricksCloud={isFormbricksCloud}
                 isCollapsed={false}
                 isTextVisible={false}
-                workspaces={workspaces}
-                isLoadingWorkspaces={isLoadingWorkspaces}
+                workspaces={workspaceSwitcher.items}
+                isLoadingWorkspaces={workspaceSwitcher.isLoading}
                 onWorkspaceChange={handleSettingsWorkspaceChange}
-                onWorkspaceDropdownOpen={loadWorkspaces}
-                organizations={organizations}
-                isLoadingOrganizations={isLoadingOrganizations}
+                onWorkspaceDropdownOpen={() =>
+                  workspaceSwitcher.error ? workspaceSwitcher.retry() : workspaceSwitcher.load()
+                }
+                errorWorkspaces={workspaceSwitcher.error}
+                onWorkspaceRetry={workspaceSwitcher.retry}
+                organizations={organizationSwitcher.items}
+                isLoadingOrganizations={organizationSwitcher.isLoading}
                 onOrganizationChange={handleSettingsOrganizationChange}
-                onOrganizationDropdownOpen={loadOrganizations}
+                onOrganizationDropdownOpen={() =>
+                  organizationSwitcher.error ? organizationSwitcher.retry() : organizationSwitcher.load()
+                }
+                errorOrganizations={organizationSwitcher.error}
+                onOrganizationRetry={organizationSwitcher.retry}
               />
             </div>
           ) : (
             <div>
               {/* Logo and Toggle */}
 
-              <div className="flex items-center justify-between px-3 pb-4">
+              <div
+                className={cn(
+                  "flex items-center px-3 pb-4",
+                  isCollapsed ? "justify-center" : "justify-between"
+                )}>
                 {!isCollapsed && (
                   <Link
                     href={mainNavigationLink}
@@ -510,7 +447,7 @@ export const MainNavigation = ({
                   size="icon"
                   onClick={toggleSidebar}
                   className={cn(
-                    "rounded-xl bg-slate-50 p-1 text-slate-600 transition-all hover:bg-slate-100 focus:outline-none focus:ring-0 focus:ring-transparent"
+                    "rounded-xl bg-slate-50 p-1 text-slate-600 transition-all hover:bg-slate-100 focus:ring-0 focus:ring-transparent focus:outline-hidden"
                   )}>
                   {isCollapsed ? (
                     <PanelLeftOpenIcon strokeWidth={1.5} />
@@ -525,7 +462,7 @@ export const MainNavigation = ({
                 {mainNavigationSections.map((section) => (
                   <li key={section.id}>
                     {!isCollapsed && !isTextVisible && (
-                      <p className="px-4 pb-1 pt-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
+                      <p className="px-4 pt-2 pb-1 text-xs font-semibold tracking-wide text-slate-400 uppercase">
                         {section.name}
                       </p>
                     )}
@@ -595,20 +532,20 @@ export const MainNavigation = ({
                 {!isCollapsed &&
                   isFormbricksCloud &&
                   trialDaysRemaining !== null &&
-                  (newTrialBannerVariant === "new-trial-banner" ? (
+                  (newTrialBannerVariant === "test" ? (
                     <TrialBannerNew
                       trialDaysRemaining={trialDaysRemaining}
                       planName={organization.billing.stripe?.plan ?? "pro"}
                       responseCount={responseCount}
                       responseLimit={organization.billing.limits.monthly.responses}
                       baseResponseLimit={TRIAL_BASE_RESPONSE_LIMIT}
-                      billingHref={`/workspaces/${workspace.id}/settings/organization/billing`}
-                      hasPaymentMethod={organization.billing.stripe?.hasPaymentMethod}
+                      billingHref={`/organizations/${organization.id}/settings/billing`}
                     />
                   ) : (
                     <Link
-                      href={`/workspaces/${workspace.id}/settings/organization/billing`}
-                      className="m-2 block">
+                      href={`/organizations/${organization.id}/settings/billing`}
+                      className="m-2 block"
+                      onClick={() => posthog.capture("main_nav_go_to_billing_clicked")}>
                       <TrialAlert trialDaysRemaining={trialDaysRemaining} size="small" />
                     </Link>
                   ))}
@@ -625,7 +562,7 @@ export const MainNavigation = ({
                       className={switcherTriggerClasses}>
                       <button
                         type="button"
-                        aria-label={isCollapsed ? t("common.change_workspace") : undefined}
+                        aria-label={isCollapsed ? t("common.choose_workspace") : undefined}
                         className={cn("flex w-full items-center gap-3", isCollapsed && "justify-center")}>
                         <span className={switcherIconClasses}>
                           <FoldersIcon className="size-4" strokeWidth={1.5} />
@@ -645,58 +582,23 @@ export const MainNavigation = ({
                       </button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent side="right" sideOffset={10} alignOffset={5} align="end">
-                      <div className="px-2 py-1.5 text-sm font-medium text-slate-500">
-                        <FoldersIcon className="mr-2 inline size-4" strokeWidth={1.5} />
-                        {t("common.change_workspace")}
-                      </div>
-                      {(isLoadingWorkspaces || isInitialWorkspacesLoading) && (
-                        <div className="flex items-center justify-center py-2">
-                          <Loader2 className="size-4 animate-spin" />
-                        </div>
-                      )}
-                      {!isLoadingWorkspaces &&
-                        !isInitialWorkspacesLoading &&
-                        workspaceLoadError &&
-                        renderSwitcherError(
-                          workspaceLoadError,
-                          () => {
-                            setWorkspaceLoadError(null);
-                            setWorkspaces([]);
-                          },
-                          t("common.try_again")
+                      <SwitcherDropdownBody
+                        type="workspace"
+                        isLoading={workspaceSwitcher.isLoading || isInitialWorkspacesLoading}
+                        error={workspaceSwitcher.error}
+                        onRetry={workspaceSwitcher.retry}
+                        items={workspaceSwitcher.items}
+                        selectedId={workspace.id}
+                        onSelect={handleWorkspaceChange}>
+                        {isOwnerOrManager && (
+                          <DropdownMenuCheckboxItem
+                            onClick={handleWorkspaceCreate}
+                            className="w-full cursor-pointer justify-between">
+                            <span>{t("common.add_new_workspace")}</span>
+                            <PlusIcon className="ml-2 size-4" strokeWidth={1.5} />
+                          </DropdownMenuCheckboxItem>
                         )}
-                      {!isLoadingWorkspaces && !isInitialWorkspacesLoading && !workspaceLoadError && (
-                        <>
-                          <DropdownMenuGroup className="max-h-[300px] overflow-y-auto">
-                            {workspaces.map((proj) => (
-                              <DropdownMenuCheckboxItem
-                                key={proj.id}
-                                checked={proj.id === workspace.id}
-                                onClick={() => handleWorkspaceChange(proj.id)}
-                                className="cursor-pointer">
-                                {proj.name}
-                              </DropdownMenuCheckboxItem>
-                            ))}
-                          </DropdownMenuGroup>
-                          {isOwnerOrManager && (
-                            <DropdownMenuCheckboxItem
-                              onClick={handleWorkspaceCreate}
-                              className="w-full cursor-pointer justify-between">
-                              <span>{t("common.add_new_workspace")}</span>
-                              <PlusIcon className="ml-2 size-4" strokeWidth={1.5} />
-                            </DropdownMenuCheckboxItem>
-                          )}
-                        </>
-                      )}
-                      <DropdownMenuSeparator />
-                      <DropdownMenuCheckboxItem
-                        onClick={() =>
-                          handleSettingNavigation(`/workspaces/${workspace.id}/settings/workspace/general`)
-                        }
-                        className="cursor-pointer">
-                        <Cog className="mr-2 size-4" strokeWidth={1.5} />
-                        {t("common.settings")}
-                      </DropdownMenuCheckboxItem>
+                      </SwitcherDropdownBody>
                     </DropdownMenuContent>
                   </DropdownMenu>
 
@@ -707,7 +609,7 @@ export const MainNavigation = ({
                       className={switcherTriggerClasses}>
                       <button
                         type="button"
-                        aria-label={isCollapsed ? t("common.change_organization") : undefined}
+                        aria-label={isCollapsed ? t("common.choose_organization") : undefined}
                         className={cn("flex w-full items-center gap-3", isCollapsed && "justify-center")}>
                         <span className={switcherIconClasses}>
                           <Building2Icon className="size-4" strokeWidth={1.5} />
@@ -727,117 +629,29 @@ export const MainNavigation = ({
                       </button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent side="right" sideOffset={10} alignOffset={5} align="end">
-                      <div className="px-2 py-1.5 text-sm font-medium text-slate-500">
-                        <Building2Icon className="mr-2 inline size-4" strokeWidth={1.5} />
-                        {t("common.change_organization")}
-                      </div>
-                      {isLoadingOrganizations && (
-                        <div className="flex items-center justify-center py-2">
-                          <Loader2 className="size-4 animate-spin" />
-                        </div>
-                      )}
-                      {!isLoadingOrganizations &&
-                        organizationLoadError &&
-                        renderSwitcherError(
-                          organizationLoadError,
-                          () => {
-                            setOrganizationLoadError(null);
-                            setOrganizations([]);
-                          },
-                          t("common.try_again")
-                        )}
-                      {!isLoadingOrganizations && !organizationLoadError && (
-                        <DropdownMenuGroup className="max-h-[300px] overflow-y-auto">
-                          {organizations.map((org) => (
-                            <DropdownMenuCheckboxItem
-                              key={org.id}
-                              checked={org.id === organization.id}
-                              onClick={() => handleOrganizationChange(org.id)}
-                              className="cursor-pointer">
-                              {org.name}
-                            </DropdownMenuCheckboxItem>
-                          ))}
-                        </DropdownMenuGroup>
-                      )}
-                      <DropdownMenuSeparator />
-                      <DropdownMenuCheckboxItem
-                        onClick={() =>
-                          handleSettingNavigation(`/workspaces/${workspace.id}/settings/organization/general`)
-                        }
-                        className="cursor-pointer">
-                        <SettingsIcon className="mr-2 size-4" strokeWidth={1.5} />
-                        {t("common.settings")}
-                      </DropdownMenuCheckboxItem>
+                      <SwitcherDropdownBody
+                        type="organization"
+                        isLoading={organizationSwitcher.isLoading}
+                        error={organizationSwitcher.error}
+                        onRetry={organizationSwitcher.retry}
+                        items={organizationSwitcher.items}
+                        selectedId={organization.id}
+                        onSelect={handleOrganizationChange}
+                      />
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </>
               )}
 
-              <DropdownMenu>
-                <DropdownMenuTrigger
-                  asChild
-                  id="userDropdownTrigger"
-                  className={cn(switcherTriggerClasses, "rounded-br-xl")}>
-                  <button
-                    type="button"
-                    aria-label={isCollapsed ? t("common.account_settings") : undefined}
-                    className={cn("flex w-full items-center gap-3", isCollapsed && "justify-center")}>
-                    <span className={switcherIconClasses}>
-                      <ProfileAvatar userId={user.id} />
-                    </span>
-                    {!isCollapsed && !isTextVisible && (
-                      <>
-                        <div className="grow overflow-hidden">
-                          <p
-                            title={user?.email}
-                            className="ph-no-capture -mb-0.5 truncate text-sm font-bold text-slate-700">
-                            {user?.name ? <span>{user?.name}</span> : <span>{user?.email}</span>}
-                          </p>
-                          <p className="text-sm text-slate-500">{t("common.account")}</p>
-                        </div>
-                        <ChevronRightIcon className="size-4 shrink-0 text-slate-600" strokeWidth={1.5} />
-                      </>
-                    )}
-                  </button>
-                </DropdownMenuTrigger>
-
-                <DropdownMenuContent
-                  id="userDropdownInnerContentWrapper"
-                  side="right"
-                  sideOffset={10}
-                  alignOffset={5}
-                  align="end">
-                  {dropdownNavigation.map((link) => (
-                    <Link
-                      href={link.href}
-                      target={link.target}
-                      className="flex w-full items-center"
-                      key={link.label}
-                      rel={link.target === "_blank" ? "noopener noreferrer" : undefined}>
-                      <DropdownMenuItem>
-                        <link.icon className="mr-2 size-4" strokeWidth={1.5} />
-                        {link.label}
-                      </DropdownMenuItem>
-                    </Link>
-                  ))}
-                  <DropdownMenuItem
-                    onClick={async () => {
-                      const loginUrl = `${publicDomain}/auth/login`;
-                      const route = await signOutWithAudit({
-                        reason: "user_initiated",
-                        redirectUrl: loginUrl,
-                        organizationId: organization.id,
-                        redirect: false,
-                        callbackUrl: loginUrl,
-                        clearWorkspaceId: true,
-                      });
-                      router.push(route?.url || loginUrl);
-                    }}
-                    icon={<LogOutIcon className="mr-2 size-4" strokeWidth={1.5} />}>
-                    {t("common.logout")}
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+              <UserDropdown
+                user={user}
+                organizationId={organization.id}
+                publicDomain={publicDomain}
+                isCollapsed={isCollapsed}
+                isTextVisible={isTextVisible}
+                className="rounded-br-xl"
+                isFormbricksSurveysConfigured={isFormbricksSurveysConfigured}
+              />
             </div>
           </div>
         </aside>

@@ -2,6 +2,7 @@ import "server-only";
 import { z } from "zod";
 import { logger } from "@formbricks/logger";
 import { generateOrganizationAIObject } from "@/lib/ai/service";
+import { AI_TRACING_FEATURE } from "@/lib/posthog/ai-tracing-feature";
 
 export const ZAITranslationField = z.object({
   path: z.string(),
@@ -11,8 +12,15 @@ export const ZAITranslationField = z.object({
 
 export type TAITranslationField = z.infer<typeof ZAITranslationField>;
 
+const AI_TRANSLATION_TIMEOUT_MS = 45_000;
+const AI_TRANSLATION_MIN_OUTPUT_TOKENS = 1024;
+const AI_TRANSLATION_MAX_OUTPUT_TOKENS = 8192;
+const AI_TRANSLATION_OUTPUT_TOKENS_PER_FIELD = 160;
+
 interface TranslateFieldsInput {
   organizationId: string;
+  workspaceId: string;
+  userId: string;
   fields: TAITranslationField[];
   sourceLanguage: string;
   targetLanguage: string;
@@ -20,6 +28,8 @@ interface TranslateFieldsInput {
 
 export const translateFields = async ({
   organizationId,
+  workspaceId,
+  userId,
   fields,
   sourceLanguage,
   targetLanguage,
@@ -69,10 +79,19 @@ Rules:
 
   const result = await generateOrganizationAIObject({
     organizationId,
+    aiTracing: { distinctId: userId, feature: AI_TRACING_FEATURE.Translation, workspaceId },
     schema,
     system: systemPrompt,
     prompt: userPayload,
     temperature: 0,
+    maxOutputTokens: Math.min(
+      AI_TRANSLATION_MAX_OUTPUT_TOKENS,
+      Math.max(
+        AI_TRANSLATION_MIN_OUTPUT_TOKENS,
+        translatableFields.length * AI_TRANSLATION_OUTPUT_TOKENS_PER_FIELD
+      )
+    ),
+    timeout: AI_TRANSLATION_TIMEOUT_MS,
   });
 
   const translatedById = result.object;

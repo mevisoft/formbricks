@@ -6,18 +6,20 @@ import { useRouter } from "next/navigation";
 import { type ComponentProps, useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
 import { useTranslation } from "react-i18next";
-import { TSurveyCreateInput, TSurveyType } from "@formbricks/types/surveys/types";
-import { TUserLocale } from "@formbricks/types/user";
-import { TWorkspaceConfigChannel } from "@formbricks/types/workspace";
-import { customSurveyTemplate } from "@/app/lib/templates";
+import type { TSurveyStatus, TSurveyType } from "@formbricks/types/surveys/types";
+import type { TUserLocale } from "@formbricks/types/user";
+import type { TWorkspaceConfigChannel } from "@formbricks/types/workspace";
+import { CUSTOM_SURVEY_TEMPLATE_ID } from "@/app/lib/templates";
 import { FORMBRICKS_SURVEYS_FILTERS_KEY_LS } from "@/lib/localStorage";
-import { getFormattedErrorMessage } from "@/lib/utils/helper";
 import { getV3ApiErrorMessage } from "@/modules/api/lib/v3-client";
 import type { TAIUnavailableReason } from "@/modules/ee/analysis/charts/lib/ai-availability";
-import { createSurveyAction } from "@/modules/survey/components/template-list/actions";
 import { CreateWithAIDialog } from "@/modules/survey/components/template-list/components/create-with-ai-dialog";
+import { useCreateSurveyFromTemplate } from "@/modules/survey/components/template-list/hooks/use-create-survey-from-template";
+import { useArchiveSurvey } from "@/modules/survey/list/hooks/use-archive-survey";
 import { useDeleteSurvey } from "@/modules/survey/list/hooks/use-delete-survey";
+import { useRestoreSurvey } from "@/modules/survey/list/hooks/use-restore-survey";
 import { useSurveys } from "@/modules/survey/list/hooks/use-surveys";
+import { useUpdateSurveyStatus } from "@/modules/survey/list/hooks/use-update-survey-status";
 import { initialFilters } from "@/modules/survey/list/lib/constants";
 import {
   hasActiveSurveyFilters,
@@ -36,13 +38,13 @@ import {
 import { EmptyState } from "@/modules/ui/components/empty-state";
 import { PageContentWrapper } from "@/modules/ui/components/page-content-wrapper";
 import { PageHeader } from "@/modules/ui/components/page-header";
+import { FeaturedTemplates } from "./featured-templates";
 import { SurveyCard } from "./survey-card";
 import { SurveyFilters } from "./survey-filters";
 import { SurveyLoading } from "./survey-loading";
 
 interface SurveysListProps {
   workspace: ComponentProps<typeof TemplateContainerWithPreview>["workspace"];
-  userId: string;
   publicDomain: string;
   isReadOnly: boolean;
   surveysPerPage: number;
@@ -50,27 +52,21 @@ interface SurveysListProps {
   locale: TUserLocale;
   isAIAvailable: boolean;
   aiUnavailableReason?: TAIUnavailableReason;
+  showFeaturedTemplates?: boolean;
 }
 
 type NewSurveyMenuProps = {
   workspace: ComponentProps<typeof TemplateContainerWithPreview>["workspace"];
-  userId: string;
   language: TUserLocale;
   isAIAvailable: boolean;
   aiUnavailableReason?: TAIUnavailableReason;
 };
 
-const NewSurveyMenu = ({
-  workspace,
-  userId,
-  language,
-  isAIAvailable,
-  aiUnavailableReason,
-}: NewSurveyMenuProps) => {
+const NewSurveyMenu = ({ workspace, language, isAIAvailable, aiUnavailableReason }: NewSurveyMenuProps) => {
   const { t } = useTranslation();
   const router = useRouter();
   const [isAIDialogOpen, setIsAIDialogOpen] = useState(false);
-  const [isCreatingBlankSurvey, setIsCreatingBlankSurvey] = useState(false);
+  const createSurveyMutation = useCreateSurveyFromTemplate();
   const workspaceBasePath = `/workspaces/${workspace.id}`;
 
   const surveyType: TSurveyType = useMemo(() => {
@@ -86,32 +82,18 @@ const NewSurveyMenu = ({
   }, [workspace.config.channel]);
 
   const handleStartFromScratch = async () => {
-    setIsCreatingBlankSurvey(true);
-
     try {
-      const customSurvey = customSurveyTemplate(t);
-      const surveyBody: TSurveyCreateInput = {
-        ...customSurvey.preset,
-        type: surveyType,
-        createdBy: userId,
-      };
-
-      const response = await createSurveyAction({
+      const survey = await createSurveyMutation.mutateAsync({
         workspaceId: workspace.id,
-        surveyBody,
-        createdFrom: "blank",
+        templateId: CUSTOM_SURVEY_TEMPLATE_ID,
+        source: "custom",
+        surveyType,
+        defaultLanguage: language,
       });
 
-      if (response?.data) {
-        router.push(`${workspaceBasePath}/surveys/${response.data.id}/edit`);
-        return;
-      }
-
-      toast.error(getFormattedErrorMessage(response));
+      router.push(`${workspaceBasePath}/surveys/${survey.id}/edit`);
     } catch (error) {
       toast.error(getV3ApiErrorMessage(error, t("common.something_went_wrong_please_try_again")));
-    } finally {
-      setIsCreatingBlankSurvey(false);
     }
   };
 
@@ -136,7 +118,7 @@ const NewSurveyMenu = ({
             {t("workspace.surveys.ai_create.choose_template")}
           </DropdownMenuItem>
           <DropdownMenuItem
-            disabled={isCreatingBlankSurvey}
+            disabled={createSurveyMutation.isPending}
             icon={<PlusCircleIcon className="size-4" />}
             onSelect={(event) => {
               event.preventDefault();
@@ -160,7 +142,6 @@ const NewSurveyMenu = ({
 
 export const SurveysList = ({
   workspace,
-  userId,
   publicDomain,
   isReadOnly,
   surveysPerPage,
@@ -168,7 +149,8 @@ export const SurveysList = ({
   locale,
   isAIAvailable,
   aiUnavailableReason,
-}: SurveysListProps) => {
+  showFeaturedTemplates = false,
+}: Readonly<SurveysListProps>) => {
   const { t } = useTranslation();
   const [surveyFilters, setSurveyFilters] = useState<TSurveyOverviewFilters>(initialFilters);
   const [isFilterInitialized, setIsFilterInitialized] = useState(false);
@@ -213,12 +195,14 @@ export const SurveysList = ({
     fetchNextPage,
     hasNextPage,
     isError,
+    isFetching,
     isFetchingNextPage,
     isLoading,
     queryKey,
     refetch,
     surveys,
     totalCount,
+    hasArchived,
   } = useSurveys({
     workspaceId: workspace.id,
     limit: surveysPerPage,
@@ -227,20 +211,51 @@ export const SurveysList = ({
   });
 
   const deleteSurveyMutation = useDeleteSurvey({ queryKey });
+  const updateSurveyStatusMutation = useUpdateSurveyStatus({ queryKey });
+  const archiveSurveyMutation = useArchiveSurvey({ queryKey });
+  const restoreSurveyMutation = useRestoreSurvey({ queryKey });
+
+  // When the workspace no longer has archived surveys (last one restored/purged), drop a stale
+  // "archived" selection persisted in localStorage so the (now-hidden) filter can't strand the view.
+  // Guard on !isFetching so a fresh selection isn't wiped while hasArchived is still catching up
+  // during a refetch (e.g. right after archiving the last active survey).
+  useEffect(() => {
+    if (!isFetching && !hasArchived && surveyFilters.status.includes("archived")) {
+      setSurveyFilters((prev) => ({
+        ...prev,
+        status: prev.status.filter((value) => value !== "archived"),
+      }));
+    }
+  }, [hasArchived, isFetching, surveyFilters.status]);
 
   const hasAppliedFilters = hasActiveSurveyFilters(normalizedFilters);
   const showInitialLoading = !isFilterInitialized || (isLoading && surveys.length === 0);
-  const showTemplateEmptyState = !isError && totalCount === 0 && !hasAppliedFilters && !isReadOnly;
-  const showReadOnlyEmptyState = !isError && totalCount === 0 && !hasAppliedFilters && isReadOnly;
+  // Never show the "create your first survey" empty states when archived surveys exist — the user
+  // must still be able to reach the Archived filter.
+  const showTemplateEmptyState =
+    !isError && totalCount === 0 && !hasAppliedFilters && !hasArchived && !isReadOnly;
+  const showReadOnlyEmptyState =
+    !isError && totalCount === 0 && !hasAppliedFilters && !hasArchived && isReadOnly;
 
   const handleDeleteSurvey = async (surveyId: string) => {
     await deleteSurveyMutation.mutateAsync({ surveyId });
   };
 
+  const handleUpdateSurveyStatus = async (surveyId: string, status: TSurveyStatus) => {
+    await updateSurveyStatusMutation.mutateAsync({ surveyId, status });
+  };
+
+  const handleArchiveSurvey = async (surveyId: string) => {
+    await archiveSurveyMutation.mutateAsync({ surveyId });
+  };
+
+  const handleRestoreSurvey = async (surveyId: string) => {
+    await restoreSurveyMutation.mutateAsync({ surveyId });
+  };
+
   const createSurveyButton = (
     <NewSurveyMenu
       workspace={workspace}
-      userId={userId}
       language={locale}
       isAIAvailable={isAIAvailable}
       aiUnavailableReason={aiUnavailableReason}
@@ -270,10 +285,10 @@ export const SurveysList = ({
   if (showTemplateEmptyState) {
     return (
       <TemplateContainerWithPreview
-        userId={userId}
         workspace={workspace}
         isTemplatePage={false}
         publicDomain={publicDomain}
+        defaultLanguage={locale}
         language={locale}
         isAIAvailable={isAIAvailable}
         aiUnavailableReason={aiUnavailableReason}
@@ -312,10 +327,12 @@ export const SurveysList = ({
     surveyContent = (
       <div>
         <div className="flex-col space-y-3" ref={parent}>
-          <div className="mt-6 grid w-full grid-cols-8 place-items-center gap-3 px-6 pr-8 text-sm text-slate-800">
+          <div
+            className="mt-6 grid w-full grid-cols-8 place-items-center gap-3 px-6 pr-8 text-sm text-slate-800"
+            data-testid="survey-list-header">
             <div className="col-span-2 place-self-start">{t("common.name")}</div>
             <div className="col-span-1">{t("common.status")}</div>
-            <div className="col-span-1">{t("common.responses")}</div>
+            <div className="col-span-1">{t("workspace.surveys.completed_responses")}</div>
             <div className="col-span-1">{t("common.type")}</div>
             <div className="col-span-1">{t("common.created_at")}</div>
             <div className="col-span-1">{t("common.updated_at")}</div>
@@ -327,6 +344,9 @@ export const SurveysList = ({
               survey={survey}
               isReadOnly={isReadOnly}
               deleteSurvey={handleDeleteSurvey}
+              updateSurveyStatus={handleUpdateSurveyStatus}
+              archiveSurvey={handleArchiveSurvey}
+              restoreSurvey={handleRestoreSurvey}
               publicDomain={publicDomain}
               locale={locale}
             />
@@ -352,10 +372,19 @@ export const SurveysList = ({
     <PageContentWrapper>
       <PageHeader pageTitle={t("common.surveys")} cta={isReadOnly ? <></> : createSurveyButton} />
       <div className="space-y-6">
+        {!isReadOnly && showFeaturedTemplates && (
+          <FeaturedTemplates
+            workspace={workspace}
+            locale={locale}
+            isAIAvailable={isAIAvailable}
+            aiUnavailableReason={aiUnavailableReason}
+          />
+        )}
         <SurveyFilters
           surveyFilters={normalizedFilters}
           setSurveyFilters={setSurveyFilters}
           currentWorkspaceChannel={currentWorkspaceChannel}
+          hasArchived={hasArchived}
         />
         {surveyContent}
       </div>

@@ -11,8 +11,6 @@ import {
   OIDC_OAUTH_ENABLED,
   PRIVACY_URL,
   SAML_OAUTH_ENABLED,
-  SAML_PRODUCT,
-  SAML_TENANT,
   SIGNUP_ENABLED,
   TERMS_URL,
   TURNSTILE_SITE_KEY,
@@ -60,7 +58,7 @@ export const SignupPage = async ({
   const emailFromSearchParams = searchParams["email"];
 
   return (
-    <div className="flex min-h-screen w-full items-center justify-center bg-[#00C4B8]">
+    <div className="flex min-h-screen w-full items-center justify-center bg-[#D9F6F4]">
       <FormWrapper>
         <SignupForm
           webAppUrl={WEBAPP_URL}
@@ -78,8 +76,6 @@ export const SignupPage = async ({
           isSsoEnabled={isSsoEnabled}
           samlSsoEnabled={samlSsoEnabled}
           isTurnstileConfigured={IS_TURNSTILE_CONFIGURED}
-          samlTenant={SAML_TENANT}
-          samlProduct={SAML_PRODUCT}
           turnstileSiteKey={TURNSTILE_SITE_KEY}
           isFormbricksCloud={IS_FORMBRICKS_CLOUD}
         />

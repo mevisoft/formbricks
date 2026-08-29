@@ -1,6 +1,6 @@
-import { Prisma } from "@prisma/client";
 import { describe, expect, test, vi } from "vitest";
 import { prisma } from "@formbricks/database";
+import { Prisma } from "@formbricks/database/prisma";
 import { logger } from "@formbricks/logger";
 import { DatabaseError } from "@formbricks/types/errors";
 import { TSurvey } from "@formbricks/types/surveys/types";
@@ -109,6 +109,7 @@ describe("getSurveys", () => {
         status: {
           not: "completed",
         },
+        archivedAt: null,
       },
       select: selectSurvey,
       orderBy: {

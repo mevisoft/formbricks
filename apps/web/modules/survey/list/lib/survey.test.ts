@@ -1,8 +1,8 @@
 import { createId } from "@paralleldrive/cuid2";
-import { Prisma } from "@prisma/client";
 import { cache as reactCache } from "react";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { prisma } from "@formbricks/database";
+import { Prisma } from "@formbricks/database/prisma";
 import { logger } from "@formbricks/logger";
 import { TActionClassType } from "@formbricks/types/action-classes";
 import { DatabaseError, ResourceNotFoundError } from "@formbricks/types/errors";
@@ -11,18 +11,11 @@ import { checkForInvalidMediaInBlocks } from "@/lib/survey/utils";
 import { validateInputs } from "@/lib/utils/validate";
 import { getIsQuotasEnabled } from "@/modules/ee/license-check/lib/utils";
 import { getQuotas } from "@/modules/ee/quotas/lib/quotas";
-import { buildOrderByClause, buildWhereClause } from "@/modules/survey/lib/utils";
+import { buildWhereClause } from "@/modules/survey/lib/utils";
 import { doesWorkspaceExist, getWorkspaceWithLanguages } from "@/modules/survey/list/lib/workspace";
-import { TSurvey, TWorkspaceWithLanguages } from "../types/surveys";
+import { TWorkspaceWithLanguages } from "../types/surveys";
 // Import the module to be tested
-import {
-  copySurveyToOtherWorkspace,
-  getSurvey,
-  getSurveyCount,
-  getSurveys,
-  getSurveysSortedByRelevance,
-} from "./survey";
-import { surveySelect } from "./survey-record";
+import { copySurveyToOtherWorkspace, getSurveyCount, hasArchivedSurveys } from "./survey";
 
 vi.mock("server-only", () => ({}));
 
@@ -47,7 +40,6 @@ vi.mock("@/lib/organization/service", () => ({
 }));
 
 vi.mock("@/modules/survey/lib/utils", () => ({
-  buildOrderByClause: vi.fn((sortBy) => (sortBy ? [{ [sortBy]: "desc" }] : [])),
   buildWhereClause: vi.fn((filterCriteria) => (filterCriteria ? { name: filterCriteria.name } : {})),
 }));
 
@@ -81,6 +73,7 @@ vi.mock("@formbricks/database", () => ({
     survey: {
       findMany: vi.fn(),
       findUnique: vi.fn(),
+      findFirst: vi.fn(),
       count: vi.fn(),
       delete: vi.fn(),
       create: vi.fn(),
@@ -88,9 +81,6 @@ vi.mock("@formbricks/database", () => ({
     segment: {
       delete: vi.fn(),
       findFirst: vi.fn(),
-    },
-    response: {
-      groupBy: vi.fn(),
     },
     language: {
       // Added for language connectOrCreate in copySurvey
@@ -120,7 +110,6 @@ const resetMocks = () => {
   vi.mocked(reactCache).mockClear();
   vi.mocked(checkForInvalidMediaInBlocks).mockClear();
   vi.mocked(validateInputs).mockClear();
-  vi.mocked(buildOrderByClause).mockClear();
   vi.mocked(buildWhereClause).mockClear();
   vi.mocked(doesWorkspaceExist).mockClear();
   vi.mocked(getWorkspaceWithLanguages).mockClear();
@@ -128,12 +117,12 @@ const resetMocks = () => {
   vi.mocked(createId).mockClear();
   vi.mocked(prisma.survey.findMany).mockReset();
   vi.mocked(prisma.survey.findUnique).mockReset();
+  vi.mocked(prisma.survey.findFirst).mockReset();
   vi.mocked(prisma.survey.count).mockReset();
   vi.mocked(prisma.survey.delete).mockReset();
   vi.mocked(prisma.survey.create).mockReset();
   vi.mocked(prisma.segment.delete).mockReset();
   vi.mocked(prisma.segment.findFirst).mockReset();
-  vi.mocked(prisma.response.groupBy).mockReset();
   vi.mocked(prisma.actionClass.findMany).mockReset();
   vi.mocked(getQuotas).mockReset();
   vi.mocked(logger.error).mockClear();
@@ -150,19 +139,6 @@ const makePrismaKnownError = () =>
 const workspaceId = "ws_1";
 const surveyId = "survey_1";
 const userId = "user_1";
-
-const mockSurveyPrisma = {
-  id: surveyId,
-  createdAt: new Date(),
-  updatedAt: new Date(),
-  name: "Test Survey",
-  type: "web" as any,
-  creator: { name: "Test User" },
-  status: "draft" as any,
-  singleUse: null,
-  workspaceId,
-  _count: { responses: 10 },
-};
 
 describe("getSurveyCount", () => {
   beforeEach(() => {
@@ -190,264 +166,6 @@ describe("getSurveyCount", () => {
     const unknownError = new Error("Unknown error");
     vi.mocked(prisma.survey.count).mockRejectedValue(unknownError);
     await expect(getSurveyCount(workspaceId)).rejects.toThrow(unknownError);
-  });
-});
-
-describe("getSurvey", () => {
-  beforeEach(() => {
-    resetMocks();
-  });
-
-  test("should return a survey if found", async () => {
-    const prismaSurvey = { ...mockSurveyPrisma };
-    vi.mocked(prisma.survey.findUnique).mockResolvedValue(prismaSurvey as any);
-    vi.mocked(prisma.response.groupBy).mockResolvedValue([{ surveyId, _count: { _all: 5 } }] as any);
-
-    const survey = await getSurvey(surveyId);
-
-    expect(survey).toEqual({
-      id: prismaSurvey.id,
-      createdAt: prismaSurvey.createdAt,
-      updatedAt: prismaSurvey.updatedAt,
-      name: prismaSurvey.name,
-      type: prismaSurvey.type,
-      creator: prismaSurvey.creator,
-      status: prismaSurvey.status,
-      singleUse: prismaSurvey.singleUse,
-      workspaceId: prismaSurvey.workspaceId,
-      responseCount: 5,
-    });
-    expect(survey).not.toHaveProperty("_count");
-    expect(prisma.survey.findUnique).toHaveBeenCalledWith({
-      where: { id: surveyId },
-      select: surveySelect,
-    });
-  });
-
-  test("should return null if survey not found", async () => {
-    vi.mocked(prisma.survey.findUnique).mockResolvedValue(null);
-    const survey = await getSurvey(surveyId);
-    expect(survey).toBeNull();
-  });
-
-  test("should throw DatabaseError on Prisma error", async () => {
-    const prismaError = makePrismaKnownError();
-    vi.mocked(prisma.survey.findUnique).mockRejectedValue(prismaError);
-    await expect(getSurvey(surveyId)).rejects.toThrow(DatabaseError);
-    expect(logger.error).toHaveBeenCalledWith(prismaError, "Error getting survey");
-  });
-
-  test("should throw DatabaseError when response count lookup fails", async () => {
-    const prismaError = makePrismaKnownError();
-    vi.mocked(prisma.survey.findUnique).mockResolvedValue({ ...mockSurveyPrisma } as any);
-    vi.mocked(prisma.response.groupBy).mockRejectedValue(prismaError);
-
-    await expect(getSurvey(surveyId)).rejects.toThrow(DatabaseError);
-    expect(logger.error).toHaveBeenCalledWith(prismaError, "Error getting survey");
-  });
-
-  test("should rethrow unknown error", async () => {
-    const unknownError = new Error("Unknown error");
-    vi.mocked(prisma.survey.findUnique).mockRejectedValue(unknownError);
-    await expect(getSurvey(surveyId)).rejects.toThrow(unknownError);
-  });
-});
-
-describe("getSurveys", () => {
-  beforeEach(() => {
-    resetMocks();
-  });
-
-  const mockPrismaSurveys = [
-    { ...mockSurveyPrisma, id: "s1", name: "Survey 1" },
-    { ...mockSurveyPrisma, id: "s2", name: "Survey 2" },
-  ];
-  const expectedSurveys: TSurvey[] = mockPrismaSurveys.map((s) => ({
-    id: s.id,
-    createdAt: s.createdAt,
-    updatedAt: s.updatedAt,
-    name: s.name,
-    type: s.type,
-    creator: s.creator,
-    status: s.status,
-    singleUse: s.singleUse,
-    workspaceId: s.workspaceId,
-    responseCount: s._count.responses,
-  }));
-
-  test("should return surveys with default parameters", async () => {
-    vi.mocked(prisma.survey.findMany).mockResolvedValue(mockPrismaSurveys as any);
-    vi.mocked(prisma.response.groupBy).mockResolvedValue([
-      { surveyId: "s1", _count: { _all: 10 } },
-      { surveyId: "s2", _count: { _all: 10 } },
-    ] as any);
-    const surveys = await getSurveys(workspaceId);
-
-    expect(surveys).toEqual(expectedSurveys);
-    expect(surveys[0]).not.toHaveProperty("_count");
-    expect(prisma.survey.findMany).toHaveBeenCalledWith({
-      where: { workspaceId, ...buildWhereClause() },
-      select: surveySelect,
-      orderBy: buildOrderByClause(),
-      take: undefined,
-      skip: undefined,
-    });
-  });
-
-  test("should return surveys with limit and offset", async () => {
-    vi.mocked(prisma.survey.findMany).mockResolvedValue([mockPrismaSurveys[0]] as any);
-    vi.mocked(prisma.response.groupBy).mockResolvedValue([{ surveyId: "s1", _count: { _all: 10 } }] as any);
-    const surveys = await getSurveys(workspaceId, 1, 1);
-
-    expect(surveys).toEqual([expectedSurveys[0]]);
-    expect(prisma.survey.findMany).toHaveBeenCalledWith({
-      where: { workspaceId, ...buildWhereClause() },
-      select: surveySelect,
-      orderBy: buildOrderByClause(),
-      take: 1,
-      skip: 1,
-    });
-  });
-
-  test("should return surveys with filterCriteria", async () => {
-    const filterCriteria: any = { name: "Test", sortBy: "createdAt" };
-    vi.mocked(buildWhereClause).mockReturnValue({ AND: [{ name: { contains: "Test" } }] }); // Mock correct return type
-    vi.mocked(buildOrderByClause).mockReturnValue([{ createdAt: "desc" }]); // Mock specific return
-    vi.mocked(prisma.survey.findMany).mockResolvedValue(mockPrismaSurveys as any);
-    vi.mocked(prisma.response.groupBy).mockResolvedValue([
-      { surveyId: "s1", _count: { _all: 10 } },
-      { surveyId: "s2", _count: { _all: 10 } },
-    ] as any);
-
-    const surveys = await getSurveys(workspaceId, undefined, undefined, filterCriteria);
-
-    expect(surveys).toEqual(expectedSurveys);
-    expect(buildWhereClause).toHaveBeenCalledWith(filterCriteria);
-    expect(buildOrderByClause).toHaveBeenCalledWith("createdAt");
-    expect(prisma.survey.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: { workspaceId, AND: [{ name: { contains: "Test" } }] }, // Check with correct structure
-        orderBy: [{ createdAt: "desc" }], // Check the mocked order by
-      })
-    );
-  });
-
-  test("should throw DatabaseError on Prisma error", async () => {
-    const prismaError = makePrismaKnownError();
-    vi.mocked(prisma.survey.findMany).mockRejectedValue(prismaError);
-    await expect(getSurveys(workspaceId)).rejects.toThrow(DatabaseError);
-    expect(logger.error).toHaveBeenCalledWith(prismaError, "Error getting surveys");
-  });
-
-  test("should rethrow unknown error", async () => {
-    const unknownError = new Error("Unknown error");
-    vi.mocked(prisma.survey.findMany).mockRejectedValue(unknownError);
-    await expect(getSurveys(workspaceId)).rejects.toThrow(unknownError);
-  });
-});
-
-describe("getSurveysSortedByRelevance", () => {
-  beforeEach(() => {
-    resetMocks();
-  });
-
-  const mockInProgressPrisma = {
-    ...mockSurveyPrisma,
-    id: "s_inprog",
-    status: "inProgress" as any,
-  };
-  const mockOtherPrisma = {
-    ...mockSurveyPrisma,
-    id: "s_other",
-    status: "completed" as any,
-  };
-
-  const expectedInProgressSurvey: TSurvey = {
-    id: mockInProgressPrisma.id,
-    createdAt: mockInProgressPrisma.createdAt,
-    updatedAt: mockInProgressPrisma.updatedAt,
-    name: mockInProgressPrisma.name,
-    type: mockInProgressPrisma.type,
-    creator: mockInProgressPrisma.creator,
-    status: mockInProgressPrisma.status,
-    singleUse: mockInProgressPrisma.singleUse,
-    workspaceId: mockInProgressPrisma.workspaceId,
-    responseCount: 3,
-  };
-  const expectedOtherSurvey: TSurvey = {
-    id: mockOtherPrisma.id,
-    createdAt: mockOtherPrisma.createdAt,
-    updatedAt: mockOtherPrisma.updatedAt,
-    name: mockOtherPrisma.name,
-    type: mockOtherPrisma.type,
-    creator: mockOtherPrisma.creator,
-    status: mockOtherPrisma.status,
-    singleUse: mockOtherPrisma.singleUse,
-    workspaceId: mockOtherPrisma.workspaceId,
-    responseCount: 5,
-  };
-
-  test("should fetch inProgress surveys first, then others if limit not met", async () => {
-    vi.mocked(prisma.survey.count).mockResolvedValue(1); // 1 inProgress survey
-    vi.mocked(prisma.survey.findMany)
-      .mockResolvedValueOnce([mockInProgressPrisma] as any) // In-progress surveys
-      .mockResolvedValueOnce([mockOtherPrisma] as any); // Additional surveys
-    vi.mocked(prisma.response.groupBy).mockResolvedValue([
-      { surveyId: "s_inprog", _count: { _all: 3 } },
-      { surveyId: "s_other", _count: { _all: 5 } },
-    ] as any);
-
-    const surveys = await getSurveysSortedByRelevance(workspaceId, 2, 0);
-
-    expect(surveys).toEqual([expectedInProgressSurvey, expectedOtherSurvey]);
-    expect(surveys[0]).not.toHaveProperty("_count");
-    expect(prisma.survey.count).toHaveBeenCalledWith({
-      where: { workspaceId, status: "inProgress", ...buildWhereClause() },
-    });
-    expect(prisma.survey.findMany).toHaveBeenNthCalledWith(1, {
-      where: { workspaceId, status: "inProgress", ...buildWhereClause() },
-      select: surveySelect,
-      orderBy: buildOrderByClause("updatedAt"),
-      take: 2,
-      skip: 0,
-    });
-    expect(prisma.survey.findMany).toHaveBeenNthCalledWith(2, {
-      where: { workspaceId, status: { not: "inProgress" }, ...buildWhereClause() },
-      select: surveySelect,
-      orderBy: buildOrderByClause("updatedAt"),
-      take: 1,
-      skip: 0,
-    });
-  });
-
-  test("should only fetch inProgress surveys if limit is met", async () => {
-    vi.mocked(prisma.survey.count).mockResolvedValue(1);
-    vi.mocked(prisma.survey.findMany).mockResolvedValueOnce([mockInProgressPrisma] as any);
-    vi.mocked(prisma.response.groupBy).mockResolvedValue([
-      { surveyId: "s_inprog", _count: { _all: 3 } },
-    ] as any);
-
-    const surveys = await getSurveysSortedByRelevance(workspaceId, 1, 0);
-    expect(surveys).toEqual([expectedInProgressSurvey]);
-    expect(prisma.survey.findMany).toHaveBeenCalledTimes(1);
-  });
-
-  test("should throw DatabaseError on Prisma error", async () => {
-    const prismaError = makePrismaKnownError();
-    vi.mocked(prisma.survey.count).mockRejectedValue(prismaError);
-    await expect(getSurveysSortedByRelevance(workspaceId)).rejects.toThrow(DatabaseError);
-    expect(logger.error).toHaveBeenCalledWith(prismaError, "Error getting surveys sorted by relevance");
-
-    resetMocks(); // Reset for the next part of the test
-    vi.mocked(prisma.survey.count).mockResolvedValue(0); // Make count succeed
-    vi.mocked(prisma.survey.findMany).mockRejectedValue(prismaError); // Error on findMany
-    await expect(getSurveysSortedByRelevance(workspaceId)).rejects.toThrow(DatabaseError);
-  });
-
-  test("should rethrow unknown error", async () => {
-    const unknownError = new Error("Unknown error");
-    vi.mocked(prisma.survey.count).mockRejectedValue(unknownError);
-    await expect(getSurveysSortedByRelevance(workspaceId)).rejects.toThrow(unknownError);
   });
 });
 
@@ -854,5 +572,40 @@ describe("copySurveyToOtherWorkspace", () => {
         }),
       })
     );
+  });
+});
+
+describe("hasArchivedSurveys", () => {
+  const workspaceId = "clq5n7p1q0000m7z0h5p6g3r3";
+
+  beforeEach(() => {
+    resetMocks();
+    vi.mocked(validateInputs).mockReturnValue([] as never);
+  });
+
+  test("returns true when the workspace has at least one archived survey", async () => {
+    vi.mocked(prisma.survey.findFirst).mockResolvedValue({ id: "survey_1" } as never);
+
+    await expect(hasArchivedSurveys(workspaceId)).resolves.toBe(true);
+    expect(prisma.survey.findFirst).toHaveBeenCalledWith({
+      where: { workspaceId, archivedAt: { not: null } },
+      select: { id: true },
+    });
+  });
+
+  test("returns false when the workspace has no archived surveys", async () => {
+    vi.mocked(prisma.survey.findFirst).mockResolvedValue(null as never);
+
+    await expect(hasArchivedSurveys(workspaceId)).resolves.toBe(false);
+  });
+
+  test("throws DatabaseError on a Prisma known request error", async () => {
+    const prismaError = new Prisma.PrismaClientKnownRequestError("db down", {
+      code: "P2010",
+      clientVersion: "4.0.0",
+    });
+    vi.mocked(prisma.survey.findFirst).mockRejectedValue(prismaError);
+
+    await expect(hasArchivedSurveys(workspaceId)).rejects.toThrow(DatabaseError);
   });
 });

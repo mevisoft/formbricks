@@ -49,11 +49,20 @@ By default, the chart deploys:
 
 - the Formbricks application
 - Formbricks Hub
+- Cube
 - PostgreSQL
 - Redis
 - generated Kubernetes Secrets
 </Step>
 </Steps>
+
+<Warning>
+  The default values are a starting point, not a production edge or high-availability configuration. Both
+  `ingress.enabled` and `envoy.enabled` default to `false`, so the chart does not expose the application or add
+  the v5 edge rate limits unless you configure them. The defaults also combine `autoscaling.minReplicas: 1` with
+  `pdb.minAvailable: 1`; that PodDisruptionBudget can block a node drain because Kubernetes cannot voluntarily
+  evict the only app pod.
+</Warning>
 
 ## 2. Configure Secrets And External Services
 
@@ -61,6 +70,20 @@ By default, the chart deploys:
 
 The default chart path keeps `secret.enabled: true`, which lets the chart generate the required application
 secrets for you.
+
+### Adding An Enterprise License
+
+There is no separate `enterprise.enabled` switch. Enterprise features are unlocked by a valid
+`ENTERPRISE_LICENSE_KEY`. For a quick-start deployment that uses the chart-generated app Secret, set:
+
+```yaml
+enterprise:
+  licenseKey: your-enterprise-license-key
+```
+
+For production, keep the license out of a values file and provide `ENTERPRISE_LICENSE_KEY` through your existing
+Secret or ExternalSecret instead. The `enterprise.licenseKey` chart value only writes to the generated app Secret
+when `secret.enabled: true`.
 
 ### Using Managed PostgreSQL And Redis
 
@@ -103,11 +126,41 @@ The chart supports three edge patterns for the v5-covered routes:
 If you use the chart-managed Envoy rate-limiting path, enable a dedicated backend with:
 
 ```yaml
+envoy:
+  enabled: true
+  controller:
+    enabled: true
+
 envoyRedis:
   enabled: true
 ```
 
 This keeps Envoy rate-limiting state separate from the application's own Redis traffic.
+
+The example installs the bundled controller. If your cluster already provides a compatible Envoy Gateway
+controller, set `envoy.controller.enabled: false`. In either mode, configure
+`envoy.formbricks.ingress` or your platform ingress/load balancer so public traffic reaches the Envoy-managed
+routes. If you use an equivalent external edge solution instead, verify that it covers every route in the
+[rate-limiting guide](/self-hosting/advanced/rate-limiting) before exposing Formbricks.
+
+### Production Replicas And Disruption Budgets
+
+For a production deployment that should remain available during a voluntary disruption, run at least two app
+replicas:
+
+```yaml
+autoscaling:
+  enabled: true
+  minReplicas: 2
+
+pdb:
+  enabled: true
+  minAvailable: 1
+```
+
+If you intentionally run a single app replica, either disable the PDB or use `maxUnavailable: 1` instead of
+`minAvailable` and accept downtime during the eviction. Never set both fields; set the unused field to `null` in
+your values file.
 
 ### Cube
 
@@ -118,6 +171,92 @@ Cube is part of the baseline Formbricks v5 stack and is bundled with the chart b
 - point the app at your external endpoint via `deployment.env.CUBEJS_API_URL`
 - supply `CUBEJS_API_SECRET` via `deployment.env` or `deployment.envFrom` if you disable generated
   secrets
+
+### Optional Bundled Qwen/vLLM For AI
+
+The Helm chart can optionally deploy a Formbricks-provided Qwen runtime through vLLM. This is disabled by
+default and requires GPU-capable Kubernetes nodes.
+
+To deploy Qwen/vLLM and automatically point the Formbricks app at the in-cluster OpenAI-compatible endpoint:
+
+```yaml
+llm:
+  enabled: true
+```
+
+With `llm.enabled: true`, the chart renders the vLLM router and Qwen serving engine, then injects the required
+`AI_PROVIDER=openai-compatible` app environment variables unless you override them in `deployment.env`.
+
+If you want to deploy the bundled Qwen runtime without changing the Formbricks app AI configuration:
+
+```yaml
+llm:
+  enabled: true
+  autoConfigureApp: false
+```
+
+Keep `llm.enabled: false` when you use Google Vertex, Azure, AWS Bedrock, or an externally managed
+OpenAI-compatible endpoint. Configure those providers through `deployment.env`.
+
+### Optional AI Taxonomy Beta
+
+The Helm chart can optionally deploy the standalone taxonomy service. This is disabled by default and does not
+force the bundled Qwen/vLLM runtime.
+
+To deploy taxonomy and reuse the bundled Qwen/vLLM runtime:
+
+```yaml
+llm:
+  enabled: true
+
+taxonomy:
+  enabled: true
+```
+
+With this setup, taxonomy uses the in-cluster vLLM router for cluster labeling and 5-level taxonomy generation.
+The chart also injects `TAXONOMY_SERVICE_URL`, `TAXONOMY_SERVICE_TOKEN`, and `HUB_INTERNAL_API_TOKEN` into Hub API.
+
+To use your own OpenAI-compatible LLM endpoint instead, keep `llm.enabled: false` and set the taxonomy LLM values:
+
+```yaml
+taxonomy:
+  enabled: true
+  llm:
+    model: qwen3-14b-awq
+    baseUrl: http://my-llm-gateway:8000/v1
+    existingSecret: taxonomy-llm-secret
+```
+
+The `taxonomy-llm-secret` secret must contain `TAXONOMY_LLM_API_KEY`. If your endpoint does not enforce
+authentication, store a non-empty dummy value.
+
+To use Gemini on Vertex AI instead, keep `llm.enabled: false`, create a secret containing
+`TAXONOMY_GOOGLE_CLOUD_CREDENTIALS_JSON`, and configure the Vertex provider:
+
+```yaml
+taxonomy:
+  enabled: true
+  llm:
+    provider: vertex-gemini
+    model: gemini-2.5-flash
+    vertex:
+      project: formbricks-cloud
+      location: europe-west3
+      existingSecret: taxonomy-vertex-secret
+```
+
+The service account in `TAXONOMY_GOOGLE_CLOUD_CREDENTIALS_JSON` must be allowed to call Vertex AI for the selected
+project and location.
+
+After startup, run the authenticated preflight check from inside the taxonomy pod:
+
+```sh
+kubectl exec -n formbricks deploy/formbricks-taxonomy -- \
+  python -c 'import os, urllib.request; req = urllib.request.Request("http://127.0.0.1:8000/v1/preflight", headers={"Authorization": "Bearer " + os.environ["TAXONOMY_SERVICE_TOKEN"]}); print(urllib.request.urlopen(req, timeout=10).read().decode())'
+```
+
+The taxonomy service is internal-only by default. Kubernetes probes use public `/health`; `/v1/preflight` is for
+operator validation and requires the internal taxonomy bearer token.
 
 ## 4. Upgrade The Deployment
 
@@ -149,6 +288,9 @@ For a Formbricks 4.x to 5.0 migration, confirm the following before running the 
 | `envoy.enabled`               | Enables chart-managed Envoy Gateway resources                 |
 | `envoy.controller.enabled`    | Installs the bundled Envoy controller when `true`             |
 | `envoyRedis.enabled`          | Deploys a dedicated Redis backend for Envoy rate limiting     |
+| `llm.enabled`                 | Deploys the optional bundled Qwen/vLLM runtime                |
+| `llm.autoConfigureApp`        | Injects Formbricks OpenAI-compatible env vars for bundled Qwen |
+| `taxonomy.enabled`            | Deploys the optional standalone AI taxonomy service           |
 | `postgresql.externalDatabaseUrl` | Uses an external PostgreSQL service instead of in-cluster |
 | `redis.externalRedisUrl`      | Uses an external Redis/Valkey service instead of in-cluster   |
 

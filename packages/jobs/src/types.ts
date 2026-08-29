@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { ZResponse } from "@formbricks/types/responses";
 import { ZTag } from "@formbricks/types/tags";
+import { ZUserLocale } from "@formbricks/types/user";
 
 export const ZTestLogJobData = z.object({
   message: z.string().min(1),
@@ -30,12 +31,44 @@ export const ZResponsePipelineJobData = z.object({
   response: ZResponsePipelineJobResponse,
   workspaceId: z.cuid2(),
   surveyId: z.cuid2(),
+  // Respondent's resolved locale, captured in request scope (headers() is unavailable in the worker).
+  // Used to localize follow-up email chrome; falls back to DEFAULT_LOCALE when absent.
+  locale: ZUserLocale.optional(),
 });
 
 export type TResponsePipelineJobData = z.infer<typeof ZResponsePipelineJobData>;
 
-export const ZSurveySchedulingJobData = z.object({
+/**
+ * Payload shared by every recurring job: each one is a single global sweep, so it carries no
+ * identifiers. A future per-tenant recurring job needs its own schema — and a handler that scopes its
+ * queries by that tenant, resolved from the database rather than trusted from the job data — instead of
+ * widening this literal.
+ */
+export const ZGlobalScopeJobData = z.object({
   scope: z.literal("global"),
 });
 
-export type TSurveySchedulingJobData = z.infer<typeof ZSurveySchedulingJobData>;
+export type TGlobalScopeJobData = z.infer<typeof ZGlobalScopeJobData>;
+
+// Per-job aliases: the app's handlers are typed with these, and the names document which job a payload
+// belongs to even though the three shapes are identical today.
+export const ZSurveySchedulingJobData = ZGlobalScopeJobData;
+
+export type TSurveySchedulingJobData = TGlobalScopeJobData;
+
+export const ZSurveyArchivePurgeJobData = ZGlobalScopeJobData;
+
+export type TSurveyArchivePurgeJobData = TGlobalScopeJobData;
+
+export const ZWorkflowRunJobData = z.object({
+  workflowRunId: z.cuid2(),
+  workflowId: z.cuid2(),
+  workspaceId: z.cuid2(),
+});
+
+export type TWorkflowRunJobData = z.infer<typeof ZWorkflowRunJobData>;
+
+// The reconciler is a global periodic sweep, not a per-run job — it carries no run identifiers.
+export const ZWorkflowRunReconcileJobData = ZGlobalScopeJobData;
+
+export type TWorkflowRunReconcileJobData = TGlobalScopeJobData;

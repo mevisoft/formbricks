@@ -1,5 +1,6 @@
-import { type Response } from "@prisma/client";
 import { notFound } from "next/navigation";
+import { type Response } from "@formbricks/database/prisma-browser";
+import { normalizeLanguageCode } from "@formbricks/i18n-utils/src/canonical";
 import { TSurvey, TSurveyStyling } from "@formbricks/types/surveys/types";
 import { TUserLocale } from "@formbricks/types/user";
 import { TWorkspaceStyling } from "@formbricks/types/workspace";
@@ -63,12 +64,19 @@ export const renderSurvey = async ({
   const langParam = searchParams.lang;
   const isEmbed = searchParams.embed === "true";
 
-  if (survey.status === "draft" || survey.type !== "link") {
+  // Archived surveys are absent from the workspace for respondents — treat the public link as a
+  // missing survey (same as a draft or non-link survey) rather than showing an inactive/scheduled state.
+  if (survey.status === "draft" || survey.type !== "link" || survey.archivedAt) {
     notFound();
   }
 
   // Extract workspace from pre-fetched context
   const { workspace } = workspaceContext;
+
+  // Every prop passed to a client component is serialized into the RSC payload and readable in the
+  // page source, so the survey handed to them must never carry the PIN — the pin gate itself stays
+  // server-side (see the `survey.pin` branch below and `validateSurveyPinAction`).
+  const publicSurvey: TSurvey = { ...survey, pin: null };
 
   const isSpamProtectionEnabled = Boolean(IS_RECAPTCHA_CONFIGURED && survey.recaptcha?.enabled);
   const isScheduled = survey.status === "paused" && survey.publishOn !== null;
@@ -107,7 +115,7 @@ export const renderSurvey = async ({
     if (emailVerificationStatus === "fishy") {
       return (
         <VerifyEmail
-          survey={survey}
+          survey={publicSurvey}
           isErrorComponent={true}
           languageCode={getLanguageCode(langParam, survey)}
           styling={workspace.styling}
@@ -119,7 +127,7 @@ export const renderSurvey = async ({
       <VerifyEmail
         singleUseId={searchParams.suId ?? ""}
         singleUseToken={searchParams.suToken}
-        survey={survey}
+        survey={publicSurvey}
         languageCode={getLanguageCode(langParam, survey)}
         styling={workspace.styling}
         locale={locale}
@@ -166,7 +174,7 @@ export const renderSurvey = async ({
   // Render interactive survey with client component for interactivity
   return (
     <SurveyClientWrapper
-      survey={survey}
+      survey={publicSurvey}
       workspace={workspace}
       styling={styling}
       publicDomain={publicDomain}
@@ -211,12 +219,26 @@ function computeStyling(
 function getLanguageCode(langParam: string | undefined, survey: TSurvey): string {
   if (!langParam) return "default";
 
-  const selectedLanguage = survey.languages.find((surveyLanguage) => {
-    return (
-      surveyLanguage.language.code.toLowerCase() === langParam.toLowerCase() ||
-      surveyLanguage.language.alias?.toLowerCase() === langParam.toLowerCase()
-    );
-  });
+  // Match the URL `?lang=` value against the survey's languages in strict precedence so selection is
+  // deterministic regardless of array order: (1) an exact stored `code`, then (2) a custom `alias`, then
+  // (3) canonical equivalence. Code beats alias because an exact code always lines up with the survey's
+  // i18n content keys — without this, one row's alias could shadow another row's exact code. The canonical
+  // pass lets a shared link with a legacy code (`?lang=pt`) still resolve to a migrated language (`pt-BR`).
+  // Returns the survey's stored code so it lines up with its content keys.
+  const langParamLower = langParam.toLowerCase();
+  const langParamCanonical = normalizeLanguageCode(langParam);
+  const selectedLanguage =
+    survey.languages.find(
+      (surveyLanguage) => surveyLanguage.language.code.toLowerCase() === langParamLower
+    ) ??
+    survey.languages.find(
+      (surveyLanguage) => surveyLanguage.language.alias?.toLowerCase() === langParamLower
+    ) ??
+    (langParamCanonical
+      ? survey.languages.find(
+          (surveyLanguage) => normalizeLanguageCode(surveyLanguage.language.code) === langParamCanonical
+        )
+      : undefined);
 
   if (!selectedLanguage || selectedLanguage?.default || !selectedLanguage?.enabled) {
     return "default";

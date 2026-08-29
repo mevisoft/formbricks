@@ -8,12 +8,13 @@ import { replacePresetPlaceholders } from "@/lib/utils/templates";
 import { getChannelMapping, getIndustryMapping, getRoleMapping } from "./utils";
 
 vi.mock("@/lib/pollyfills/structuredClone", () => ({
-  structuredClone: vi.fn((val) => JSON.parse(JSON.stringify(val))),
+  structuredClone: vi.fn((val) => globalThis.structuredClone(val)),
 }));
 
 describe("Template utils", () => {
   test("replacePresetPlaceholders replaces workspace name in template with blocks", () => {
     const mockTemplate: TTemplate = {
+      id: "test-template",
       name: "Test Template",
       description: "Template description",
       preset: {
@@ -89,10 +90,10 @@ describe("Template utils", () => {
 
     expect(result).toEqual([
       { value: "productManager", label: "common.product_manager" },
-      { value: "customerSuccess", label: "common.customer_success" },
       { value: "marketing", label: "common.marketing" },
-      { value: "sales", label: "common.sales" },
+      { value: "customerSuccess", label: "common.customer_success" },
       { value: "peopleManager", label: "common.people_manager" },
+      { value: "sales", label: "common.sales" },
     ]);
     expect(mockT).toHaveBeenCalledWith("common.product_manager");
     expect(mockT).toHaveBeenCalledWith("common.customer_success");

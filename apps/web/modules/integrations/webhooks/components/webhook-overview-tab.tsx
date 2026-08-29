@@ -1,8 +1,8 @@
 "use client";
 
-import { Webhook } from "@prisma/client";
 import { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
+import { Webhook } from "@formbricks/database/prisma-browser";
 import { TSurvey } from "@formbricks/types/surveys/types";
 import { type TUserLocale } from "@formbricks/types/user";
 import { formatDateTimeForDisplay } from "@/lib/utils/datetime";
@@ -52,7 +52,7 @@ export const WebhookOverviewTab = ({ webhook, surveys, locale }: ActivityTabProp
           <Label className="text-slate-500">
             {t("workspace.integrations.webhooks.created_by_third_party")}
           </Label>
-          <p className="text-sm capitalize text-slate-900">
+          <p className="text-sm text-slate-900 capitalize">
             {webhook.source === "user" ? "No" : webhook.source}
           </p>
         </div>

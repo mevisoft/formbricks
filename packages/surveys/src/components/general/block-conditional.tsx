@@ -22,6 +22,45 @@ import { getFirstErrorMessage, validateBlockResponses } from "@/lib/validation/e
 
 const AUTO_PROGRESS_SUBMIT_DELAY_MS = 350;
 
+/**
+ * Anchors are deliberately absent: they are focusable, but a link is never what a card asks of the
+ * respondent. A headline or subheader may carry one in its prose (a consent element pointing at a
+ * privacy policy), and that link sits *before* the element's own control in the DOM — so mount
+ * focus landed on a word in the question text, ringed, reading as a highlighted suggestion
+ * (ENG-2415), and gave a screen-reader user "Privacy Policy, link" as their orientation instead of
+ * the question's control. Excluding `a` from `[tabindex="0"]` too keeps that uniform for an anchor
+ * made focusable by hand. Nothing is left unfocused by the exclusion: every block renders its
+ * Submit and/or Back button inside `root`, and the only shape without one (an auto-progress
+ * element on the first block) is a radio group.
+ */
+const FOCUSABLE_CONTROL_SELECTOR = [
+  'input:not([type="hidden"]):not([tabindex="-1"]):not(:disabled)',
+  "textarea:not(:disabled)",
+  "select:not(:disabled)",
+  "button:not(:disabled)",
+  '[tabindex="0"]:not(a)',
+].join(", ");
+
+/**
+ * Focuses the first interactive control inside `root`. With `preferInvalid`,
+ * controls flagged aria-invalid win. Prose links are not candidates at all (see
+ * FOCUSABLE_CONTROL_SELECTOR).
+ *
+ * Scrolling is always left to the caller. The first control can sit *below* the card's content — a
+ * CTA block has no input of its own, so its first control is the Next button rendered after the
+ * element — and letting focus scroll that into view opens an overflowing card at its end instead of
+ * its start (ENG-2289). The `preferInvalid` callers scroll the field they focus into view themselves.
+ */
+const focusFirstControl = (root: HTMLElement, preferInvalid = false): void => {
+  const invalidTarget = preferInvalid
+    ? root.querySelector<HTMLElement>(
+        ':is(input, textarea, select)[aria-invalid="true"]:not([tabindex="-1"]):not(:disabled)'
+      )
+    : null;
+  const target = invalidTarget ?? root.querySelector<HTMLElement>(FOCUSABLE_CONTROL_SELECTOR);
+  target?.focus({ preventScroll: true });
+};
+
 interface BlockConditionalProps {
   block: TSurveyBlock;
   value: TResponseData;
@@ -38,11 +77,18 @@ interface BlockConditionalProps {
   setTtc: (ttc: TResponseTtc) => void;
   surveyId: string;
   autoFocusEnabled: boolean;
+  /**
+   * Move focus to the block's first interactive control when the card appears.
+   * True for user-initiated navigation (Next/Back/auto-progress) on any survey,
+   * and for the initial card when autofocus is allowed (not an embedded widget).
+   */
+  shouldFocusOnMount: boolean;
   isBackButtonHidden: boolean;
   isAutoProgressingEnabled: boolean;
   onOpenExternalURL?: (url: string) => void | Promise<void>;
   dir?: "ltr" | "rtl" | "auto";
   fullSizeCards: boolean;
+  isCardless?: boolean;
   surveyLanguages: TSurveyLanguage[];
 }
 
@@ -62,11 +108,13 @@ export function BlockConditional({
   surveyId,
   onFileUpload,
   autoFocusEnabled,
+  shouldFocusOnMount,
   isBackButtonHidden,
   isAutoProgressingEnabled,
   onOpenExternalURL,
   dir,
   fullSizeCards,
+  isCardless = false,
   surveyLanguages,
 }: Readonly<BlockConditionalProps>) {
   // Track the current element being filled (for TTC tracking)
@@ -81,6 +129,27 @@ export function BlockConditional({
   // Ref to collect TTC values synchronously (state updates are async)
   const ttcCollectorRef = useRef<TResponseTtc>({});
   const autoProgressingInFlightRef = useRef(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Screen-reader/keyboard users continue right where they act: when the card
+  // appears after user navigation (or on an autofocus-allowed initial render),
+  // focus its first control instead of dropping focus to the body, which made
+  // VoiceOver re-announce the whole survey dialog on every card change.
+  useEffect(() => {
+    if (!shouldFocusOnMount) return;
+
+    // Defer so the card's content (and any card transition) has rendered.
+    const timeoutId = setTimeout(() => {
+      requestAnimationFrame(() => {
+        if (containerRef.current) focusFirstControl(containerRef.current);
+      });
+    }, 0);
+
+    return () => {
+      clearTimeout(timeoutId);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- Only run once when the block mounts
+  }, []);
   const autoProgressElement = getAutoProgressElement(block.elements, isAutoProgressingEnabled);
   const shouldHideSubmitButton = shouldHideSubmitButtonForAutoProgress(
     block.elements,
@@ -123,6 +192,11 @@ export function BlockConditional({
       })
     ) {
       autoProgressingInFlightRef.current = true;
+      // The selection is committed and the card is about to leave: drop focus now so
+      // the focus ring doesn't linger on the answered option during the submit delay
+      // (it read as a flashing ring). The next card focuses its first control on mount.
+      const active = document.activeElement;
+      if (active instanceof HTMLElement) active.blur();
       // Defer submission so element-level change handlers can finalize TTC updates first.
       setTimeout(() => {
         try {
@@ -322,12 +396,17 @@ export function BlockConditional({
     if (hasValidationErrors) {
       setElementErrors(errorMap);
 
-      // Find the first element with an error and scroll to its input area (not the headline)
+      // Find the first element with an error, scroll to its input area (not the headline)
+      // and move focus to its first invalid control so keyboard users can fix it directly.
       const firstErrorElementId = Object.keys(errorMap)[0];
       const form = elementFormRefs.current.get(firstErrorElementId);
       if (form) {
         const scrollTarget = form.querySelector("[data-element-input]") ?? form;
         scrollTarget.scrollIntoView({ behavior: "smooth", block: "center" });
+        // Defer so aria-invalid from the new error state is in the DOM.
+        requestAnimationFrame(() => {
+          focusFirstControl(form, true);
+        });
       }
       return;
     }
@@ -337,6 +416,9 @@ export function BlockConditional({
     if (firstInvalidForm) {
       const scrollTarget = firstInvalidForm.querySelector("[data-element-input]") ?? firstInvalidForm;
       scrollTarget.scrollIntoView({ behavior: "smooth", block: "center" });
+      requestAnimationFrame(() => {
+        focusFirstControl(firstInvalidForm, true);
+      });
       return;
     }
 
@@ -350,9 +432,9 @@ export function BlockConditional({
   };
 
   return (
-    <div className={cn("space-y-6", fullSizeCards ? "h-full" : "")}>
+    <div ref={containerRef} className={cn("space-y-6", fullSizeCards ? "h-full" : "")}>
       {/* Scrollable container for the entire block */}
-      <ScrollableContainer fullSizeCards={fullSizeCards}>
+      <ScrollableContainer fullSizeCards={fullSizeCards} disableInternalScroll={isCardless}>
         <div className="space-y-6">
           <div className="space-y-6">
             {block.elements.map((element, index) => {
@@ -391,7 +473,7 @@ export function BlockConditional({
           <div
             className={cn(
               "flex w-full flex-row-reverse justify-between",
-              fullSizeCards ? "bg-survey-bg sticky bottom-0" : ""
+              fullSizeCards && !isCardless ? "bg-survey-bg sticky bottom-0" : ""
             )}>
             <div>
               {shouldHideSubmitButton ? (

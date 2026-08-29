@@ -1,11 +1,10 @@
-/* eslint-disable no-console -- required for logging */
 import { Config } from "@/lib/common/config";
 import { JS_LOCAL_STORAGE_KEY } from "@/lib/common/constants";
 import { addCleanupEventListeners, addEventListeners } from "@/lib/common/event-listeners";
 import { Logger } from "@/lib/common/logger";
 import { getIsSetup, setIsSetup } from "@/lib/common/status";
 import { filterSurveys, getIsDebug, isNowExpired, wrapThrows } from "@/lib/common/utils";
-import { closeSurvey, preloadSurveysScript } from "@/lib/survey/widget";
+import { addLiveRegionContainer, closeSurvey, preloadSurveysScript } from "@/lib/survey/widget";
 import { DEFAULT_USER_STATE_NO_USER_ID } from "@/lib/user/state";
 import { sendUpdatesToBackend } from "@/lib/user/update";
 import { fetchWorkspaceState } from "@/lib/workspace/state";
@@ -25,7 +24,7 @@ import {
   okVoid,
 } from "@/types/error";
 
-const migrateLocalStorage = (): { changed: boolean; newState?: TConfig } => {
+const migrateLocalStorage = (): { changed: boolean; newState?: TLegacyConfig } => {
   const existingConfig = localStorage.getItem(JS_LOCAL_STORAGE_KEY);
 
   if (existingConfig) {
@@ -62,7 +61,7 @@ const migrateLocalStorage = (): { changed: boolean; newState?: TConfig } => {
     }
 
     if (changed) {
-      return { changed: true, newState: parsedConfig as unknown as TConfig };
+      return { changed: true, newState: parsedConfig };
     }
   }
 
@@ -89,9 +88,18 @@ export const setup = async (
 
     // If the js sdk is being used for non identified users, and we have a new state to update to after migrating, we update the state
     // otherwise, we just sync again!
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- user could be undefined
+
     if (newState && !newState.user?.data?.userId) {
-      config.update(newState);
+      // Legacy configs could be persisted without a user state, or with a user missing `data` —
+      // substitute the default (rebuilding a complete state when only `data` survived) so
+      // downstream `config.user` reads keep working and the resync path still runs.
+      const legacyUser = newState.user;
+      config.update({
+        ...newState,
+        user: legacyUser?.data
+          ? { expiresAt: legacyUser.expiresAt ?? null, data: legacyUser.data }
+          : DEFAULT_USER_STATE_NO_USER_ID,
+      });
     }
   }
 
@@ -282,7 +290,7 @@ export const setup = async (
       });
 
       if (!workspaceResponse.ok) {
-        // eslint-disable-next-line @typescript-eslint/only-throw-error -- error is ApiErrorResponse
+        // eslint-disable-next-line @typescript-eslint/only-throw-error -- the catch below feeds this structured ApiErrorResponse (code/responseMessage) to handleErrorOnFirstSetup
         throw workspaceResponse.error;
       }
 
@@ -331,6 +339,10 @@ export const setup = async (
   logger.debug("Adding event listeners");
   addEventListeners();
   addCleanupEventListeners();
+
+  // Mount the status live region now so assistive tech has registered it long before the
+  // first survey announces its opening into it.
+  addLiveRegionContainer();
 
   // Preload surveys script so it's ready when a survey triggers
   preloadSurveysScript(configInput.appUrl);

@@ -1,8 +1,10 @@
-import { Prisma } from "@prisma/client";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { prisma } from "@formbricks/database";
+import { Prisma } from "@formbricks/database/prisma";
 import { DatabaseError, ValidationError } from "@formbricks/types/errors";
+import { getSurvey } from "@/lib/survey/service";
 import { getContactSurveyLink } from "@/modules/ee/contacts/lib/contact-survey-link";
+import { SEGMENT_SURVEY_WORKSPACE_MISMATCH_ERROR_CODE } from "@/modules/ee/contacts/lib/personal-link-errors";
 import { segmentFilterToPrismaQuery } from "@/modules/ee/contacts/segments/lib/filter/prisma-query";
 import { getSegment } from "@/modules/ee/contacts/segments/lib/segments";
 import {
@@ -11,6 +13,7 @@ import {
   deleteContact,
   generatePersonalLinks,
   getContact,
+  getContactInWorkspace,
   getContacts,
   getContactsInSegment,
 } from "./contacts";
@@ -20,6 +23,7 @@ vi.mock("@formbricks/database", () => ({
   prisma: {
     contact: {
       findMany: vi.fn(),
+      findFirst: vi.fn(),
       findUnique: vi.fn(),
       delete: vi.fn(),
       create: vi.fn(),
@@ -38,6 +42,10 @@ vi.mock("@formbricks/database", () => ({
 
 vi.mock("@/lib/utils/validate", () => ({
   validateInputs: vi.fn(),
+}));
+
+vi.mock("@/lib/survey/service", () => ({
+  getSurvey: vi.fn(),
 }));
 
 vi.mock("@/modules/ee/contacts/segments/lib/segments", () => ({
@@ -383,6 +391,55 @@ describe("Contacts Lib", () => {
     });
   });
 
+  // ENG-2290: the contact detail page authorizes the workspace in the URL and must not be able to
+  // load a contact from another workspace with it. `getContact` stays unscoped on purpose — it is
+  // what derives a contact's workspace elsewhere — so page reads go through this scoped sibling.
+  describe("getContactInWorkspace", () => {
+    test("returns the contact when it belongs to the workspace", async () => {
+      vi.mocked(prisma.contact.findFirst).mockResolvedValue(mockPrismaContact as any);
+
+      const result = await getContactInWorkspace(mockContactId, mockWorkspaceId);
+
+      expect(result).toEqual(mockPrismaContact);
+      expect(prisma.contact.findFirst).toHaveBeenCalledWith({
+        where: { id: mockContactId, workspaceId: mockWorkspaceId },
+        select: expect.any(Object),
+      });
+    });
+
+    test("returns null for a contact in another workspace", async () => {
+      // The scoped where clause is what makes this null: Prisma finds no row for the pair.
+      vi.mocked(prisma.contact.findFirst).mockResolvedValue(null);
+
+      const result = await getContactInWorkspace(mockContactId, "workspace-attacker");
+
+      expect(result).toBeNull();
+      expect(prisma.contact.findFirst).toHaveBeenCalledWith({
+        where: { id: mockContactId, workspaceId: "workspace-attacker" },
+        select: expect.any(Object),
+      });
+      // The unscoped lookup must not be used as a fallback.
+      expect(prisma.contact.findUnique).not.toHaveBeenCalled();
+    });
+
+    test("throws DatabaseError on Prisma error", async () => {
+      const prismaError = new Prisma.PrismaClientKnownRequestError("DB Error", {
+        code: "P2002",
+        clientVersion: "5.0.0",
+      });
+      vi.mocked(prisma.contact.findFirst).mockRejectedValue(prismaError);
+
+      await expect(getContactInWorkspace(mockContactId, mockWorkspaceId)).rejects.toThrow(DatabaseError);
+    });
+
+    test("re-throws non-Prisma errors", async () => {
+      const error = new Error("Unknown error");
+      vi.mocked(prisma.contact.findFirst).mockRejectedValue(error);
+
+      await expect(getContactInWorkspace(mockContactId, mockWorkspaceId)).rejects.toThrow(error);
+    });
+  });
+
   describe("deleteContact", () => {
     test("deletes a contact and returns it", async () => {
       vi.mocked(prisma.contact.delete).mockResolvedValue(mockPrismaContact as any);
@@ -721,6 +778,12 @@ describe("Contacts Lib", () => {
   });
 
   describe("generatePersonalLinks", () => {
+    beforeEach(() => {
+      // Default: survey lives in the same workspace as the segment so the
+      // cross-tenant guard passes. Individual tests override as needed.
+      vi.mocked(getSurvey).mockResolvedValue({ workspaceId: mockWorkspaceId } as any);
+    });
+
     test("generates survey links for contacts in segment", async () => {
       const mockPrismaContactData = [
         {
@@ -886,6 +949,38 @@ describe("Contacts Lib", () => {
       const result = await generatePersonalLinks(mockSurveyId, mockSegmentId);
 
       expect(result).toHaveLength(0);
+    });
+
+    test("throws when the segment belongs to a different workspace than the survey (cross-tenant guard)", async () => {
+      // Survey is in workspace A, segment is in workspace B. The caller was only
+      // authorized against the survey's workspace, so reading the segment's
+      // contacts would leak another workspace's PII. Must reject before any
+      // contact is read.
+      vi.mocked(getSurvey).mockResolvedValue({ workspaceId: "workspace-A" } as any);
+      vi.mocked(getSegment).mockResolvedValue({
+        id: mockSegmentId,
+        filters: [],
+        workspaceId: "workspace-B",
+      } as any);
+
+      await expect(generatePersonalLinks(mockSurveyId, mockSegmentId)).rejects.toThrow(ValidationError);
+      // Message is a stable error code the client maps to a localized string.
+      await expect(generatePersonalLinks(mockSurveyId, mockSegmentId)).rejects.toThrow(
+        SEGMENT_SURVEY_WORKSPACE_MISMATCH_ERROR_CODE
+      );
+
+      // No contacts should have been queried for the foreign segment.
+      expect(prisma.contact.findMany).not.toHaveBeenCalled();
+      expect(getContactSurveyLink).not.toHaveBeenCalled();
+    });
+
+    test("returns null when the survey does not exist", async () => {
+      vi.mocked(getSurvey).mockResolvedValue(null as any);
+
+      const result = await generatePersonalLinks(mockSurveyId, mockSegmentId);
+
+      expect(result).toBeNull();
+      expect(getSegment).not.toHaveBeenCalled();
     });
   });
 });

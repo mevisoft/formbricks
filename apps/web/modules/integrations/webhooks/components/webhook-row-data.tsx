@@ -1,8 +1,8 @@
 "use client";
 
-import { Webhook } from "@prisma/client";
 import { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
+import { Webhook } from "@formbricks/database/prisma-browser";
 import { TSurvey } from "@formbricks/types/surveys/types";
 import { timeSince } from "@/lib/time";
 import { Badge } from "@/modules/ui/components/badge";
@@ -95,7 +95,7 @@ export const WebhookRowData = ({ webhook, surveys }: { webhook: Webhook; surveys
       <div className="col-span-2 my-auto text-center text-sm text-slate-800">
         {renderSelectedTriggersText(webhook, t)}
       </div>
-      <div className="col-span-2 my-auto whitespace-nowrap text-center text-sm text-slate-500">
+      <div className="col-span-2 my-auto text-center text-sm whitespace-nowrap text-slate-500">
         {timeSince(webhook.updatedAt.toString(), locale)}
       </div>
       <div className="text-center"></div>

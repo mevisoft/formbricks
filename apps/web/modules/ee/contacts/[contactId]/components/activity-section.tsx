@@ -1,4 +1,3 @@
-import { getServerSession } from "next-auth";
 import { AuthenticationError, ResourceNotFoundError } from "@formbricks/types/errors";
 import { TSurvey } from "@formbricks/types/surveys/types";
 import { TTag } from "@formbricks/types/tags";
@@ -9,7 +8,7 @@ import { getSurveys } from "@/lib/survey/service";
 import { getUser } from "@/lib/user/service";
 import { getWorkspace } from "@/lib/workspace/service";
 import { getTranslate } from "@/lingodotdev/server";
-import { authOptions } from "@/modules/auth/lib/authOptions";
+import { getSession } from "@/modules/auth/lib/session";
 import { getWorkspacePermissionByUserId } from "@/modules/ee/teams/lib/roles";
 import { ActivityTimeline } from "./activity-timeline";
 
@@ -19,10 +18,14 @@ interface ActivitySectionProps {
   environmentTags: TTag[];
 }
 
-export const ActivitySection = async ({ workspaceId, contactId, environmentTags }: ActivitySectionProps) => {
+export const ActivitySection = async ({
+  workspaceId,
+  contactId,
+  environmentTags,
+}: Readonly<ActivitySectionProps>) => {
   const [responses, displays, workspace] = await Promise.all([
-    getResponsesByContactId(contactId),
-    getDisplaysByContactId(contactId),
+    getResponsesByContactId(contactId, workspaceId),
+    getDisplaysByContactId(contactId, workspaceId),
     getWorkspace(workspaceId),
   ]);
 
@@ -36,7 +39,7 @@ export const ActivitySection = async ({ workspaceId, contactId, environmentTags 
 
   const surveys: TSurvey[] = allSurveyIds.length === 0 ? [] : ((await getSurveys(workspace.id)) ?? []);
 
-  const session = await getServerSession(authOptions);
+  const session = await getSession();
   const t = await getTranslate();
 
   if (!session) {

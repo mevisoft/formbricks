@@ -1,6 +1,6 @@
-import { Response } from "@prisma/client";
 import { NextRequest } from "next/server";
 import { sendToPipeline } from "@/app/lib/pipelines";
+import { getWorkspaceLegacyStoragePrefixes } from "@/lib/workspace/service";
 import { formatValidationErrorsForV2Api, validateResponseData } from "@/modules/api/lib/validation";
 import { authenticatedApiClient } from "@/modules/api/v2/auth/authenticated-api-client";
 import { validateOtherOptionLengthForMultipleChoice } from "@/modules/api/v2/lib/element";
@@ -12,7 +12,7 @@ import { getSurveyQuestions } from "@/modules/api/v2/management/responses/[respo
 import { ZGetResponsesFilter, ZResponseInput } from "@/modules/api/v2/management/responses/types/responses";
 import { ApiErrorResponseV2 } from "@/modules/api/v2/types/api-error";
 import { hasPermission } from "@/modules/organization/settings/api-keys/lib/utils";
-import { resolveStorageUrlsInObject, validateFileUploads } from "@/modules/storage/utils";
+import { resolveStorageUrlsInObject, validateClientFileUploads } from "@/modules/storage/utils";
 import { createResponseWithQuotaEvaluation, getResponses } from "./lib/response";
 
 export const GET = async (request: NextRequest) =>
@@ -35,17 +35,15 @@ export const GET = async (request: NextRequest) =>
         ...new Set(authentication.workspacePermissions.map((permission) => permission.workspaceId)),
       ];
 
-      const workspaceResponses: Response[] = [];
       const res = await getResponses(workspaceIds, query);
 
       if (!res.ok) {
         return handleApiError(request, res.error);
       }
 
-      workspaceResponses.push(...res.data.data);
-
       return responses.successResponse({
-        data: workspaceResponses.map((r) => ({ ...r, data: resolveStorageUrlsInObject(r.data) })),
+        data: res.data.data.map((r) => ({ ...r, data: resolveStorageUrlsInObject(r.data) })),
+        meta: res.data.meta,
       });
     },
   });
@@ -97,12 +95,29 @@ export const POST = async (request: Request) =>
         return handleApiError(request, surveyQuestions.error as ApiErrorResponseV2, auditLog); // NOSONAR
       }
 
-      if (!validateFileUploads(body.data, surveyQuestions.data.questions)) {
+      if (
+        !validateClientFileUploads({
+          data: body.data,
+          workspaceId,
+          surveyId: body.surveyId,
+          blocks: surveyQuestions.data.blocks,
+          questions: surveyQuestions.data.questions,
+          // Management callers replay stored responses whose file URLs may predate the scoped shape;
+          // accept those against a prefix this workspace owns (ENG-1981 review).
+          legacyOwnedStoragePrefixes: await getWorkspaceLegacyStoragePrefixes(workspaceId),
+        })
+      ) {
         return handleApiError(
           request,
           {
             type: "bad_request",
-            details: [{ field: "response", issue: "Invalid file upload response" }],
+            details: [
+              {
+                field: "response",
+                issue:
+                  "Invalid file upload response: each file URL must reference a file uploaded to this survey's file-upload element",
+              },
+            ],
           },
           auditLog
         );

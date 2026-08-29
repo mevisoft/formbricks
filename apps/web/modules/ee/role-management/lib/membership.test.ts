@@ -1,6 +1,6 @@
-import { Prisma } from "@prisma/client";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { prisma } from "@formbricks/database";
+import { Prisma } from "@formbricks/database/prisma";
 import { PrismaErrorType } from "@formbricks/database/types/error";
 import { ResourceNotFoundError } from "@formbricks/types/errors";
 import { TOrganizationRole } from "@formbricks/types/memberships";
@@ -58,7 +58,7 @@ describe("updateMembership", () => {
 
   test("should throw ResourceNotFoundError when membership doesn't exist", async () => {
     const error = new Prisma.PrismaClientKnownRequestError("Record does not exist", {
-      code: PrismaErrorType.RecordDoesNotExist,
+      code: PrismaErrorType.RecordNotFound,
       clientVersion: "1.0.0",
     });
 

@@ -16,6 +16,12 @@ export const exampleData = {
     linkValidityInMinutes: 30,
   },
 
+  deleteAccountEmail: {
+    deleteLink:
+      "https://app.formbricks.com/api/auth/delete-user/callback?token=example-delete-token&callbackURL=/",
+    linkValidityInMinutes: 60,
+  },
+
   newEmailVerification: {
     verifyLink: "https://survey.luisml.com/verify-email-change?token=example-email-change-token",
   },
@@ -156,7 +162,7 @@ export const exampleData = {
       {
         id: "var-1",
         name: "Customer ID",
-        type: "text",
+        type: "text" as const,
         value: "CUST-456",
       },
     ],

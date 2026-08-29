@@ -4,7 +4,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { CircleAlert } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
-import { FormProvider, SubmitHandler, useForm } from "react-hook-form";
+import { FormProvider, SubmitHandler, useForm, useWatch } from "react-hook-form";
 import toast from "react-hot-toast";
 import { useTranslation } from "react-i18next";
 import { TOrganizationRole } from "@formbricks/types/memberships";
@@ -15,6 +15,8 @@ import {
   updateFeedbackDirectoryAction,
 } from "@/modules/ee/feedback-directory/actions";
 import { ArchiveFeedbackDirectory } from "@/modules/ee/feedback-directory/components/feedback-directory-settings/archive-feedback-directory";
+import { PurgeFeedbackDirectoryData } from "@/modules/ee/feedback-directory/components/feedback-directory-settings/purge-feedback-directory-data";
+import { FeedbackDirectoryQueryClientProvider } from "@/modules/ee/feedback-directory/components/query-client-provider";
 import { getWorkspaceAccessConflictState } from "@/modules/ee/feedback-directory/lib/workspace-access-conflicts";
 import {
   TFeedbackDirectoryDetails,
@@ -65,10 +67,6 @@ export const FeedbackDirectorySettingsModal = ({
   const isOwnerOrManager = isOwner || isManager;
   const router = useRouter();
   const isEdit = !!directory;
-
-  const [confirmPauseDialogOpen, setConfirmPauseDialogOpen] = useState(false);
-  const [pendingSubmitData, setPendingSubmitData] = useState<TFeedbackDirectoryUpdateInput | null>(null);
-  const [feedbackSourcesToPauseCount, setFeedbackSourcesToPauseCount] = useState(0);
 
   const [confirmAddDialogOpen, setConfirmAddDialogOpen] = useState(false);
   const [pendingAddData, setPendingAddData] = useState<TFeedbackDirectoryUpdateInput | null>(null);
@@ -133,7 +131,8 @@ export const FeedbackDirectorySettingsModal = ({
     setValue,
     reset,
   } = form;
-  const selectedWorkspaceIds = form.watch("workspaceIds") ?? [];
+  const watchedWorkspaceIds = useWatch({ control, name: "workspaceIds" });
+  const selectedWorkspaceIds = useMemo(() => watchedWorkspaceIds ?? [], [watchedWorkspaceIds]);
 
   const workspaceNameById = useMemo(() => {
     const map = new Map(orgWorkspaces.map((workspace) => [workspace.id, workspace.name]));
@@ -145,10 +144,21 @@ export const FeedbackDirectorySettingsModal = ({
     return map;
   }, [orgWorkspaces, directory?.workspaces]);
 
+  // Feedback sources that would be orphaned by deselecting their workspace. Removing such a
+  // workspace is blocked because the DB anchors each source to a live directory<->workspace
+  // assignment (ENG-1148); the source must be deleted first.
+  const blockedRemovals = useMemo(() => {
+    if (!directory) {
+      return [];
+    }
+    const removedWorkspaceIds = initialWorkspaceIds.filter((id) => !selectedWorkspaceIds.includes(id));
+    if (removedWorkspaceIds.length === 0) {
+      return [];
+    }
+    return directory.feedbackSources.filter((source) => removedWorkspaceIds.includes(source.workspaceId));
+  }, [directory, initialWorkspaceIds, selectedWorkspaceIds]);
+
   const closeModal = () => {
-    setConfirmPauseDialogOpen(false);
-    setPendingSubmitData(null);
-    setFeedbackSourcesToPauseCount(0);
     setConfirmAddDialogOpen(false);
     setPendingAddData(null);
     setAddedWorkspaceIds([]);
@@ -156,16 +166,12 @@ export const FeedbackDirectorySettingsModal = ({
     setOpen(false);
   };
 
-  const submitDirectory = async (
-    data: TFeedbackDirectoryUpdateInput,
-    pauseFeedbackSourcesInRemovedWorkspaces: boolean
-  ) => {
+  const submitDirectory = async (data: TFeedbackDirectoryUpdateInput) => {
     const response =
       isEdit && directory
         ? await updateFeedbackDirectoryAction({
             directoryId: directory.id,
             data: { name: data.name, workspaceIds: data.workspaceIds },
-            pauseFeedbackSourcesInRemovedWorkspaces,
           })
         : await createFeedbackDirectoryAction({
             organizationId,
@@ -189,46 +195,6 @@ export const FeedbackDirectorySettingsModal = ({
     }
   };
 
-  const handleConfirmPauseAndSubmit = async () => {
-    if (!pendingSubmitData) {
-      return;
-    }
-
-    const wasSuccessful = await submitDirectory(pendingSubmitData, true);
-    if (wasSuccessful) {
-      setConfirmPauseDialogOpen(false);
-      setPendingSubmitData(null);
-      setFeedbackSourcesToPauseCount(0);
-    }
-  };
-
-  const proceedAfterAddConfirm = async (data: TFeedbackDirectoryUpdateInput) => {
-    if (!isEdit || !directory) {
-      await submitDirectory(data, false);
-      return;
-    }
-
-    const updatedWorkspaceIds = data.workspaceIds ?? [];
-    const removedWorkspaceIds = initialWorkspaceIds.filter(
-      (workspaceId) => !updatedWorkspaceIds.includes(workspaceId)
-    );
-
-    if (removedWorkspaceIds.length > 0) {
-      const affectedFeedbackSources = directory.feedbackSources.filter((feedbackSource) =>
-        removedWorkspaceIds.includes(feedbackSource.workspaceId)
-      );
-
-      if (affectedFeedbackSources.length > 0) {
-        setPendingSubmitData(data);
-        setFeedbackSourcesToPauseCount(affectedFeedbackSources.length);
-        setConfirmPauseDialogOpen(true);
-        return;
-      }
-    }
-
-    await submitDirectory(data, false);
-  };
-
   const handleConfirmAddAndContinue = async () => {
     if (!pendingAddData) return;
 
@@ -238,10 +204,15 @@ export const FeedbackDirectorySettingsModal = ({
     const data = pendingAddData;
     setPendingAddData(null);
 
-    await proceedAfterAddConfirm(data);
+    await submitDirectory(data);
   };
 
   const handleSubmitForm: SubmitHandler<TFeedbackDirectoryUpdateInput> = async (data) => {
+    // Removing a workspace that still owns feedback sources is blocked (see blockedRemovals).
+    if (blockedRemovals.length > 0) {
+      return;
+    }
+
     const updatedWorkspaceIds = data.workspaceIds ?? [];
     const newlyAddedWorkspaceIds = updatedWorkspaceIds.filter(
       (workspaceId) => !initialWorkspaceIds.includes(workspaceId)
@@ -254,7 +225,7 @@ export const FeedbackDirectorySettingsModal = ({
       return;
     }
 
-    await proceedAfterAddConfirm(data);
+    await submitDirectory(data);
   };
 
   return (
@@ -271,12 +242,12 @@ export const FeedbackDirectorySettingsModal = ({
           <DialogDescription>
             {isEdit
               ? t("workspace.settings.feedback_directories.directory_settings_description")
-              : t("workspace.settings.feedback_directories.create_feedback_directory")}
+              : t("workspace.settings.feedback_directories.create_feedback_directory_description")}
           </DialogDescription>
         </DialogHeader>
         <FormProvider {...form}>
           <form className="contents space-y-4" onSubmit={handleSubmit(handleSubmitForm)}>
-            <DialogBody className="flex-grow space-y-6 overflow-y-auto">
+            <DialogBody className="grow space-y-6 overflow-y-auto">
               <FormField
                 control={control}
                 name="name"
@@ -286,7 +257,7 @@ export const FeedbackDirectorySettingsModal = ({
                     <FormControl>
                       <Input
                         type="text"
-                        placeholder={t("workspace.settings.feedback_directories.directory_name")}
+                        placeholder={t("workspace.settings.feedback_directories.directory_name_placeholder")}
                         {...field}
                         disabled={!isOwnerOrManager}
                       />
@@ -316,7 +287,7 @@ export const FeedbackDirectorySettingsModal = ({
                   containerClassName="focus-within:ring-0 focus-within:ring-offset-0"
                 />
                 {workspaceConflictState.showBlockedExplanation && (
-                  <Alert variant="info" className="items-start">
+                  <Alert variant="info" className="items-start" role="status">
                     <div className="min-w-0 space-y-1">
                       <AlertTitle className="truncate">
                         {t("workspace.settings.feedback_directories.no_unassigned_workspaces_title")}
@@ -332,6 +303,32 @@ export const FeedbackDirectorySettingsModal = ({
                                 workspaceName: conflict.workspaceName,
                                 directoryName: conflict.feedbackDirectoryName,
                               })}
+                            </li>
+                          ))}
+                        </ul>
+                      </AlertDescription>
+                    </div>
+                  </Alert>
+                )}
+                {blockedRemovals.length > 0 && (
+                  <Alert variant="error" className="items-start">
+                    <div className="min-w-0 space-y-1">
+                      <AlertTitle className="truncate">
+                        {t("workspace.settings.feedback_directories.workspace_removal_blocked_title")}
+                      </AlertTitle>
+                      <AlertDescription className="overflow-visible whitespace-normal">
+                        <p>
+                          {t("workspace.settings.feedback_directories.workspace_removal_blocked_description")}
+                        </p>
+                        <ul className="mt-1 list-disc space-y-0.5 pl-4">
+                          {blockedRemovals.map((source) => (
+                            <li key={source.id}>
+                              {source.name} · {source.workspaceName}{" "}
+                              <a
+                                className="font-medium text-slate-700 hover:text-slate-900 hover:underline"
+                                href={`/workspaces/${source.workspaceId}/unify/sources`}>
+                                {t("common.view")}
+                              </a>
                             </li>
                           ))}
                         </ul>
@@ -365,7 +362,7 @@ export const FeedbackDirectorySettingsModal = ({
                           </div>
                           <a
                             className="text-xs font-medium text-slate-700 hover:text-slate-900 hover:underline"
-                            href={`/workspaces/${c.workspaceId}/settings/workspace/feedback-sources`}>
+                            href={`/workspaces/${c.workspaceId}/unify/sources`}>
                             {t("common.view")}
                           </a>
                         </li>
@@ -385,18 +382,30 @@ export const FeedbackDirectorySettingsModal = ({
             </DialogBody>
             <DialogFooter>
               {isEdit && (
-                <div className="w-full">
+                <div className="flex w-full flex-row gap-x-2">
                   <ArchiveFeedbackDirectory
                     directoryId={directory.id}
                     onArchive={closeModal}
                     isOwnerOrManager={isOwnerOrManager}
                   />
+                  <FeedbackDirectoryQueryClientProvider>
+                    <PurgeFeedbackDirectoryData
+                      directoryId={directory.id}
+                      directoryName={directory.name}
+                      onPurge={closeModal}
+                      isOwnerOrManager={isOwnerOrManager}
+                    />
+                  </FeedbackDirectoryQueryClientProvider>
                 </div>
               )}
               <Button size="default" type="button" variant="outline" onClick={closeModal}>
                 {t("common.cancel")}
               </Button>
-              <Button type="submit" size="default" loading={isSubmitting} disabled={!isOwnerOrManager}>
+              <Button
+                type="submit"
+                size="default"
+                loading={isSubmitting}
+                disabled={!isOwnerOrManager || blockedRemovals.length > 0}>
                 {isEdit ? t("common.save") : t("common.create")}
               </Button>
             </DialogFooter>
@@ -457,46 +466,6 @@ export const FeedbackDirectorySettingsModal = ({
               </Button>
               <Button variant="destructive" onClick={handleConfirmAddAndContinue} loading={isSubmitting}>
                 {t("workspace.settings.feedback_directories.grant_access_confirm")}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      )}
-
-      {confirmPauseDialogOpen && (
-        <Dialog open={confirmPauseDialogOpen} onOpenChange={setConfirmPauseDialogOpen}>
-          <DialogContent width="narrow" hideCloseButton={true} disableCloseOnOutsideClick={true}>
-            <DialogHeader>
-              <div className="flex items-center gap-2">
-                <CircleAlert className="size-4" />
-                <DialogTitle>
-                  {t("workspace.settings.feedback_directories.pause_feedback_sources_confirmation_title")}
-                </DialogTitle>
-              </div>
-            </DialogHeader>
-            <DialogBody>
-              <p>
-                {t(
-                  "workspace.settings.feedback_directories.pause_feedback_sources_confirmation_description",
-                  {
-                    count: feedbackSourcesToPauseCount,
-                  }
-                )}
-              </p>
-            </DialogBody>
-            <DialogFooter>
-              <Button
-                variant="secondary"
-                onClick={() => {
-                  setConfirmPauseDialogOpen(false);
-                  setPendingSubmitData(null);
-                  setFeedbackSourcesToPauseCount(0);
-                }}
-                disabled={isSubmitting}>
-                {t("common.cancel")}
-              </Button>
-              <Button onClick={handleConfirmPauseAndSubmit} loading={isSubmitting}>
-                {t("common.continue")}
               </Button>
             </DialogFooter>
           </DialogContent>

@@ -121,12 +121,12 @@ export const EditPlacementForm = ({ workspace, isReadOnly }: EditPlacementProps)
             <div
               className={cn(
                 hasOverlay && !clickOutsideClose ? "cursor-not-allowed" : "",
-                "relative ml-8 h-40 w-full rounded",
+                "relative ml-8 h-40 w-full rounded-sm",
                 getOverlayStyle()
               )}>
               <div
                 className={cn(
-                  "absolute h-16 w-16 cursor-default rounded bg-slate-700",
+                  "absolute h-16 w-16 cursor-default rounded-sm bg-slate-700",
                   getPlacementStyle(currentPlacement)
                 )}></div>
             </div>
@@ -203,7 +203,7 @@ export const EditPlacementForm = ({ workspace, isReadOnly }: EditPlacementProps)
         </form>
       </FormProvider>
       {isReadOnly && (
-        <Alert variant="warning" className="mt-4">
+        <Alert variant="warning" className="mt-4" role="status">
           <AlertDescription>
             {t("common.only_owners_managers_and_manage_access_members_can_perform_this_action")}
           </AlertDescription>

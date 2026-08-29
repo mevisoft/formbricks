@@ -9,7 +9,6 @@ import { Button } from "@/modules/ui/components/button";
 
 interface RemovedFromOrganizationProps {
   isFormbricksCloud: boolean;
-  isSsoIdentityConfirmationDisabled: boolean;
   requiresPasswordConfirmation: boolean;
   user: TUser;
 }
@@ -17,14 +16,13 @@ interface RemovedFromOrganizationProps {
 export const RemovedFromOrganization = ({
   user,
   isFormbricksCloud,
-  isSsoIdentityConfirmationDisabled,
   requiresPasswordConfirmation,
 }: Readonly<RemovedFromOrganizationProps>) => {
   const { t } = useTranslation();
   const [isModalOpen, setIsModalOpen] = useState(false);
   return (
     <div className="space-y-4">
-      <Alert variant="warning">
+      <Alert variant="warning" role="status">
         <AlertTitle>{t("setup.organization.create.no_membership_found")}</AlertTitle>
         <AlertDescription>{t("setup.organization.create.no_membership_found_description")}</AlertDescription>
       </Alert>
@@ -37,7 +35,6 @@ export const RemovedFromOrganization = ({
         user={user}
         isFormbricksCloud={isFormbricksCloud}
         organizationsWithSingleOwner={[]}
-        isSsoIdentityConfirmationDisabled={isSsoIdentityConfirmationDisabled}
       />
       <Button
         onClick={() => {

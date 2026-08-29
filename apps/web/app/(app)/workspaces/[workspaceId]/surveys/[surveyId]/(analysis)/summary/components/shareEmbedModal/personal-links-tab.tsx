@@ -9,6 +9,7 @@ import { TSegment } from "@formbricks/types/segment";
 import { useWorkspace } from "@/app/(app)/workspaces/[workspaceId]/context/workspace-context";
 import { DocumentationLinks } from "@/app/(app)/workspaces/[workspaceId]/surveys/[surveyId]/(analysis)/summary/components/shareEmbedModal/documentation-links";
 import { getFormattedErrorMessage } from "@/lib/utils/helper";
+import { getTranslatedPersonalLinkError } from "@/modules/ee/contacts/lib/personal-link-errors";
 import { Button } from "@/modules/ui/components/button";
 import { DatePicker } from "@/modules/ui/components/date-picker";
 import {
@@ -143,7 +144,7 @@ export const PersonalLinksTab = ({
         id: "generating-links",
       });
     } else {
-      const errorMessage = getFormattedErrorMessage(result);
+      const errorMessage = getTranslatedPersonalLinkError(getFormattedErrorMessage(result), t);
       toast.error(errorMessage, {
         duration: 5000,
         id: "generating-links",
@@ -169,14 +170,14 @@ export const PersonalLinksTab = ({
           {
             text: isFormbricksCloud ? t("common.upgrade_plan") : t("common.request_trial_license"),
             href: isFormbricksCloud
-              ? `/workspaces/${workspace?.id}/settings/organization/billing`
+              ? `/organizations/${workspace?.organizationId}/settings/billing`
               : enterpriseLicenseRequestFormUrl,
           },
           {
             text: t("common.learn_more"),
             href: isFormbricksCloud
-              ? `/workspaces/${workspace?.id}/settings/organization/billing`
-              : "https://example.com/learn-more-self-hosting-license",
+              ? `/organizations/${workspace?.organizationId}/settings/billing`
+              : "https://example.com/learn-more-self-hosting-license?utm_source=formbricks-app&utm_medium=webapp&utm_campaign=ee_lock_personal_links",
           },
         ]}
       />
@@ -256,7 +257,7 @@ export const PersonalLinksTab = ({
         links={[
           {
             title: t("workspace.surveys.share.personal_links.work_with_segments"),
-            href: "https://example.com/docs/xm-and-surveys/surveys/website-app-surveys/advanced-targeting#segment-configuration",
+            href: "https://example.com/docs/surveys/website-app-surveys/advanced-targeting#segment-configuration",
           },
         ]}
       />

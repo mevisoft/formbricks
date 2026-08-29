@@ -1,11 +1,12 @@
-import { type ApiKey, ApiKeyPermission } from "@prisma/client";
 import { z } from "zod";
+import { type ApiKey } from "@formbricks/database/prisma";
 import { ZOrganizationAccess } from "@formbricks/types/api-key";
+import { ZApiKeyPermission } from "@formbricks/types/auth";
 import { ZWorkspace } from "@formbricks/types/workspace";
 
 export const ZApiKeyWorkspacePermission = z.object({
   workspaceId: z.string(),
-  permission: z.enum(ApiKeyPermission),
+  permission: ZApiKeyPermission,
 });
 
 export const ZApiKeyCreateInput = z
@@ -57,8 +58,8 @@ const ZApiKeyWorkspaceWithWorkspace = z.object({
   updatedAt: z.date(),
   apiKeyId: z.string(),
   workspaceId: z.string(),
-  permission: z.enum(ApiKeyPermission),
-  workspace: ZWorkspace.pick({ id: true, name: true }),
+  permission: ZApiKeyPermission,
+  workspace: ZWorkspace.pick({ id: true, name: true, organizationId: true }),
 });
 
 const ZApiKey = z.object({

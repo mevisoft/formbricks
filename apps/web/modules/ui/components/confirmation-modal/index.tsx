@@ -28,7 +28,7 @@ interface ConfirmationModalProps {
   setOpen: React.Dispatch<React.SetStateAction<boolean>>;
   onConfirm: () => void;
   description?: string;
-  body: string;
+  body: React.ReactNode;
   buttonText: string;
   isButtonDisabled?: boolean;
   buttonVariant?: "destructive" | "default";
@@ -109,17 +109,17 @@ export const ConfirmationModal = ({
       <DialogContent
         hideCloseButton={hideCloseButton}
         disableCloseOnOutsideClick={!closeOnOutsideClick}
-        className="max-w-[540px] space-y-4">
+        className="max-w-[540px]">
         <DialogHeader className="flex justify-center gap-2">
           {Icon ? (
             <Icon className="size-4 text-slate-500" />
           ) : (
             <CircleAlert className="size-4 text-slate-500" />
           )}
-          <div className="flex flex-col">
+          <div className="flex flex-col gap-1">
             <DialogTitle className="w-full truncate text-left">{title}</DialogTitle>
             <DialogDescription className="w-full text-left">
-              <span className="mt-2 whitespace-pre-wrap">
+              <span className="whitespace-pre-wrap">
                 {description ?? t("workspace.general.this_action_cannot_be_undone")}
               </span>
             </DialogDescription>
@@ -127,7 +127,8 @@ export const ConfirmationModal = ({
         </DialogHeader>
 
         <DialogBody>
-          <p>{body}</p>
+          {/* div (not p) so a ReactNode body with block-level children is valid markup */}
+          <div className="whitespace-pre-line">{body}</div>
         </DialogBody>
 
         <DialogFooter>

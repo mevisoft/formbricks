@@ -1,6 +1,6 @@
-import { Prisma } from "@prisma/client";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { prisma } from "@formbricks/database";
+import { Prisma } from "@formbricks/database/prisma";
 import { DatabaseError, InvalidInputError, ResourceNotFoundError } from "@formbricks/types/errors";
 import { getSurveyBySlug, getSurveysWithSlugsByOrganizationId, updateSurveySlug } from "./slug";
 
@@ -51,6 +51,12 @@ describe("Slug Library Tests", () => {
 
       await expect(getSurveyBySlug("error-slug")).rejects.toThrow(DatabaseError);
     });
+
+    test("should rethrow non-prisma errors", async () => {
+      vi.mocked(prisma.survey.findUnique).mockRejectedValueOnce(new Error("boom"));
+
+      await expect(getSurveyBySlug("error-slug")).rejects.toThrow("boom");
+    });
   });
 
   describe("updateSurveySlug", () => {
@@ -99,6 +105,12 @@ describe("Slug Library Tests", () => {
 
       await expect(updateSurveySlug("survey_123", "new-slug")).rejects.toThrow(DatabaseError);
     });
+
+    test("should rethrow non-prisma errors", async () => {
+      vi.mocked(prisma.survey.update).mockRejectedValueOnce(new Error("boom"));
+
+      await expect(updateSurveySlug("survey_123", "new-slug")).rejects.toThrow("boom");
+    });
   });
 
   describe("getSurveysWithSlugsByOrganizationId", () => {
@@ -135,6 +147,12 @@ describe("Slug Library Tests", () => {
       vi.mocked(prisma.survey.findMany).mockRejectedValueOnce(prismaError);
 
       await expect(getSurveysWithSlugsByOrganizationId("org_123")).rejects.toThrow(DatabaseError);
+    });
+
+    test("should rethrow non-prisma errors", async () => {
+      vi.mocked(prisma.survey.findMany).mockRejectedValueOnce(new Error("boom"));
+
+      await expect(getSurveysWithSlugsByOrganizationId("org_123")).rejects.toThrow("boom");
     });
   });
 });

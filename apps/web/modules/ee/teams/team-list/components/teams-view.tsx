@@ -14,7 +14,6 @@ interface TeamsViewProps {
   membershipRole?: TOrganizationRole;
   currentUserId: string;
   isAccessControlAllowed: boolean;
-  workspaceId: string;
 }
 
 export const TeamsView = async ({
@@ -22,10 +21,8 @@ export const TeamsView = async ({
   membershipRole,
   currentUserId,
   isAccessControlAllowed,
-  workspaceId,
 }: TeamsViewProps) => {
   const t = await getTranslate();
-  const workspaceBasePath = `/workspaces/${workspaceId}`;
 
   const [teams, orgMembers, orgWorkspaces] = await Promise.all([
     getTeams(currentUserId, organizationId),
@@ -41,7 +38,7 @@ export const TeamsView = async ({
     {
       text: IS_FORMBRICKS_CLOUD ? t("common.upgrade_plan") : t("common.request_trial_license"),
       href: IS_FORMBRICKS_CLOUD
-        ? `${workspaceBasePath}/settings/organization/billing`
+        ? `/organizations/${organizationId}/settings/billing`
         : ENTERPRISE_LICENSE_REQUEST_FORM_URL,
     },
     {
@@ -53,7 +50,9 @@ export const TeamsView = async ({
   return (
     <SettingsCard
       title={t("workspace.settings.teams.teams")}
-      description={t("workspace.settings.teams.teams_description")}>
+      description={t("workspace.settings.teams.teams_description")}
+      // The table runs edge to edge; the upgrade prompt shown in its place still wants the gutter.
+      bodyVariant={isAccessControlAllowed ? "flush" : "padded"}>
       {isAccessControlAllowed ? (
         <TeamsTable
           teams={teams}

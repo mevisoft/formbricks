@@ -1,15 +1,15 @@
 import { notFound } from "next/navigation";
 import { ENTERPRISE_LICENSE_REQUEST_FORM_URL, IS_FORMBRICKS_CLOUD } from "@/lib/constants";
 import { getTranslate } from "@/lingodotdev/server";
-import { NoFeedbackDirectoryEmptyState } from "@/modules/ee/feedback-directory/components/no-feedback-directory-empty-state";
 import { getFeedbackDirectoriesByWorkspaceId } from "@/modules/ee/feedback-directory/lib/feedback-directory";
 import { getIsFeedbackDirectoriesEnabled } from "@/modules/ee/license-check/lib/utils";
+import { FeedbackDataEmptyState } from "@/modules/ee/unify-feedback/components/feedback-data-empty-state";
 import { UnifyConfigNavigation } from "@/modules/ee/unify-feedback/components/unify-config-navigation";
 import { PageContentWrapper } from "@/modules/ui/components/page-content-wrapper";
 import { PageHeader } from "@/modules/ui/components/page-header";
 import { UpgradePrompt } from "@/modules/ui/components/upgrade-prompt";
 import { getWorkspaceAuth } from "@/modules/workspaces/lib/utils";
-import { TopicsSubtopicsPreview } from "./components/topics-subtopics-preview";
+import { TopicsSubtopicsPage } from "./pages/topics-subtopics-page";
 
 export const UnifyTopicsSubtopicsPage = async (
   props: Readonly<{ params: Promise<{ workspaceId: string }> }>
@@ -33,8 +33,8 @@ export const UnifyTopicsSubtopicsPage = async (
   if (!isFeedbackDirectoriesAllowed) {
     return (
       <PageContentWrapper>
-        <PageHeader pageTitle={t("workspace.unify.feedback_records")}>
-          <UnifyConfigNavigation workspaceId={params.workspaceId} activeId="topics-subtopics" />
+        <PageHeader pageTitle={t("workspace.unify.feedback_data")}>
+          <UnifyConfigNavigation workspaceId={params.workspaceId} activeId="taxonomy" />
         </PageHeader>
         <div className="flex items-center justify-center">
           <UpgradePrompt
@@ -45,14 +45,14 @@ export const UnifyTopicsSubtopicsPage = async (
               {
                 text: IS_FORMBRICKS_CLOUD ? t("common.upgrade_plan") : t("common.request_trial_license"),
                 href: IS_FORMBRICKS_CLOUD
-                  ? `/workspaces/${params.workspaceId}/settings/organization/billing`
+                  ? `/organizations/${organization.id}/settings/billing`
                   : ENTERPRISE_LICENSE_REQUEST_FORM_URL,
               },
               {
                 text: t("common.learn_more"),
                 href: IS_FORMBRICKS_CLOUD
-                  ? `/workspaces/${params.workspaceId}/settings/organization/billing`
-                  : "https://formbricks.com/learn-more-self-hosting-license",
+                  ? `/organizations/${organization.id}/settings/billing`
+                  : "https://formbricks.com/learn-more-self-hosting-license?utm_source=formbricks-app&utm_medium=webapp&utm_campaign=ee_lock_unify_topics",
               },
             ]}
           />
@@ -66,11 +66,12 @@ export const UnifyTopicsSubtopicsPage = async (
   if (directories.length === 0) {
     return (
       <PageContentWrapper>
-        <PageHeader pageTitle={t("workspace.unify.feedback_records")}>
-          <UnifyConfigNavigation workspaceId={params.workspaceId} activeId="topics-subtopics" />
+        <PageHeader pageTitle={t("workspace.unify.feedback_data")}>
+          <UnifyConfigNavigation workspaceId={params.workspaceId} activeId="taxonomy" />
         </PageHeader>
-        <NoFeedbackDirectoryEmptyState
-          workspaceId={params.workspaceId}
+        <FeedbackDataEmptyState
+          variant="no-directory"
+          organizationId={organization.id}
           isOwnerOrManager={isOwner || isManager}
         />
       </PageContentWrapper>
@@ -78,6 +79,12 @@ export const UnifyTopicsSubtopicsPage = async (
   }
 
   const directoryMap = Object.fromEntries(directories.map((directory) => [directory.id, directory.name]));
+  // A directory's taxonomy is one tree shared by every workspace the directory is assigned to, and it
+  // carries no workspace of its own — so changing it (generate, rename, remove) is an org-level act
+  // and stays with owners and managers (ENG-1770). Everyone else gets the read-only view.
+  const canWrite = isOwner || isManager;
 
-  return <TopicsSubtopicsPreview workspaceId={params.workspaceId} directoryMap={directoryMap} />;
+  return (
+    <TopicsSubtopicsPage workspaceId={params.workspaceId} directoryMap={directoryMap} canWrite={canWrite} />
+  );
 };

@@ -1,9 +1,9 @@
 "use client";
 
-import { Workspace } from "@prisma/client";
 import { useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Workspace } from "@formbricks/database/prisma-browser";
 import { TResponseData } from "@formbricks/types/responses";
 import { TSurvey, TSurveyStyling } from "@formbricks/types/surveys/types";
 import { TWorkspaceStyling } from "@formbricks/types/workspace";
@@ -12,9 +12,10 @@ import { getElementsFromBlocks } from "@/modules/survey/lib/client-utils";
 import { CustomScriptsInjector } from "@/modules/survey/link/components/custom-scripts-injector";
 import { LinkSurveyWrapper } from "@/modules/survey/link/components/link-survey-wrapper";
 import { OfflineAlert } from "@/modules/survey/link/components/offline-alert";
+import { buildSurveyDocumentTitle } from "@/modules/survey/link/lib/document-title";
 import { getPrefillValue } from "@/modules/survey/link/lib/prefill";
 import { getUserIdFromSearchParams } from "@/modules/survey/link/lib/user-id";
-import { getWebAppLocale, isRTLLanguage } from "@/modules/survey/link/lib/utils";
+import { getSurveyLanguageTag, getWebAppLocale, isRTLLanguage } from "@/modules/survey/link/lib/utils";
 import { SurveyInline } from "@/modules/ui/components/survey";
 
 interface SurveyClientWrapperProps {
@@ -37,6 +38,7 @@ interface SurveyClientWrapperProps {
   PRIVACY_URL?: string;
   TERMS_URL?: string;
   IS_FORMBRICKS_CLOUD: boolean;
+  pinAuthToken?: string;
 }
 
 let setBlockId = (_: string) => {};
@@ -62,18 +64,27 @@ export const SurveyClientWrapper = ({
   PRIVACY_URL,
   TERMS_URL,
   IS_FORMBRICKS_CLOUD,
+  pinAuthToken,
 }: SurveyClientWrapperProps) => {
   const searchParams = useSearchParams();
   const { i18n } = useTranslation();
 
+  // The survey's active language: starts at the server-provided code, then follows the
+  // in-survey language switch (via onLanguageChange). The whole shell (i18n strings, logo
+  // direction, page lang/dir) keys off this so it stays in sync, not just the document.
+  const [currentLanguageCode, setCurrentLanguageCode] = useState(languageCode);
   useEffect(() => {
-    const webAppLocale = getWebAppLocale(languageCode, survey);
+    setCurrentLanguageCode(languageCode);
+  }, [languageCode]);
+
+  useEffect(() => {
+    const webAppLocale = getWebAppLocale(currentLanguageCode, survey);
     if (i18n.language !== webAppLocale) {
       i18n.changeLanguage(webAppLocale).catch(() => {
         i18n.changeLanguage("en-US");
       });
     }
-  }, [languageCode, survey, i18n]);
+  }, [currentLanguageCode, survey, i18n]);
 
   const skipPrefilled = searchParams.get("skipPrefilled") === "true";
   const offlineSupport = searchParams.get("offlineSupport") === "true";
@@ -120,6 +131,7 @@ export const SurveyClientWrapper = ({
       if (answer) fieldsRecord[field] = answer;
     }
     return fieldsRecord;
+    // eslint-disable-next-line react-hooks/use-memo -- migration ENG-2366
   }, [searchParams, JSON.stringify(survey.hiddenFields.fieldIds || [])]);
 
   // Include verified email in hidden fields if available
@@ -129,6 +141,13 @@ export const SurveyClientWrapper = ({
     }
     return null;
   }, [survey.isVerifyEmailEnabled, verifiedEmail]);
+
+  // Position label for the card the respondent is on, reported by the survey renderer and already
+  // localized in the survey's active language (see SurveyBaseProps.onPageChange).
+  const [pageLabel, setPageLabel] = useState<string | null>(null);
+  const handlePageChange = useCallback((page: { index: number; total: number; label: string }) => {
+    setPageLabel(page.label);
+  }, []);
 
   const [offlineStatus, setOfflineStatus] = useState({
     isOnline: true,
@@ -151,12 +170,59 @@ export const SurveyClientWrapper = ({
     setResponseData({});
   };
   const jsSurvey = useMemo(() => toJsWorkspaceStateSurvey(survey), [survey]);
+  const isCardless = styling.cardArrangement?.linkSurveys === "cardless";
+  const hasLogo = !styling.isLogoHidden && !!(styling.logo?.url || workspace.logo?.url);
 
   // Determine text direction based on language code for logo positioning only
   // which checks both language code and survey content. This is only for logo UI positioning.
   const logoDir = useMemo(() => {
-    return isRTLLanguage(jsSurvey, languageCode) ? "rtl" : "auto";
-  }, [languageCode, jsSurvey]);
+    return isRTLLanguage(jsSurvey, currentLanguageCode) ? "rtl" : "auto";
+  }, [currentLanguageCode, jsSurvey]);
+
+  // Keep the page lang/dir aligned with the survey's active language so the browser
+  // and screen readers announce content in the right language, and RTL languages flip
+  // direction (WCAG 3.1.1 / 1.3.2). Link surveys own their document; the embedded JS
+  // widget never reaches this component, so host pages are never mutated.
+  useEffect(() => {
+    const html = document.documentElement;
+    const previousLang = html.getAttribute("lang");
+    const previousDir = html.getAttribute("dir");
+
+    const tag = getSurveyLanguageTag(jsSurvey, currentLanguageCode);
+    if (tag) html.setAttribute("lang", tag);
+    html.setAttribute("dir", isRTLLanguage(jsSurvey, currentLanguageCode) ? "rtl" : "ltr");
+
+    return () => {
+      if (previousLang === null) html.removeAttribute("lang");
+      else html.setAttribute("lang", previousLang);
+      if (previousDir === null) html.removeAttribute("dir");
+      else html.setAttribute("dir", previousDir);
+    };
+  }, [currentLanguageCode, jsSurvey]);
+
+  // Give every page of the survey a title that says which page it is (WCAG 2.4.2). generateMetadata
+  // cannot do this: the step lives in the renderer's state, which the server never sees.
+  //
+  // The base is the server-rendered title, captured once on mount, so the author's custom link
+  // metadata title and the "| Formbricks" template are respected without reimplementing
+  // getBasicSurveyMetadata's priority chain here. Restored on unmount for the same reason the
+  // lang/dir effect restores: a client-side navigation away must not leave a stale title behind.
+  //
+  // Link surveys own their document. The embedded JS widget never reaches this component, so a host
+  // page's title is never touched.
+  const baseTitleRef = useRef<string | null>(null);
+  useEffect(() => {
+    baseTitleRef.current ??= document.title;
+    const baseTitle = baseTitleRef.current;
+    return () => {
+      document.title = baseTitle;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (baseTitleRef.current === null || !pageLabel) return;
+    document.title = buildSurveyDocumentTitle(baseTitleRef.current, pageLabel);
+  }, [pageLabel]);
 
   return (
     <>
@@ -170,6 +236,7 @@ export const SurveyClientWrapper = ({
       )}
       <LinkSurveyWrapper
         workspace={workspace}
+        workspaceId={survey.workspaceId}
         surveyId={survey.id}
         isWelcomeCardEnabled={survey.welcomeCard.enabled}
         isPreview={isPreview}
@@ -191,6 +258,8 @@ export const SurveyClientWrapper = ({
           survey={jsSurvey}
           styling={styling}
           languageCode={languageCode}
+          onLanguageChange={setCurrentLanguageCode}
+          onPageChange={handlePageChange}
           isBrandingEnabled={workspace.linkSurveyBranding}
           shouldResetQuestionId={false}
           autoFocus={autoFocus}
@@ -211,6 +280,7 @@ export const SurveyClientWrapper = ({
           }}
           singleUseId={singleUseId}
           singleUseResponseId={singleUseResponseId}
+          pinAuthToken={pinAuthToken}
           getSetIsResponseSendingFinished={(_f: (value: boolean) => void) => {}}
           contactId={contactId}
           userId={userId}
@@ -218,6 +288,7 @@ export const SurveyClientWrapper = ({
           isSpamProtectionEnabled={isSpamProtectionEnabled}
           offlineSupport={offlineSupport}
           onOfflineStatusChange={offlineSupport ? handleOfflineStatusChange : undefined}
+          showCardlessPreviewLogoSlot={isCardless && hasLogo}
         />
       </LinkSurveyWrapper>
       {offlineSupport && !isEmbed && (

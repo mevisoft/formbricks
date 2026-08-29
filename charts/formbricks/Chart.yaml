@@ -1,27 +1,20 @@
 apiVersion: v2
 name: formbricks
 description: A Helm chart for Formbricks with PostgreSQL, Valkey
-
 type: application
-
 # Helm chart Version
 version: 0.0.0-dev
-
 # This is the version number of the application being deployed.
-appVersion: "5.0.0-rc.1"
-
+appVersion: "5.3.4"
 icon: https://formbricks.com/favicon.ico
-
 keywords:
   - formbricks
   - postgresql
   - valkey
-
 home: https://example.com/docs/self-hosting/setup/kubernetes
 maintainers:
   - name: Formbricks
     email: info@formbricks.com
-
 dependencies:
   - name: postgresql
     version: "16.4.16"
@@ -37,3 +30,8 @@ dependencies:
     version: 20.11.2
     repository: "oci://registry-1.docker.io/bitnamicharts"
     condition: envoyRedis.enabled
+  - name: vllm-stack
+    alias: llm
+    version: "0.1.11"
+    repository: "https://vllm-project.github.io/production-stack"
+    condition: llm.enabled

@@ -7,17 +7,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import toast from "react-hot-toast";
 import { useTranslation } from "react-i18next";
-import {
-  TFeedbackSourceType,
-  UNSUPPORTED_FEEDBACK_SOURCE_ELEMENT_TYPES,
-} from "@formbricks/types/feedback-source";
-import {
-  getResponseCountAction,
-  importCsvDataAction,
-  importHistoricalResponsesAction,
-} from "@/lib/feedback-source/actions";
+import { TFeedbackSourceImportMode, TFeedbackSourceType } from "@formbricks/types/feedback-source";
+import { useWorkspace } from "@/app/(app)/workspaces/[workspaceId]/context/workspace-context";
+import { getResponseCountAction, importHistoricalResponsesAction } from "@/lib/feedback-source/actions";
 import { getFormattedErrorMessage } from "@/lib/utils/helper";
 import { Alert } from "@/modules/ui/components/alert";
+import { Badge } from "@/modules/ui/components/badge";
 import { Button } from "@/modules/ui/components/button";
 import {
   Dialog,
@@ -46,6 +41,7 @@ import {
   SelectValue,
 } from "@/modules/ui/components/select";
 import { Switch } from "@/modules/ui/components/switch";
+import { importCsvFile } from "../csv-import-client";
 import {
   CSV_HIDDEN_STATIC_MAPPINGS,
   CSV_PROTECTED_TARGET_IDS,
@@ -61,6 +57,7 @@ import {
   TEnumValidationError,
   TFeedbackSourceOptionId,
   areAllRequiredCsvFieldsMapped,
+  getSelectableQuestionIds,
   isFeedbackSourceNameValid,
   toggleQuestionId,
   validateEnumMappings,
@@ -68,9 +65,10 @@ import {
 import { CsvFeedbackSourceUI } from "./csv-feedback-source-ui";
 import { FeedbackSourceTypeSelector } from "./feedback-source-type-selector";
 import { FormbricksQuestionList } from "./formbricks-question-list";
+import { ImportModeField } from "./import-mode-field";
 
-const API_INGESTION_DOCS_URL = "https://formbricks.com/docs/unify-feedback/api/rest-api";
-const FEEDBACK_RECORD_MCP_DOCS_URL = "https://formbricks.com/docs/unify-feedback/api/mcp";
+const API_INGESTION_DOCS_URL = "https://formbricks.com/docs/unify-feedback/feedback-sources";
+const FEEDBACK_RECORD_MCP_DOCS_URL = "https://formbricks.com/docs/platform/mcp/overview";
 
 interface CreateFeedbackSourceModalProps {
   open: boolean;
@@ -80,12 +78,20 @@ interface CreateFeedbackSourceModalProps {
     name: string;
     type: TFeedbackSourceType;
     feedbackDirectoryId: string;
+    importMode?: TFeedbackSourceImportMode;
     surveyMappings?: { surveyId: string; elementIds: string[] }[];
     fieldMappings?: TFieldMapping[];
   }) => Promise<string | undefined>;
   surveys: TUnifySurvey[];
+  /** Survey ids that already have a feedback source — disabled in the picker (one source per survey). */
+  connectedSurveyIds?: string[];
   workspaceId: string;
   directories: { id: string; name: string }[];
+  /**
+   * When set, the modal opens straight on the survey mapping step with this survey preselected
+   * (used by the "Select questions for import" suggestion CTA). Falls back to the type picker otherwise.
+   */
+  initialSurveyId?: string | null;
 }
 
 const getDialogTitle = (
@@ -118,13 +124,6 @@ const getNextStepButtonLabel = (type: TFeedbackSourceOptionId | null, t: (key: s
   return t("workspace.unify.create_mapping");
 };
 
-const getSelectableQuestionIds = (survey: TUnifySurvey): string[] =>
-  survey.elements
-    .filter(
-      (element) => !(UNSUPPORTED_FEEDBACK_SOURCE_ELEMENT_TYPES as readonly string[]).includes(element.type)
-    )
-    .map((element) => element.id);
-
 type TImportState = "success" | "error" | "skipped";
 
 export const CreateFeedbackSourceModal = ({
@@ -133,10 +132,14 @@ export const CreateFeedbackSourceModal = ({
   showTrigger = true,
   onCreateFeedbackSource,
   surveys,
+  connectedSurveyIds = [],
   workspaceId,
   directories,
+  initialSurveyId = null,
 }: CreateFeedbackSourceModalProps) => {
   const { t } = useTranslation();
+  const connectedSurveyIdSet = useMemo(() => new Set(connectedSurveyIds), [connectedSurveyIds]);
+  const { workspace } = useWorkspace();
 
   const defaultFeedbackSourceName = useMemo<Record<TFeedbackSourceType, string>>(
     () => ({
@@ -153,6 +156,7 @@ export const CreateFeedbackSourceModal = ({
       surveyId: "",
       selectedQuestionIds: [],
       importHistorical: true,
+      importMode: "completedOnly",
     },
     mode: "onChange",
   });
@@ -161,6 +165,7 @@ export const CreateFeedbackSourceModal = ({
   const [selectedType, setSelectedType] = useState<TFeedbackSourceOptionId | null>(null);
   const [mappings, setMappings] = useState<TFieldMapping[]>([]);
   const [sourceFields, setSourceFields] = useState<TSourceField[]>([]);
+  const [csvFile, setCsvFile] = useState<File | null>(null);
   const [csvParsedData, setCsvParsedData] = useState<Record<string, string>[]>([]);
   const [enumValidationErrors, setEnumValidationErrors] = useState<TEnumValidationError[]>([]);
   const [csvFeedbackSourceName, setCsvFeedbackSourceName] = useState("");
@@ -237,6 +242,23 @@ export const CreateFeedbackSourceModal = ({
     });
   }, [currentStep, formbricksForm, selectedSurveyId, selectedType, surveys]);
 
+  // When opened from a suggestion, jump straight to the survey mapping step with the survey preselected.
+  useEffect(() => {
+    if (!open || !initialSurveyId) return;
+    const survey = surveys.find((item) => item.id === initialSurveyId);
+    if (!survey) return;
+
+    setSelectedType("formbricks_survey");
+    setCurrentStep("mapping");
+    formbricksForm.reset({
+      sourceName: t("workspace.unify.source_connector_name", { surveyName: survey.name }),
+      surveyId: initialSurveyId,
+      selectedQuestionIds: getSelectableQuestionIds(survey),
+      importHistorical: true,
+      importMode: "completedOnly",
+    });
+  }, [open, initialSurveyId, surveys, formbricksForm, t]);
+
   const resetForm = () => {
     setCurrentStep("selectType");
     setSelectedType(null);
@@ -245,9 +267,11 @@ export const CreateFeedbackSourceModal = ({
       surveyId: "",
       selectedQuestionIds: [],
       importHistorical: true,
+      importMode: "completedOnly",
     });
     setMappings([]);
     setSourceFields([]);
+    setCsvFile(null);
     setCsvParsedData([]);
     setEnumValidationErrors([]);
     setResponseCountBySurvey({});
@@ -283,6 +307,7 @@ export const CreateFeedbackSourceModal = ({
         surveyId: "",
         selectedQuestionIds: [],
         importHistorical: true,
+        importMode: "completedOnly",
       });
     }
 
@@ -298,6 +323,8 @@ export const CreateFeedbackSourceModal = ({
       setCurrentStep("selectType");
       setMappings([]);
       setSourceFields([]);
+      setCsvFile(null);
+      setCsvParsedData([]);
       setEnumValidationErrors([]);
     }
   };
@@ -309,49 +336,68 @@ export const CreateFeedbackSourceModal = ({
     const responseCount = responseCountBySurvey[surveyId] ?? 0;
     if (responseCount <= 0) return "skipped";
     setIsImporting(true);
-    const importResult = await importHistoricalResponsesAction({
-      feedbackSourceId,
-      workspaceId,
-      surveyId,
-    });
-    setIsImporting(false);
+    try {
+      const importResult = await importHistoricalResponsesAction({
+        feedbackSourceId,
+        workspaceId,
+        surveyId,
+      });
 
-    if (importResult?.data) {
-      showFeedbackRecordsSuccessToast(
-        t("workspace.unify.historical_import_complete", {
-          successes: importResult.data.successes,
-          failures: importResult.data.failures,
-          skipped: importResult.data.skipped,
-        })
-      );
-      return "success";
-    } else {
+      if (importResult?.data) {
+        showFeedbackRecordsSuccessToast(
+          t("workspace.unify.historical_import_complete", {
+            successes: importResult.data.successes,
+            failures: importResult.data.failures,
+            skipped: importResult.data.skipped,
+          })
+        );
+        return "success";
+      }
+
       toast.error(getFormattedErrorMessage(importResult));
       return "error";
+    } catch {
+      toast.error(t("common.something_went_wrong"));
+      return "error";
+    } finally {
+      setIsImporting(false);
     }
   };
 
   const handleCsvImport = async (feedbackSourceId: string): Promise<TImportState> => {
-    setIsImporting(true);
-    const importResult = await importCsvDataAction({
-      feedbackSourceId,
-      workspaceId,
-      csvData: csvParsedData,
-    });
-    setIsImporting(false);
+    if (!csvFile) return "skipped";
 
-    if (importResult?.data) {
-      showFeedbackRecordsSuccessToast(
-        t("workspace.unify.csv_import_complete", {
-          successes: importResult.data.successes,
-          failures: importResult.data.failures,
-          skipped: importResult.data.skipped,
+    setIsImporting(true);
+    try {
+      const importResult = await importCsvFile({
+        feedbackSourceId,
+        workspaceId,
+        file: csvFile,
+      });
+
+      if (importResult?.data) {
+        showFeedbackRecordsSuccessToast(
+          t("workspace.unify.csv_import_complete", {
+            successes: importResult.data.successes,
+            failures: importResult.data.failures,
+            skipped: importResult.data.skipped,
+          })
+        );
+        return "success";
+      }
+
+      toast.error(
+        getTranslatedFeedbackSourceError(importResult.error.error, t, {
+          row: importResult.error.row,
+          max: importResult.error.max,
         })
       );
-      return "success";
-    } else {
-      toast.error(getTranslatedFeedbackSourceError(getFormattedErrorMessage(importResult), t));
       return "error";
+    } catch {
+      toast.error(t("common.something_went_wrong"));
+      return "error";
+    } finally {
+      setIsImporting(false);
     }
   };
 
@@ -367,10 +413,13 @@ export const CreateFeedbackSourceModal = ({
     if (!selectedDirectoryId) return;
     setIsCreating(true);
 
+    // Created before the historical import runs below, which reads importMode back off the source —
+    // so the mode chosen here is the one that import obeys.
     const feedbackSourceId = await onCreateFeedbackSource({
       name: values.sourceName.trim(),
       type: "formbricks_survey",
       feedbackDirectoryId: selectedDirectoryId,
+      importMode: values.importMode,
       surveyMappings: [{ surveyId: values.surveyId, elementIds: values.selectedQuestionIds }],
     });
 
@@ -464,7 +513,7 @@ export const CreateFeedbackSourceModal = ({
       )}
 
       <Dialog open={open} onOpenChange={handleOpenChange}>
-        <DialogContent className="max-w-3xl">
+        <DialogContent width="wide">
           {isImporting && (
             <div className="absolute inset-0 z-50 flex items-center justify-center rounded-lg bg-white/80">
               <div className="flex flex-col items-center gap-3">
@@ -497,43 +546,50 @@ export const CreateFeedbackSourceModal = ({
                   onSubmit={formbricksForm.handleSubmit(handleCreateFormbricksFeedbackSource)}>
                   <FormField
                     control={formbricksForm.control}
-                    name="sourceName"
-                    render={({ field, fieldState: { error } }) => (
-                      <FormItem>
-                        <FormLabel>{t("workspace.unify.source_name")}</FormLabel>
-                        <FormControl>
-                          <Input
-                            value={field.value}
-                            onChange={field.onChange}
-                            placeholder={t("workspace.unify.enter_name_for_source")}
-                          />
-                        </FormControl>
-                        {error?.message && (
-                          <FormError>{getTranslatedFeedbackSourceError(error.message, t)}</FormError>
-                        )}
-                      </FormItem>
-                    )}
-                  />
-
-                  {directories.length === 0 && <NoFeedbackDirectoryAlert workspaceId={workspaceId} t={t} />}
-
-                  <FormField
-                    control={formbricksForm.control}
                     name="surveyId"
                     render={({ field, fieldState: { error } }) => (
                       <FormItem>
                         <FormLabel>{t("workspace.unify.select_survey")}</FormLabel>
                         <FormControl>
-                          <Select value={field.value} onValueChange={field.onChange}>
+                          <Select
+                            value={field.value}
+                            onValueChange={(value) => {
+                              field.onChange(value);
+                              // Auto-fill the source name from the survey so users don't have to.
+                              // They can still rename it later in the Edit modal.
+                              const survey = surveys.find((item) => item.id === value);
+                              if (survey) {
+                                formbricksForm.setValue(
+                                  "sourceName",
+                                  t("workspace.unify.source_connector_name", { surveyName: survey.name }),
+                                  {
+                                    shouldValidate: true,
+                                    shouldDirty: true,
+                                  }
+                                );
+                              }
+                            }}>
                             <SelectTrigger>
                               <SelectValue placeholder={t("workspace.unify.select_survey")} />
                             </SelectTrigger>
                             <SelectContent>
-                              {surveys.map((survey) => (
-                                <SelectItem key={survey.id} value={survey.id}>
-                                  {survey.name}
-                                </SelectItem>
-                              ))}
+                              {surveys.map((survey) => {
+                                const alreadyConnected = connectedSurveyIdSet.has(survey.id);
+                                return (
+                                  <SelectItem key={survey.id} value={survey.id} disabled={alreadyConnected}>
+                                    <span className="flex items-center gap-2">
+                                      {survey.name}
+                                      {alreadyConnected && (
+                                        <Badge
+                                          text={t("workspace.unify.survey_already_connected")}
+                                          type="gray"
+                                          size="tiny"
+                                        />
+                                      )}
+                                    </span>
+                                  </SelectItem>
+                                );
+                              })}
                             </SelectContent>
                           </Select>
                         </FormControl>
@@ -543,6 +599,10 @@ export const CreateFeedbackSourceModal = ({
                       </FormItem>
                     )}
                   />
+
+                  {directories.length === 0 && (
+                    <NoFeedbackDirectoryAlert organizationId={workspace?.organizationId} t={t} />
+                  )}
 
                   <FormField
                     control={formbricksForm.control}
@@ -585,6 +645,15 @@ export const CreateFeedbackSourceModal = ({
                       )}
                     />
                   )}
+
+                  {/* Only shown when the import it configures is actually going to run. importMode is
+                      read by the historical import and nothing else — the live pipeline is
+                      finish-only in both modes — so with the switch above off, or with no responses
+                      to back-fill, this choice would change nothing at all. Offering it there would
+                      be a control that silently does nothing. */}
+                  {formbricksValues.importHistorical &&
+                    selectedSurveyResponseCount !== null &&
+                    selectedSurveyResponseCount > 0 && <ImportModeField control={formbricksForm.control} />}
                 </form>
               </FormProvider>
             )}
@@ -602,7 +671,9 @@ export const CreateFeedbackSourceModal = ({
                   <p className="text-xs text-slate-500">{t("workspace.unify.source_name_hint")}</p>
                 </div>
 
-                {directories.length === 0 && <NoFeedbackDirectoryAlert workspaceId={workspaceId} t={t} />}
+                {directories.length === 0 && (
+                  <NoFeedbackDirectoryAlert organizationId={workspace?.organizationId} t={t} />
+                )}
 
                 <div className="max-h-[55vh] overflow-y-auto rounded-lg border border-slate-200 p-4">
                   <CsvFeedbackSourceUI
@@ -613,6 +684,7 @@ export const CreateFeedbackSourceModal = ({
                       setEnumValidationErrors([]);
                     }}
                     onSourceFieldsChange={setSourceFields}
+                    onFileChange={setCsvFile}
                     onParsedDataChange={setCsvParsedData}
                     onSuggestFeedbackSourceName={handleSuggestFeedbackSourceName}
                   />
@@ -694,20 +766,22 @@ export const CreateFeedbackSourceModal = ({
 };
 
 interface NoFeedbackDirectoryAlertProps {
-  workspaceId: string;
+  organizationId?: string;
   t: (key: string) => string;
 }
 
-const NoFeedbackDirectoryAlert = ({ workspaceId, t }: NoFeedbackDirectoryAlertProps) => {
+const NoFeedbackDirectoryAlert = ({ organizationId, t }: NoFeedbackDirectoryAlertProps) => {
   return (
-    <Alert variant="error" size="small">
+    <Alert variant="error" size="small" role="status">
       <div>
         <p>{t("workspace.unify.no_feedback_directory_available")}</p>
-        <a
-          className="mt-1 inline-block font-medium underline"
-          href={`/workspaces/${workspaceId}/settings/organization/feedback-directories`}>
-          {t("workspace.unify.go_to_feedback_directories")}
-        </a>
+        {organizationId && (
+          <a
+            className="mt-1 inline-block font-medium underline"
+            href={`/organizations/${organizationId}/settings/feedback-directories`}>
+            {t("workspace.unify.go_to_feedback_directories")}
+          </a>
+        )}
       </div>
     </Alert>
   );

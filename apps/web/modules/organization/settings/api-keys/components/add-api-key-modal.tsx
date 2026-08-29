@@ -1,14 +1,14 @@
 "use client";
 
-import { ApiKeyPermission } from "@prisma/client";
 import { ChevronDownIcon, Trash2Icon } from "lucide-react";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "react-hot-toast";
 import { useTranslation } from "react-i18next";
+import { ApiKeyPermission } from "@formbricks/database/prisma-browser";
 import { TOrganizationAccess } from "@formbricks/types/api-key";
 import { TOrganizationWorkspace } from "@/modules/organization/settings/api-keys/types/api-keys";
-import { Alert, AlertTitle } from "@/modules/ui/components/alert";
+import { Alert, AlertDescription, AlertTitle } from "@/modules/ui/components/alert";
 import { Button } from "@/modules/ui/components/button";
 import {
   Dialog,
@@ -41,6 +41,7 @@ interface AddApiKeyModalProps {
   }) => Promise<void>;
   workspaces: TOrganizationWorkspace[];
   isCreatingAPIKey: boolean;
+  isFormbricksCloud: boolean;
 }
 
 interface WorkspaceOption {
@@ -62,6 +63,7 @@ export const AddApiKeyModal = ({
   onSubmit,
   workspaces,
   isCreatingAPIKey,
+  isFormbricksCloud,
 }: AddApiKeyModalProps) => {
   const { t } = useTranslation();
   const { register, getValues, handleSubmit, reset, watch } = useForm<{ label: string }>();
@@ -215,7 +217,11 @@ export const AddApiKeyModal = ({
 
             <div className="space-y-2">
               <Label>{t("workspace.api_keys.workspace_access")}</Label>
+              <p className="text-sm text-slate-500">{t("workspace.api_keys.workspace_access_description")}</p>
               <div className="space-y-2">
+                {Object.keys(selectedPermissions).length === 0 && (
+                  <p className="text-sm text-slate-500">{t("workspace.api_keys.workspace_access_empty")}</p>
+                )}
                 {/* Permission rows */}
                 {Object.keys(selectedPermissions).map((key) => {
                   const permissionIndex = parseInt(key.split("-")[1]);
@@ -228,7 +234,7 @@ export const AddApiKeyModal = ({
                           <DropdownMenuTrigger asChild>
                             <button
                               type="button"
-                              className="flex h-10 w-full rounded-md border border-slate-300 bg-transparent px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none">
+                              className="flex h-10 w-full rounded-md border border-slate-300 bg-transparent px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-hidden">
                               <span className="flex w-4/5 flex-1">
                                 <span className="w-full truncate text-left">{permission.workspaceName}</span>
                               </span>
@@ -237,7 +243,7 @@ export const AddApiKeyModal = ({
                               </span>
                             </button>
                           </DropdownMenuTrigger>
-                          <DropdownMenuContent className="max-h-[300px] min-w-[8rem] overflow-y-auto">
+                          <DropdownMenuContent className="max-h-[300px] min-w-32 overflow-y-auto">
                             {workspaceOptions.map((option) => (
                               <DropdownMenuItem
                                 key={option.id}
@@ -257,7 +263,7 @@ export const AddApiKeyModal = ({
                           <DropdownMenuTrigger asChild>
                             <button
                               type="button"
-                              className="flex h-10 w-full rounded-md border border-slate-300 bg-transparent px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none">
+                              className="flex h-10 w-full rounded-md border border-slate-300 bg-transparent px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-hidden">
                               <span className="flex w-4/5 flex-1">
                                 <span className="w-full truncate text-left capitalize">
                                   {permission.permission}
@@ -268,7 +274,7 @@ export const AddApiKeyModal = ({
                               </span>
                             </button>
                           </DropdownMenuTrigger>
-                          <DropdownMenuContent className="min-w-[8rem] capitalize">
+                          <DropdownMenuContent className="min-w-32 capitalize">
                             {permissionOptions.map((option) => (
                               <DropdownMenuItem
                                 key={option}
@@ -302,8 +308,13 @@ export const AddApiKeyModal = ({
               </div>
             </div>
 
-            <div className="space-y-4">
+            <div className="border-t border-slate-200" />
+
+            <div className="space-y-2">
               <Label>{t("workspace.api_keys.organization_access")}</Label>
+              <p className="text-sm text-slate-500">
+                {t("workspace.api_keys.organization_access_description")}
+              </p>
               {Object.keys(selectedOrganizationAccess).map((key) => (
                 <div key={key} className="mt-2 flex items-center gap-6">
                   <div className="flex items-center gap-2">
@@ -325,11 +336,15 @@ export const AddApiKeyModal = ({
                   </div>
                 </div>
               ))}
-              <p className="text-sm text-slate-500">
-                {t("workspace.api_keys.organization_access_description")}
-              </p>
+              {isFormbricksCloud && (
+                <Alert variant="info" role="status">
+                  <AlertDescription>
+                    {t("workspace.api_keys.organization_access_cloud_note")}
+                  </AlertDescription>
+                </Alert>
+              )}
             </div>
-            <Alert variant="warning">
+            <Alert variant="warning" role="status">
               <AlertTitle>{t("workspace.api_keys.api_key_security_warning")}</AlertTitle>
             </Alert>
           </DialogBody>

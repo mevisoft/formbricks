@@ -1,6 +1,6 @@
-import { Prisma } from "@prisma/client";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { prisma } from "@formbricks/database";
+import { Prisma } from "@formbricks/database/prisma";
 import { logger } from "@formbricks/logger";
 import { TJsWorkspaceStateSurvey } from "@formbricks/types/js";
 import { TSurveyQuota } from "@formbricks/types/quota";
@@ -105,6 +105,7 @@ describe("Quota Utils", () => {
     delay: 0,
     displayPercentage: null,
     isBackButtonHidden: false,
+    isAutoProgressingEnabled: false,
     workspaceOverwrites: null,
     styling: null,
     showLanguageSwitch: null,

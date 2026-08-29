@@ -1,6 +1,5 @@
 "use client";
 
-import { useAutoAnimate } from "@formkit/auto-animate/react";
 import * as Collapsible from "@radix-ui/react-collapsible";
 import { CheckIcon } from "lucide-react";
 import { UseFormReturn } from "react-hook-form";
@@ -10,6 +9,7 @@ import { TWorkspaceStyling } from "@formbricks/types/workspace";
 import { cn } from "@/lib/cn";
 import { SurveyBgSelectorTab } from "@/modules/ui/components/background-styling-card/survey-bg-selector-tab";
 import { Badge } from "@/modules/ui/components/badge";
+import { ColorPicker } from "@/modules/ui/components/color-picker";
 import { FormControl, FormDescription, FormField, FormItem, FormLabel } from "@/modules/ui/components/form";
 import { Slider } from "@/modules/ui/components/slider";
 
@@ -37,7 +37,6 @@ export const BackgroundStylingCard = ({
   isStorageConfigured = true,
 }: BackgroundStylingCardProps) => {
   const { t } = useTranslation();
-  const [parent] = useAutoAnimate();
 
   return (
     <Collapsible.Root
@@ -60,7 +59,7 @@ export const BackgroundStylingCard = ({
         )}>
         <div className="inline-flex px-4 py-4">
           {!isSettingsPage && (
-            <div className="flex items-center pl-2 pr-5">
+            <div className="flex items-center pr-5 pl-2">
               <CheckIcon
                 strokeWidth={3}
                 className="size-7 rounded-full border border-green-300 bg-green-100 p-1.5 text-green-600"
@@ -80,7 +79,7 @@ export const BackgroundStylingCard = ({
           </div>
         </div>
       </Collapsible.CollapsibleTrigger>
-      <Collapsible.CollapsibleContent className="flex flex-col" ref={parent}>
+      <Collapsible.CollapsibleContent className="flex flex-col overflow-hidden data-[state=closed]:animate-collapsible-up data-[state=open]:animate-collapsible-down">
         <hr className="pt-1 text-slate-600" />
         <div className="flex flex-col gap-6 p-6 pt-2">
           <FormField
@@ -149,6 +148,31 @@ export const BackgroundStylingCard = ({
               </div>
             </div>
           </div>
+
+          <FormField
+            control={form.control}
+            name="footerLinkColor"
+            render={({ field }) => (
+              <FormItem className="space-y-1">
+                <FormLabel>{t("workspace.look.advanced_styling_field_link_color")}</FormLabel>
+                <FormDescription>
+                  {t("workspace.look.advanced_styling_field_link_color_description")}
+                </FormDescription>
+                <FormControl>
+                  <ColorPicker
+                    color={field.value?.light ?? ""}
+                    onChange={(color) => {
+                      // A cleared picker means "auto-adjust": store undefined instead of an
+                      // empty string so the strict ZColor schema keeps validating.
+                      field.onChange(color ? { light: color } : undefined);
+                    }}
+                    containerClass="w-full"
+                    placeholder={t("workspace.look.advanced_styling_field_link_color_placeholder")}
+                  />
+                </FormControl>
+              </FormItem>
+            )}
+          />
         </div>
       </Collapsible.CollapsibleContent>
     </Collapsible.Root>

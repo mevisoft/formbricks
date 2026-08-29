@@ -30,10 +30,13 @@ packages/database/
 │   │   └── migration.sql      # Schema migration file
 │   └── [timestamp_name]/      # Data migration folder
 │       └── migration.ts       # Data migration file
-├── migrations/                # Prisma internal migrations
+├── .prisma-migrations/        # Transient Prisma scratch dir (gitignored)
+├── schema/                    # Prisma schema folder
+│   ├── main.prisma            # Shared models, datasource, and generators
+│   └── workflows.prisma       # Workflows models and enums
 ├── types/                     # Custom TypeScript types
 ├── zod/                       # Zod schema definitions
-├── schema.prisma              # Main Prisma schema file
+├── prisma.config.ts           # Prisma schema and migration paths
 └── package.json
 ```
 
@@ -49,10 +52,30 @@ packages/database/
 - **Custom Naming Convention**: Subdirectories follow the format `timestamp_name_of_the_migration` (e.g., `20241214112456_add_users_table`)
 - **Order of Execution**: Migrations are executed sequentially based on their timestamps, enabling precise control over the execution sequence
 
+> **Why two directories?** `migration/` (singular, checked in) is the source of truth — it contains both schema and data migrations interleaved by timestamp. `.prisma-migrations/` (hidden, gitignored) is a transient scratch directory generated at runtime: the runner copies only schema migrations into it and feeds them to `prisma migrate deploy`. The hidden name prevents accidental edits; developers should only work in `migration/`.
+
 ### Database Tracking
 
 - **Schema Migrations**: Continue to be tracked by Prisma in the `_prisma_migrations` table
 - **Data Migrations**: Are tracked in the new `DataMigration` table to avoid reapplying already executed migrations
+
+### ⚠️ Data migrations must be no-ops on an empty database
+
+Data migrations exist to **transform pre-existing rows**. On a brand-new
+(empty) database — every CI run and every fresh install — the migration runner
+takes a fast path: it applies the whole schema in a single `prisma migrate
+deploy` and marks all data migrations **applied without running them**
+(baselining). This is safe only because there is no data to transform, and it
+is necessary because some older data migrations reference columns/tables that
+later schema migrations drop or rename, so they can no longer execute against
+the final schema.
+
+Therefore, a data migration must **only** read and modify existing rows and do
+nothing when its tables are empty (guard writes behind a `SELECT` of existing
+rows, or keep them to `UPDATE`/`DELETE`/`INSERT ... SELECT` that naturally
+affect zero rows on an empty table). **Never seed essential/default data from a
+data migration** — it would be silently skipped on fresh installs. Seed base
+data via the seed script (`src/seed.ts`, `pnpm db:seed`) instead.
 
 ### Directory Structure Example
 
@@ -109,12 +132,12 @@ Run these commands from the `packages/database` directory:
   "create-migration": "Create new schema migration",
   "db:migrate:deploy": "Apply migrations in production",
   "db:migrate:dev": "Apply migrations in development",
-  "db:push": "prisma db push --accept-data-loss",
+  "db:push": "prisma db push --accept-data-loss --config ./prisma.config.ts",
   "db:seed": "Seed the database with sample data",
   "db:seed:clear": "Clear all data and re-seed",
   "db:setup": "pnpm db:migrate:dev && pnpm db:create-saml-database:dev && pnpm db:seed",
   "dev": "vite build --watch",
-  "generate": "prisma generate",
+  "generate": "prisma generate --config ./prisma.config.ts",
   "generate-data-migration": "Create new data migration"
 }
 ```
@@ -150,7 +173,7 @@ By default, the seed script uses `upsert` to ensure it can be run multiple times
 
 ### Adding a Schema Migration
 
-1. Modify your Prisma schema in `schema.prisma`
+1. Modify your Prisma schema in `schema/`
 2. Run `pnpm fb-migrate-dev` from the root of the monorepo
 3. Follow the prompts to name your migration
 4. The script automatically:
@@ -170,7 +193,7 @@ By default, the seed script uses `upsert` to ensure it can be run multiple times
 
 ```typescript
 import { createId } from "@paralleldrive/cuid2";
-import { Prisma } from "@prisma/client";
+import { Prisma } from "@formbricks/database/prisma";
 import { logger } from "@formbricks/logger";
 import type { MigrationScript } from "../../src/scripts/migration-runner";
 

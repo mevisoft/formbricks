@@ -15,6 +15,10 @@ import {
   ZTeamUpdateSchema,
 } from "@/modules/api/v2/organizations/[organizationId]/teams/[teamId]/types/teams";
 import { ZOrganizationIdSchema } from "@/modules/api/v2/organizations/[organizationId]/types/organizations";
+import {
+  canManageOrganizationUsers,
+  getApiKeyCreatorRole,
+} from "@/modules/api/v2/organizations/[organizationId]/users/lib/utils";
 import { ApiErrorResponseV2 } from "@/modules/api/v2/types/api-error";
 import { UNKNOWN_DATA } from "@/modules/ee/audit-logs/types/audit-log";
 
@@ -24,6 +28,7 @@ export const GET = async (
 ) =>
   authenticatedApiClient({
     request,
+    allowOrganizationOnlyApiKey: true,
     schemas: {
       params: z.object({ teamId: ZTeamIdSchema, organizationId: ZOrganizationIdSchema }),
     },
@@ -51,6 +56,7 @@ export const DELETE = async (
 ) =>
   authenticatedApiClient({
     request,
+    allowOrganizationOnlyApiKey: true,
     schemas: {
       params: z.object({ teamId: ZTeamIdSchema, organizationId: ZOrganizationIdSchema }),
     },
@@ -66,6 +72,18 @@ export const DELETE = async (
           {
             type: "unauthorized",
             details: [{ field: "organizationId", issue: "unauthorized" }],
+          },
+          auditLog
+        );
+      }
+
+      const assignerRole = await getApiKeyCreatorRole(authentication.apiKeyId, authentication.organizationId);
+      if (!canManageOrganizationUsers(assignerRole)) {
+        return handleApiError(
+          request,
+          {
+            type: "forbidden",
+            details: [{ field: "team", issue: "You are not allowed to manage teams in this organization" }],
           },
           auditLog
         );
@@ -103,6 +121,7 @@ export const PUT = (
 ) =>
   authenticatedApiClient({
     request,
+    allowOrganizationOnlyApiKey: true,
     externalParams: props.params,
     schemas: {
       params: z.object({ teamId: ZTeamIdSchema, organizationId: ZOrganizationIdSchema }),
@@ -119,6 +138,18 @@ export const PUT = (
           {
             type: "unauthorized",
             details: [{ field: "organizationId", issue: "unauthorized" }],
+          },
+          auditLog
+        );
+      }
+
+      const assignerRole = await getApiKeyCreatorRole(authentication.apiKeyId, authentication.organizationId);
+      if (!canManageOrganizationUsers(assignerRole)) {
+        return handleApiError(
+          request,
+          {
+            type: "forbidden",
+            details: [{ field: "team", issue: "You are not allowed to manage teams in this organization" }],
           },
           auditLog
         );

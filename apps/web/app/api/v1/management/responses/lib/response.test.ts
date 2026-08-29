@@ -1,6 +1,6 @@
-import { Prisma, Response as ResponsePrisma } from "@prisma/client";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { prisma } from "@formbricks/database";
+import { Prisma, Response as ResponsePrisma } from "@formbricks/database/prisma";
 import { logger } from "@formbricks/logger";
 import { DatabaseError, ResourceNotFoundError } from "@formbricks/types/errors";
 import { TResponse, TResponseInput } from "@formbricks/types/responses";
@@ -85,6 +85,7 @@ const mockTransformedResponses = [mockResponse, { ...mockResponse, id: "response
 // Mock dependencies
 vi.mock("@/lib/constants", () => ({
   IS_FORMBRICKS_CLOUD: true,
+  POSTHOG_KEY: undefined,
   ENCRYPTION_KEY: "mock-encryption-key",
   ENTERPRISE_LICENSE_KEY: "mock-enterprise-license-key",
   GITHUB_ID: "mock-github-id",
@@ -103,6 +104,8 @@ vi.mock("@/lib/constants", () => ({
   STRIPE_API_VERSION: "2026-01-28.clover",
   IS_PRODUCTION: false,
   SENTRY_DSN: "mock-sentry-dsn",
+  COMMUNITY_WORKSPACE_LIMIT: 1,
+  CLOUD_HOBBY_WORKSPACE_LIMIT: 1,
 }));
 vi.mock("@/lib/utils/helper");
 vi.mock("@/lib/response/service");
@@ -189,9 +192,9 @@ describe("Response Lib Tests", () => {
       expect(logger.error).not.toHaveBeenCalled(); // Should be caught and re-thrown as DatabaseError
     });
 
-    test("should handle RelatedRecordDoesNotExist error with specific message", async () => {
+    test("should handle RecordNotFound error with specific message", async () => {
       const prismaError = new Prisma.PrismaClientKnownRequestError("Related record does not exist", {
-        code: "P2025", // PrismaErrorType.RelatedRecordDoesNotExist
+        code: "P2025", // PrismaErrorType.RecordNotFound
         clientVersion: "2.0",
       });
       vi.mocked(getOrganizationIdFromWorkspaceId).mockResolvedValue(mockOrganization);

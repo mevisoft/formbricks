@@ -1,6 +1,5 @@
 "use client";
 
-import { useAutoAnimate } from "@formkit/auto-animate/react";
 import * as Collapsible from "@radix-ui/react-collapsible";
 import { CheckIcon, LinkIcon, MonitorIcon } from "lucide-react";
 import { useState } from "react";
@@ -85,8 +84,6 @@ export const HowToSendCard = ({ localSurvey, setLocalSurvey, appSetupCompleted }
     },
   ];
 
-  const [parent] = useAutoAnimate();
-
   return (
     <Collapsible.Root
       open={open}
@@ -100,7 +97,7 @@ export const HowToSendCard = ({ localSurvey, setLocalSurvey, appSetupCompleted }
         className="h-full w-full cursor-pointer"
         id="howToSendCardTrigger">
         <div className="inline-flex px-4 py-4">
-          <div className="flex items-center pl-2 pr-5">
+          <div className="flex items-center pr-5 pl-2">
             <CheckIcon
               strokeWidth={3}
               className="size-7 rounded-full border border-green-300 bg-green-100 p-1.5 text-green-600"
@@ -114,11 +111,11 @@ export const HowToSendCard = ({ localSurvey, setLocalSurvey, appSetupCompleted }
           </div>
         </div>
       </Collapsible.CollapsibleTrigger>
-      <Collapsible.CollapsibleContent className="flex flex-col" ref={parent}>
+      <Collapsible.CollapsibleContent className="flex flex-col overflow-hidden data-[state=closed]:animate-collapsible-up data-[state=open]:animate-collapsible-down">
         <hr className="py-1 text-slate-600" />
         <div className="space-y-3 p-3">
           {localSurvey.status === "inProgress" && (
-            <Alert variant="warning" className="mb-3">
+            <Alert variant="warning" className="mb-3" role="status">
               <AlertTitle>{t("workspace.surveys.edit.change_survey_type")}</AlertTitle>
               <AlertDescription>
                 {t("workspace.surveys.edit.changing_survey_type_will_remove_existing_distribution_channels")}
@@ -182,7 +179,7 @@ export const HowToSendCard = ({ localSurvey, setLocalSurvey, appSetupCompleted }
                           </AlertDescription>
                           <AlertButton
                             onClick={() =>
-                              window.open(`${workspaceBasePath}/${option.id}-connection`, "_blank")
+                              window.open(`${workspaceBasePath}/settings/workspace/app-connection`, "_blank")
                             }>
                             {t("common.connect_formbricks")}
                           </AlertButton>

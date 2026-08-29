@@ -1,7 +1,6 @@
 "use client";
 
-import { useState } from "react";
-import { toast } from "react-hot-toast";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { TChartQuery } from "@formbricks/types/analysis";
 import { getFormattedErrorMessage } from "@/lib/utils/helper";
@@ -9,8 +8,12 @@ import { executeQueryAction } from "@/modules/ee/analysis/charts/actions";
 import type { TChartDataRow } from "@/modules/ee/analysis/types/analysis";
 
 export interface QueryResult {
+  /** The effective (server-rewritten) query used by Cube. May differ from the query the user
+   * built when resolveOptionGrouping rewrote a value dimension (e.g. valueText → valueId for
+   * single-select). Renderers must use this so xAxisKey matches the returned data keys. */
   query: TChartQuery;
   data: TChartDataRow[];
+  optionLabels?: Record<string, string>;
 }
 
 export function useChartQuery(
@@ -23,14 +26,20 @@ export function useChartQuery(
   const [query, setQuery] = useState<TChartQuery | null>(initialQuery ?? null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Queries run reactively while the user edits the config; only the latest response may win.
+  const runSeqRef = useRef(0);
+
+  useEffect(() => {
+    runSeqRef.current++;
+  }, [workspaceId, feedbackDirectoryId]);
 
   const runQuery = async (cubeQuery: TChartQuery): Promise<QueryResult | null> => {
     if (!feedbackDirectoryId) {
-      const msg = t("workspace.analysis.charts.select_data_source_first");
-      toast.error(msg);
+      setError(t("workspace.analysis.charts.select_data_source_first"));
       return null;
     }
 
+    const seq = ++runSeqRef.current;
     setIsLoading(true);
     setError(null);
 
@@ -40,33 +49,30 @@ export function useChartQuery(
         query: cubeQuery,
         feedbackDirectoryId,
       });
+      if (seq !== runSeqRef.current) return null;
 
       if (result?.serverError) {
-        const msg = getFormattedErrorMessage(result);
-        setError(msg);
-        toast.error(msg);
+        setError(getFormattedErrorMessage(result));
         return null;
       }
 
-      const data = Array.isArray(result?.data) ? result.data : [];
-      if (data.length === 0) {
-        const msg = t("workspace.analysis.charts.no_data_returned");
-        setError(msg);
-        toast.error(msg);
-        return null;
-      }
-
+      const rows = result?.data;
+      const data = Array.isArray(rows?.rows) ? rows.rows : [];
+      const optionLabels = rows?.optionLabels;
+      // Use the server-rewritten effective query so the renderer's xAxisKey matches the
+      // actual data columns (e.g. valueText → valueId after single-select rewrite).
+      const effectiveQuery = rows?.effectiveQuery ?? cubeQuery;
       setChartData(data);
-      setQuery(cubeQuery);
-      toast.success(t("workspace.analysis.charts.query_executed_successfully"));
-      return { query: cubeQuery, data };
+      setQuery(effectiveQuery);
+      return { query: effectiveQuery, data, ...(optionLabels ? { optionLabels } : {}) };
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : t("workspace.analysis.charts.failed_to_execute_query");
-      setError(msg);
-      toast.error(msg);
+      if (seq !== runSeqRef.current) return null;
+      setError(err instanceof Error ? err.message : t("workspace.analysis.charts.failed_to_execute_query"));
       return null;
     } finally {
-      setIsLoading(false);
+      if (seq === runSeqRef.current) {
+        setIsLoading(false);
+      }
     }
   };
 

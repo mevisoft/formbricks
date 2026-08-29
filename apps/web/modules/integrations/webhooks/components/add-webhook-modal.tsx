@@ -1,6 +1,5 @@
 "use client";
 
-import { PipelineTriggers, Webhook } from "@prisma/client";
 import clsx from "clsx";
 import { Webhook as WebhookIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -8,6 +7,7 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import toast from "react-hot-toast";
 import { useTranslation } from "react-i18next";
+import { PipelineTriggers, Webhook } from "@formbricks/database/prisma-browser";
 import { TSurvey } from "@formbricks/types/surveys/types";
 import { getFormattedErrorMessage } from "@/lib/utils/helper";
 import { SurveyCheckboxGroup } from "@/modules/integrations/webhooks/components/survey-checkbox-group";
@@ -75,6 +75,7 @@ export const AddWebhookModal = ({
       const testEndpointActionResult = await testEndpointAction({
         url: testEndpointInput,
         secret: webhookSecret,
+        workspaceId,
       });
 
       if (!testEndpointActionResult?.data) {

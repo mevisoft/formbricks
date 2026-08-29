@@ -51,6 +51,23 @@ export const ZResponseTtc = z.record(z.string(), z.number());
 
 export type TResponseTtc = z.infer<typeof ZResponseTtc>;
 
+// Per-element time-to-complete (ttc, in ms) is attacker-controlled telemetry on the public
+// response endpoints. We sanitize each measurement at the schema boundary: z.number() already
+// rejects NaN/Infinity, and we clamp the remaining finite values into [0, MAX_RESPONSE_TTC] so
+// negative or absurdly large numbers can no longer skew analytics or overflow the summed
+// `_total`. Clamping rather than rejecting means a real submission is never dropped over a
+// noisy timing value — a question is only briefly "active", so anything past a day is
+// meaningless rather than a reason to reject the response. Stored/returned responses keep the
+// unbounded ZResponseTtc so historical data still parses.
+export const MAX_RESPONSE_TTC = 1000 * 60 * 60 * 24; // 24 hours per element
+
+export const ZResponseTtcInput = z.record(
+  z.string(),
+  z.number().transform((value) => Math.min(Math.max(value, 0), MAX_RESPONSE_TTC))
+);
+
+export type TResponseTtcInput = z.infer<typeof ZResponseTtcInput>;
+
 export const ZResponseContactAttributes = z.record(z.string(), z.string()).nullable();
 
 export type TResponseContactAttributes = z.infer<typeof ZResponseContactAttributes>;
@@ -347,12 +364,16 @@ export const ZResponseInput = z.object({
   userId: z.string().nullish(),
   displayId: z.string().nullish(),
   singleUseId: z.string().nullable().optional(),
+  pinAuthToken: z.string().nullish(),
+  // The survey client already sends this on every create (see `response-queue.ts`), but it used to be
+  // absent from this schema, so Zod stripped it before the v1 handler could enforce the reCAPTCHA gate.
+  recaptchaToken: z.string().nullish(),
   finished: z.boolean(),
   endingId: z.string().nullish(),
   language: z.string().optional(),
   data: ZResponseData,
   variables: ZResponseVariables.optional(),
-  ttc: ZResponseTtc.optional(),
+  ttc: ZResponseTtcInput.optional(),
   meta: z
     .object({
       source: z.string().optional(),
@@ -378,8 +399,9 @@ export const ZResponseUpdateInput = z.object({
   endingId: z.string().nullish(),
   data: ZResponseData.optional(),
   variables: ZResponseVariables.optional(),
-  ttc: ZResponseTtc.optional(),
+  ttc: ZResponseTtcInput.optional(),
   language: z.string().optional(),
+  pinAuthToken: z.string().nullish(),
 });
 
 export type TResponseUpdateInput = z.infer<typeof ZResponseUpdateInput>;
@@ -401,7 +423,7 @@ export const ZResponseUpdate = z.object({
   data: ZResponseData,
   language: z.string().optional(),
   variables: ZResponseVariables.optional(),
-  ttc: ZResponseTtc.optional(),
+  ttc: ZResponseTtcInput.optional(),
   meta: z
     .object({
       url: z.string().optional(),

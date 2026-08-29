@@ -1,6 +1,8 @@
 import { expect } from "@playwright/test";
 import http from "http";
 import { test } from "./lib/fixtures";
+import { gotoSurveyList, gotoSurveyTemplates } from "./lib/utils";
+import { useSelectedTemplate } from "./utils/helper";
 
 const HTML_TEMPLATE = `<head>
   <script type="text/javascript">
@@ -53,7 +55,7 @@ test.describe("JS Package Test", async () => {
     const user = await users.create();
     await user.login();
 
-    await page.waitForURL(/\/workspaces\/[^/]+\/surveys/);
+    await gotoSurveyList(page);
 
     // Get the workspaceId from the fixture (needed for SDK setup)
     workspaceId =
@@ -62,14 +64,15 @@ test.describe("JS Package Test", async () => {
         throw new Error("Unable to get workspaceId from user fixture");
       })();
 
+    await gotoSurveyTemplates(page, workspaceId);
+
     // Create survey from template
     await page.getByRole("heading", { name: "Product Market Fit (Superhuman)" }).isVisible();
     await page.getByRole("heading", { name: "Product Market Fit (Superhuman)" }).click();
     await page.getByRole("button", { name: "Use this template" }).isVisible();
-    await page.getByRole("button", { name: "Use this template" }).click();
+    await useSelectedTemplate(page);
 
     // Configure survey settings
-    await page.waitForURL(/\/workspaces\/[^/]+\/surveys\/[^/]+\/edit/);
     await page.getByRole("button", { name: "Settings", exact: true }).click();
 
     await expect(page.locator("#howToSendCardTrigger")).toBeVisible();
@@ -88,7 +91,7 @@ test.describe("JS Package Test", async () => {
 
     await page.locator("#recontactOptionsCardTrigger").click();
     await page.locator('[data-testid="recontact-option-respondMultiple"]').click();
-    await page.locator('[data-testid="waiting-time-option-ignore"]').click();
+    await page.locator('[data-testid="cooldown-period-option-ignore"]').click();
 
     await page.getByRole("button", { name: "Save as draft", exact: true }).click();
     await expect(page.getByText("Changes saved.")).toBeVisible();
@@ -100,6 +103,16 @@ test.describe("JS Package Test", async () => {
 
     await page.goto("http://localhost:3004");
     await expect(page.locator("#formbricks-modal-container")).toHaveCount(1, { timeout: 120000 });
+
+    // The widget reads the survey from the public client API, which substitutes a placeholder for
+    // every survey name so names are not exposed over an unauthenticated endpoint. This is the only
+    // place the real API, the widget and the dialog are wired together, so it is the only place that
+    // can catch the placeholder leaking into what a screen reader announces: the dialog falls back
+    // to its generic name instead, and no heading carries the placeholder either.
+    const widget = page.locator("#formbricks-modal-container");
+    await expect(widget.getByRole("dialog")).toHaveAttribute("aria-label", "Survey Dialog");
+    await expect(widget.getByText(/\[deprecated] survey name omitted/)).toHaveCount(0);
+
     await expect(
       page.locator("#questionCard-0").getByRole("link", { name: "Powered by Formbricks" })
     ).toBeVisible();

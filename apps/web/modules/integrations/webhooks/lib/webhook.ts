@@ -1,6 +1,6 @@
-import { Prisma, Webhook } from "@prisma/client";
 import { v7 as uuidv7 } from "uuid";
 import { prisma } from "@formbricks/database";
+import { Prisma, Webhook } from "@formbricks/database/prisma";
 import { PrismaErrorType } from "@formbricks/database/types/error";
 import { ZId } from "@formbricks/types/common";
 import {
@@ -95,7 +95,7 @@ export const deleteWebhook = async (id: string): Promise<boolean> => {
   } catch (error) {
     if (
       error instanceof Prisma.PrismaClientKnownRequestError &&
-      error.code === PrismaErrorType.RelatedRecordDoesNotExist
+      error.code === PrismaErrorType.RecordNotFound
     ) {
       throw new ResourceNotFoundError("Webhook", id);
     }

@@ -19,6 +19,7 @@ import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { TSurveyElement, TSurveyElementId, TSurveyElementTypeEnum } from "@formbricks/types/surveys/elements";
 import { TSurvey, TSurveyHiddenFields, TSurveyRecallItem } from "@formbricks/types/surveys/types";
+import { getTextContent } from "@formbricks/types/surveys/validation";
 import { getTextContentWithRecallTruncated } from "@/lib/utils/recall";
 import { getElementsFromBlocks } from "@/modules/survey/lib/client-utils";
 import {
@@ -137,13 +138,15 @@ export const RecallItemSelect = ({
   }, [elementId, elements, recallItemIds, selectedLanguageCode]);
 
   const filteredRecallItems: TSurveyRecallItem[] = useMemo(() => {
+    const query = searchValue.trim().toLowerCase();
+    if (!query) return [...surveyElementRecallItems, ...hiddenFieldRecallItems, ...variableRecallItems];
+
+    // Match the label's text content, not the label itself: an element's label is its raw headline HTML
+    // (`<p class="fb-editor-paragraph">…`), so comparing against it made every query for question text
+    // miss. `includes` rather than `startsWith` so a query also matches mid-headline words, and so it
+    // still matches items whose displayed label is elided by the truncation below.
     return [...surveyElementRecallItems, ...hiddenFieldRecallItems, ...variableRecallItems].filter(
-      (recallItems) => {
-        if (searchValue.trim() === "") return true;
-        else {
-          return recallItems.label.toLowerCase().startsWith(searchValue.toLowerCase());
-        }
-      }
+      (recallItem) => getTextContent(recallItem.label).toLowerCase().includes(query)
     );
   }, [surveyElementRecallItems, hiddenFieldRecallItems, variableRecallItems, searchValue]);
 
@@ -191,7 +194,7 @@ export const RecallItemSelect = ({
             }
           }}
         />
-        <div className="max-h-72 overflow-y-auto overflow-x-hidden">
+        <div className="max-h-72 overflow-x-hidden overflow-y-auto">
           {filteredRecallItems.map((recallItem, index) => {
             const IconComponent = getRecallItemIcon(recallItem);
             return (
@@ -204,7 +207,7 @@ export const RecallItemSelect = ({
                   setShowRecallItemSelect(false);
                 }}
                 autoFocus={false}
-                className="flex w-full cursor-pointer items-center rounded-md p-2 focus:bg-slate-200 focus:outline-none"
+                className="flex w-full cursor-pointer items-center rounded-md p-2 focus:bg-slate-200 focus:outline-hidden"
                 onKeyDown={(e) => {
                   if (
                     (e.key === "ArrowUp" && index === 0) ||
@@ -215,7 +218,7 @@ export const RecallItemSelect = ({
                   }
                 }}>
                 <div>{IconComponent && <IconComponent className="mr-2 w-4" />}</div>
-                <p className="max-w-full overflow-hidden text-ellipsis whitespace-nowrap text-sm">
+                <p className="max-w-full overflow-hidden text-sm text-ellipsis whitespace-nowrap">
                   {getTextContentWithRecallTruncated(recallItem.label).trim() || t("common.no_text_found")}
                 </p>
               </DropdownMenuItem>

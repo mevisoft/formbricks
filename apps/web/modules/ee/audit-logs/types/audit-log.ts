@@ -6,6 +6,7 @@ export const UNKNOWN_DATA = "unknown";
 export const ZAuditTarget = z.enum([
   "segment",
   "survey",
+  "workflow",
   "webhook",
   "user",
   "contactAttributeKey",
@@ -30,11 +31,14 @@ export const ZAuditTarget = z.enum([
   "dashboardWidget",
   "cubeQuery",
   "feedbackDirectory",
+  "feedbackRecord",
 ]);
 export const ZAuditAction = z.enum([
   "created",
   "updated",
   "deleted",
+  "archived",
+  "restored",
   "signedIn",
   "merged",
   "verificationEmailSent",
@@ -57,6 +61,10 @@ export const ZAuditAction = z.enum([
   "userSignedOut",
   "passwordReset",
   "bulkCreated",
+  // Destroys every record a resource holds while keeping the resource itself. Distinct from
+  // "deleted" (the resource is gone) and from "updated" (nothing is lost) so a purge is unambiguous
+  // in the audit trail.
+  "purged",
   "queried",
   "sso_recovery_started",
   "sso_recovery_completed",

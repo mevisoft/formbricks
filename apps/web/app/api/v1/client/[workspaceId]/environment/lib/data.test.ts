@@ -1,8 +1,9 @@
-import { Prisma } from "@prisma/client";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { prisma } from "@formbricks/database";
+import { Prisma } from "@formbricks/database/prisma";
 import { logger } from "@formbricks/logger";
 import { DatabaseError, ResourceNotFoundError } from "@formbricks/types/errors";
+import { PUBLIC_API_SURVEY_NAME_PLACEHOLDER } from "@formbricks/types/js-constants";
 import { getWorkspaceStateData } from "./data";
 
 vi.mock("server-only", () => ({}));
@@ -12,6 +13,9 @@ vi.mock("@formbricks/database", () => ({
   prisma: {
     workspace: {
       findUnique: vi.fn(),
+    },
+    segment: {
+      findMany: vi.fn(),
     },
   },
 }));
@@ -117,7 +121,7 @@ describe("getWorkspaceStateData", () => {
       surveys: [
         {
           ...mockWorkspaceData.surveys[0],
-          name: "[deprecated] survey name omitted from public API - will be removed soon",
+          name: PUBLIC_API_SURVEY_NAME_PLACEHOLDER,
         },
       ],
       actionClasses: mockWorkspaceData.actionClasses,
@@ -251,5 +255,229 @@ describe("getWorkspaceStateData", () => {
     const result = await getWorkspaceStateData(workspaceId);
 
     expect(result).not.toHaveProperty("organization");
+  });
+
+  // ENG-1067 back-compat: SDK clients match the display language by exact code, so alongside each
+  // canonical region-tagged code we expose its bare legacy code for multi-language surveys.
+  const buildLanguage = (code: string, isDefault = false) => ({
+    default: isDefault,
+    enabled: true,
+    language: {
+      id: `lang-${code}`,
+      code,
+      alias: null,
+      createdAt: new Date("2024-01-01"),
+      updatedAt: new Date("2024-01-01"),
+      workspaceId,
+    },
+  });
+
+  test("appends bare legacy language codes for multi-language surveys", async () => {
+    vi.mocked(prisma.workspace.findUnique).mockResolvedValue({
+      ...mockWorkspaceData,
+      surveys: [
+        {
+          ...mockWorkspaceData.surveys[0],
+          languages: [buildLanguage("en-US", true), buildLanguage("de-DE")],
+        },
+      ],
+    } as never);
+
+    const result = await getWorkspaceStateData(workspaceId);
+    const codes = result.surveys[0].languages.map((sl) => sl.language.code);
+
+    // canonical entries stay first; bare legacy entries are appended
+    expect(codes).toEqual(["en-US", "de-DE", "en", "de"]);
+  });
+
+  test("does not append legacy codes for single-language surveys", async () => {
+    vi.mocked(prisma.workspace.findUnique).mockResolvedValue({
+      ...mockWorkspaceData,
+      surveys: [{ ...mockWorkspaceData.surveys[0], languages: [buildLanguage("en-US", true)] }],
+    } as never);
+
+    const result = await getWorkspaceStateData(workspaceId);
+    const codes = result.surveys[0].languages.map((sl) => sl.language.code);
+
+    expect(codes).toEqual(["en-US"]);
+  });
+
+  test("does not duplicate a bare code that a real language already uses", async () => {
+    vi.mocked(prisma.workspace.findUnique).mockResolvedValue({
+      ...mockWorkspaceData,
+      surveys: [
+        {
+          ...mockWorkspaceData.surveys[0],
+          languages: [buildLanguage("en-US", true), buildLanguage("de-DE"), buildLanguage("de")],
+        },
+      ],
+    } as never);
+
+    const result = await getWorkspaceStateData(workspaceId);
+    const codes = result.surveys[0].languages.map((sl) => sl.language.code);
+
+    // "de" already present → only "en" gets appended
+    expect(codes).toEqual(["en-US", "de-DE", "de", "en"]);
+  });
+
+  test("appends real legacy aliases (not a region-strip) for alias-mapped codes", async () => {
+    vi.mocked(prisma.workspace.findUnique).mockResolvedValue({
+      ...mockWorkspaceData,
+      surveys: [
+        {
+          ...mockWorkspaceData.surveys[0],
+          // fil-PH's legacy alias is "tl" (not "fil"); ak-GH has two aliases ("ak", "tw")
+          languages: [buildLanguage("en-US", true), buildLanguage("fil-PH"), buildLanguage("ak-GH")],
+        },
+      ],
+    } as never);
+
+    const result = await getWorkspaceStateData(workspaceId);
+    const codes = result.surveys[0].languages.map((sl) => sl.language.code);
+
+    expect(codes).toEqual(["en-US", "fil-PH", "ak-GH", "en", "tl", "ak", "tw"]);
+  });
+
+  // Survey-interaction segment gate: per-survey `interactionRefresh`.
+  const interactionSurvey = (id: string, operator: string, targetSurveyId: string) => ({
+    ...mockWorkspaceData.surveys[0],
+    id,
+    segment: {
+      id: `seg-${id}`,
+      filters: [
+        {
+          id: "f1",
+          connector: null,
+          resource: {
+            id: "r1",
+            root: { type: "surveyInteraction" },
+            qualifier: { operator },
+            value: {
+              surveyScope: "specific",
+              surveyIds: [targetSurveyId],
+              within: { amount: 1, unit: "months" },
+            },
+          },
+        },
+      ],
+    },
+  });
+
+  test("attaches per-survey interactionRefresh for an interaction filter", async () => {
+    // survey-B references survey-A via "have seen" → A gets onDisplay only; B (referenced by nobody) all-false.
+    vi.mocked(prisma.workspace.findUnique).mockResolvedValue({
+      ...mockWorkspaceData,
+      surveys: [
+        { ...mockWorkspaceData.surveys[0], id: "survey-A", segment: null },
+        interactionSurvey("survey-B", "haveSeen", "survey-A"),
+      ],
+    } as never);
+    vi.mocked(prisma.segment.findMany).mockResolvedValue([] as never);
+
+    const result = await getWorkspaceStateData(workspaceId);
+
+    const byId = Object.fromEntries(result.surveys.map((s) => [s.id, s]));
+    expect((byId["survey-A"] as { interactionRefresh?: unknown }).interactionRefresh).toEqual({
+      onDisplay: true,
+      onResponse: false,
+      onFinished: false,
+    });
+    expect((byId["survey-B"] as { interactionRefresh?: unknown }).interactionRefresh).toEqual({
+      onDisplay: false,
+      onResponse: false,
+      onFinished: false,
+    });
+  });
+
+  test("resolves an interaction filter hidden inside a nested userIsIn segment", async () => {
+    // survey-A's segment only references segment "seg-nested" (userIsIn); that segment holds the
+    // "have completed survey-A" interaction leaf, so A must still be flagged onFinished.
+    vi.mocked(prisma.workspace.findUnique).mockResolvedValue({
+      ...mockWorkspaceData,
+      surveys: [
+        {
+          ...mockWorkspaceData.surveys[0],
+          id: "survey-A",
+          segment: {
+            id: "seg-a",
+            filters: [
+              {
+                id: "f1",
+                connector: null,
+                resource: {
+                  id: "r1",
+                  root: { type: "segment", segmentId: "seg-nested" },
+                  qualifier: { operator: "userIsIn" },
+                  value: "seg-nested",
+                },
+              },
+            ],
+          },
+        },
+      ],
+    } as never);
+    vi.mocked(prisma.segment.findMany).mockResolvedValue([
+      {
+        id: "seg-nested",
+        filters: [
+          {
+            id: "f2",
+            connector: null,
+            resource: {
+              id: "r2",
+              root: { type: "surveyInteraction" },
+              qualifier: { operator: "haveCompleted" },
+              value: {
+                surveyScope: "specific",
+                surveyIds: ["survey-A"],
+                within: { amount: 1, unit: "months" },
+              },
+            },
+          },
+        ],
+      },
+    ] as never);
+
+    const result = await getWorkspaceStateData(workspaceId);
+
+    expect((result.surveys[0] as { interactionRefresh?: unknown }).interactionRefresh).toEqual({
+      onDisplay: false,
+      onResponse: false,
+      onFinished: true,
+    });
+    expect(prisma.segment.findMany).toHaveBeenCalledWith({
+      where: { workspaceId },
+      select: { id: true, filters: true },
+    });
+  });
+
+  test("distinguishes Simplified and Traditional Chinese (script preserved, not a bare 'zh')", async () => {
+    vi.mocked(prisma.workspace.findUnique).mockResolvedValue({
+      ...mockWorkspaceData,
+      surveys: [
+        {
+          ...mockWorkspaceData.surveys[0],
+          languages: [buildLanguage("en-US", true), buildLanguage("zh-Hans-CN"), buildLanguage("zh-Hant-TW")],
+        },
+      ],
+    } as never);
+
+    const result = await getWorkspaceStateData(workspaceId);
+    const codes = result.surveys[0].languages.map((sl) => sl.language.code);
+
+    // Each script keeps its own legacy aliases, so a deployed Chinese client matches whichever code it
+    // holds: Simplified -> zh / zh-CN / zh-Hans, Traditional -> zh-Hant / zh-TW. A region-strip would have
+    // emitted a single bare "zh" for both — which no Chinese client holds and can't tell the two apart.
+    expect(codes).toEqual([
+      "en-US",
+      "zh-Hans-CN",
+      "zh-Hant-TW",
+      "en",
+      "zh",
+      "zh-CN",
+      "zh-Hans",
+      "zh-Hant",
+      "zh-TW",
+    ]);
   });
 });

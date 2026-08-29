@@ -7,8 +7,8 @@ import { toast } from "react-hot-toast";
 import { useTranslation } from "react-i18next";
 import { TOrganization } from "@formbricks/types/organizations";
 import { TAllowedFileExtension } from "@formbricks/types/storage";
-import { useWorkspace } from "@/app/(app)/workspaces/[workspaceId]/context/workspace-context";
 import { SettingsCard } from "@/app/(app)/workspaces/[workspaceId]/settings/components/SettingsCard";
+import { isExternalImageSrc } from "@/lib/image-hosts";
 import { getFormattedErrorMessage } from "@/lib/utils/helper";
 import {
   removeOrganizationFaviconUrlAction,
@@ -45,8 +45,6 @@ export const FaviconCustomizationSettings = ({
   isReadOnly,
   isStorageConfigured,
 }: FaviconCustomizationSettingsProps) => {
-  const { workspace } = useWorkspace();
-  const workspaceBasePath = `/workspaces/${workspace?.id}`;
   const { t } = useTranslation();
   const router = useRouter();
 
@@ -154,11 +152,11 @@ export const FaviconCustomizationSettings = ({
   const buttons: [ModalButton, ModalButton] = [
     {
       text: t("common.upgrade_plan"),
-      href: `${workspaceBasePath}/settings/organization/billing`,
+      href: `/organizations/${organization.id}/settings/billing`,
     },
     {
       text: t("common.learn_more"),
-      href: `${workspaceBasePath}/settings/organization/billing`,
+      href: `/organizations/${organization.id}/settings/billing`,
     },
   ];
 
@@ -175,6 +173,7 @@ export const FaviconCustomizationSettings = ({
               width={64}
               height={64}
               className="-mb-2 size-16 rounded-lg border object-contain p-1"
+              unoptimized={isExternalImageSrc(faviconUrl)}
             />
           ) : (
             <FileInput
@@ -228,12 +227,12 @@ export const FaviconCustomizationSettings = ({
             </Button>
           )}
 
-          <Alert variant="info">
+          <Alert variant="info" role="status">
             <AlertDescription>{t("workspace.settings.domain.favicon_size_hint")}</AlertDescription>
           </Alert>
 
           {isReadOnly && (
-            <Alert variant="warning">
+            <Alert variant="warning" role="status">
               <AlertDescription>
                 {t("common.only_owners_managers_and_manage_access_members_can_perform_this_action")}
               </AlertDescription>

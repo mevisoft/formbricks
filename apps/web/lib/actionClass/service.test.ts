@@ -1,6 +1,6 @@
-import { Prisma } from "@prisma/client";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { prisma } from "@formbricks/database";
+import { Prisma } from "@formbricks/database/prisma";
 import { PrismaErrorType } from "@formbricks/database/types/error";
 import { TActionClass, TActionClassInput } from "@formbricks/types/action-classes";
 import { DatabaseError, ResourceNotFoundError, UniqueConstraintError } from "@formbricks/types/errors";
@@ -177,6 +177,17 @@ describe("ActionClass Service", () => {
       await expect(deleteActionClass("id4")).rejects.toThrow(ResourceNotFoundError);
     });
 
+    test("should throw DatabaseError for PrismaClientKnownRequestError", async () => {
+      if (!prisma.actionClass.delete) prisma.actionClass.delete = vi.fn();
+      vi.mocked(prisma.actionClass.delete).mockRejectedValue(
+        new Prisma.PrismaClientKnownRequestError("Record not found", {
+          code: "P2025",
+          clientVersion: "test",
+        })
+      );
+      await expect(deleteActionClass("id4")).rejects.toThrow(DatabaseError);
+    });
+
     test("should rethrow unknown errors", async () => {
       if (!prisma.actionClass.delete) prisma.actionClass.delete = vi.fn();
       const error = new Error("unknown");
@@ -255,7 +266,7 @@ describe("ActionClass Service", () => {
   });
 
   describe("updateActionClass", () => {
-    const updateInput: Partial<TActionClassInput> = {
+    const updateInput: TActionClassInput = {
       name: "Renamed Action",
       description: "updated desc",
       type: "code",

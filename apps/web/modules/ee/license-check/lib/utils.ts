@@ -1,5 +1,11 @@
 import "server-only";
-import { AUDIT_LOG_ENABLED, IS_FORMBRICKS_CLOUD, IS_RECAPTCHA_CONFIGURED } from "@/lib/constants";
+import {
+  AUDIT_LOG_ENABLED,
+  CLOUD_HOBBY_WORKSPACE_LIMIT,
+  COMMUNITY_WORKSPACE_LIMIT,
+  IS_FORMBRICKS_CLOUD,
+  IS_RECAPTCHA_CONFIGURED,
+} from "@/lib/constants";
 import { CLOUD_STRIPE_FEATURE_LOOKUP_KEYS } from "@/modules/billing/lib/stripe-catalog";
 import type { TEnterpriseLicenseFeatures } from "@/modules/ee/license-check/types/enterprise-license";
 import { hasOrganizationEntitlementWithLicenseGuard } from "@/modules/entitlements/lib/checks";
@@ -31,7 +37,13 @@ const getCustomPlanFeaturePermission = async (
   organizationId: string,
   featureKey: keyof Pick<
     TEnterpriseLicenseFeatures,
-    "accessControl" | "quotas" | "contacts" | "aiSmartTools" | "feedbackDirectories" | "dashboards"
+    | "accessControl"
+    | "quotas"
+    | "contacts"
+    | "aiSmartTools"
+    | "feedbackDirectories"
+    | "dashboards"
+    | "workflows"
   >
 ): Promise<boolean> => {
   if (IS_FORMBRICKS_CLOUD) {
@@ -42,6 +54,7 @@ const getCustomPlanFeaturePermission = async (
       aiSmartTools: CLOUD_STRIPE_FEATURE_LOOKUP_KEYS.AI_SMART_TOOLS,
       feedbackDirectories: CLOUD_STRIPE_FEATURE_LOOKUP_KEYS.FEEDBACK_DIRECTORIES,
       dashboards: CLOUD_STRIPE_FEATURE_LOOKUP_KEYS.DASHBOARDS,
+      workflows: CLOUD_STRIPE_FEATURE_LOOKUP_KEYS.WORKFLOWS,
     };
     const lookupKey = featureLookupKeyMap[featureKey];
     if (lookupKey) {
@@ -159,22 +172,38 @@ export const getIsDashboardsEnabled = async (organizationId: string): Promise<bo
   return getCustomPlanFeaturePermission(organizationId, "dashboards");
 };
 
+export const getIsWorkflowsEnabled = async (organizationId: string): Promise<boolean> => {
+  return getCustomPlanFeaturePermission(organizationId, "workflows");
+};
+
+export const getBulkInvitePermission = async (organizationId: string): Promise<boolean> => {
+  // Bulk invite is gated only on Formbricks Cloud (anti-spam, multi-tenant concern). Self-hosted
+  // keeps the original unrestricted behavior for every tier, including community.
+  if (!IS_FORMBRICKS_CLOUD) {
+    return true;
+  }
+
+  return hasOrganizationEntitlementWithLicenseGuard(
+    organizationId,
+    CLOUD_STRIPE_FEATURE_LOOKUP_KEYS.BULK_INVITE
+  );
+};
+
 export const getOrganizationWorkspacesLimit = async (organizationId: string): Promise<number> => {
   const entitlementsContext = await getOrganizationEntitlementsContext(organizationId);
 
   if (IS_FORMBRICKS_CLOUD) {
     const cloudLicenseAllowsLimits =
       entitlementsContext.licenseStatus === "active" || entitlementsContext.licenseStatus === "no-license";
-    if (!cloudLicenseAllowsLimits) return 3;
+    if (!cloudLicenseAllowsLimits) return CLOUD_HOBBY_WORKSPACE_LIMIT;
     return entitlementsContext.limits.workspaces ?? Infinity;
   }
 
-  if (
-    entitlementsContext.licenseStatus === "active" &&
-    entitlementsContext.licenseFeatures?.workspaces != null
-  ) {
-    return entitlementsContext.licenseFeatures.workspaces;
+  // `workspaces: null` on an active license means unlimited, mirroring the cloud branch above.
+  if (entitlementsContext.licenseStatus === "active" && entitlementsContext.licenseFeatures) {
+    return entitlementsContext.licenseFeatures.workspaces ?? Infinity;
   }
 
-  return 3;
+  // No active license (no-license / expired / invalid / unreachable) — Community Edition.
+  return COMMUNITY_WORKSPACE_LIMIT;
 };

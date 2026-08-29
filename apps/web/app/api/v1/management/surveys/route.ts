@@ -1,5 +1,4 @@
 import { logger } from "@formbricks/logger";
-import { DatabaseError } from "@formbricks/types/errors";
 import { ZSurveyCreateInputWithWorkspaceId } from "@formbricks/types/surveys/types";
 import { resolveBodyIds } from "@/app/api/v1/management/lib/workspace-resolver";
 import { checkFeaturePermissions } from "@/app/api/v1/management/surveys/lib/utils";
@@ -8,6 +7,11 @@ import {
   addLegacyProjectOverwritesToList,
   normaliseProjectOverwritesToWorkspace,
 } from "@/app/lib/api/api-backwards-compat";
+import { handleApiError } from "@/app/lib/api/handle-api-error";
+import {
+  addLegacyEnvironmentIdBestEffort,
+  addLegacyEnvironmentIdToList,
+} from "@/app/lib/api/legacy-environment-id";
 import { RequestBodyTooLargeError, parseJsonBodyWithLimit } from "@/app/lib/api/request-body";
 import { responses } from "@/app/lib/api/response";
 import {
@@ -47,16 +51,13 @@ export const GET = withV1ApiWrapper({
 
       return {
         response: responses.successResponse(
-          addLegacyProjectOverwritesToList(resolveStorageUrlsInObject(surveysWithQuestions))
+          await addLegacyEnvironmentIdToList(
+            addLegacyProjectOverwritesToList(resolveStorageUrlsInObject(surveysWithQuestions))
+          )
         ),
       };
     } catch (error) {
-      if (error instanceof DatabaseError) {
-        return {
-          response: responses.badRequestResponse(error.message),
-        };
-      }
-      throw error;
+      return handleApiError(error);
     }
   },
 });
@@ -151,17 +152,20 @@ export const POST = withV1ApiWrapper({
       }
 
       return {
+        // Best-effort, not strict: the insert has committed by now, so a failed workspace lookup here
+        // would return an error for a survey that exists. `Survey` has no unique constraint to dedup
+        // on, so a client retrying that false error creates a second survey.
         response: responses.successResponse(
-          addLegacyProjectOverwrites(resolveStorageUrlsInObject(withDerivedQuestions(survey)))
+          await addLegacyEnvironmentIdBestEffort(
+            addLegacyProjectOverwrites(resolveStorageUrlsInObject(withDerivedQuestions(survey)))
+          )
         ),
       };
     } catch (error) {
-      if (error instanceof DatabaseError) {
-        return {
-          response: responses.internalServerErrorResponse(error.message),
-        };
-      }
-      throw error;
+      // Invalid survey media (e.g. an unsupported/unparseable choice imageUrl) surfaces as an
+      // InvalidInputError, which handleApiError returns as a 400 with its message instead of a 500
+      // that would page Sentry. DatabaseError and unexpected errors become a generic, reported 500.
+      return handleApiError(error);
     }
   },
   action: "created",

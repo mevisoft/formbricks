@@ -5,6 +5,9 @@
     "light": "#00C4B8",
     "primary": "#00C4B8"
   },
+  "contextual": {
+    "options": ["copy", "view", "chatgpt", "claude", "perplexity"]
+  },
   "errors": {
     "404": {
       "redirect": true
@@ -48,12 +51,18 @@
         "groups": [
           {
             "group": "Overview",
-            "pages": ["platform/introduction", "platform/what-is-formbricks", "platform/open-source"]
+            "pages": [
+              "platform/introduction",
+              "platform/what-is-formbricks",
+              "platform/open-source",
+              "platform/accessibility"
+            ]
           },
           {
             "group": "Platform Features",
             "pages": [
               "platform/features/ai-features",
+              "platform/features/contacts",
               {
                 "group": "Integrations",
                 "icon": "bridge",
@@ -94,7 +103,7 @@
         "groups": [
           {
             "group": "Overview",
-            "pages": ["surveys/overview"]
+            "pages": ["surveys/overview", "surveys/analysis/reading-results"]
           },
           {
             "group": "Survey Features",
@@ -108,6 +117,7 @@
                   "surveys/general-features/overwrite-styling",
                   "surveys/general-features/hidden-fields",
                   "surveys/general-features/limit-submissions",
+                  "surveys/general-features/survey-scheduling",
                   "surveys/general-features/multi-language-surveys",
                   "surveys/general-features/partial-submissions",
                   "surveys/general-features/recall",
@@ -161,9 +171,11 @@
                     "icon": "wrench",
                     "pages": [
                       "surveys/website-app-surveys/actions",
-                      "surveys/website-app-surveys/advanced-targeting",
                       "surveys/website-app-surveys/user-identification",
+                      "surveys/website-app-surveys/attribute-based-targeting",
                       "surveys/website-app-surveys/recontact",
+                      "surveys/website-app-surveys/cooldown-period",
+                      "surveys/website-app-surveys/survey-display-logic",
                       "surveys/website-app-surveys/show-survey-to-percent-of-users"
                     ]
                   }
@@ -174,8 +186,10 @@
                 "icon": "question",
                 "pages": [
                   "surveys/question-type/address",
+                  "surveys/question-type/ces",
                   "surveys/question-type/consent",
                   "surveys/question-type/contact-info",
+                  "surveys/question-type/csat",
                   "surveys/question-type/date",
                   "surveys/question-type/file-upload",
                   "surveys/question-type/free-text",
@@ -187,7 +201,8 @@
                   "surveys/question-type/select-multiple",
                   "surveys/question-type/select-picture",
                   "surveys/question-type/select-single",
-                  "surveys/question-type/statement-cta"
+                  "surveys/question-type/statement-cta",
+                  "surveys/question-type/thank-you-card"
                 ]
               }
             ]
@@ -207,11 +222,12 @@
               "surveys/best-practices/pmf-survey",
               "surveys/best-practices/quiz-time",
               "surveys/best-practices/improve-trial-cr",
-              "surveys/best-practices/research-panel"
+              "surveys/best-practices/research-panel",
+              "surveys/best-practices/google-reviews"
             ]
           }
         ],
-        "tab": "Surveys"
+        "tab": "Surveys (Ask)"
       },
       {
         "groups": [
@@ -222,10 +238,18 @@
           {
             "group": "Unify Feedback Features",
             "pages": [
-              "unify-feedback/feedback-directories",
+              "unify-feedback/feedback-datasets",
               "unify-feedback/feedback-sources",
               "unify-feedback/feedback-records",
-              "unify-feedback/dashboards-charts",
+              "unify-feedback/enrichment",
+              {
+                "group": "Dashboards & Charts",
+                "icon": "chart-line",
+                "pages": [
+                  "unify-feedback/dashboards-charts",
+                  "unify-feedback/dashboards-charts/creating-your-first-charts"
+                ]
+              },
               "unify-feedback/topics-subtopics"
             ]
           },
@@ -250,7 +274,20 @@
             "pages": ["unify-feedback/formbricks-hub"]
           }
         ],
-        "tab": "Unify Feedback"
+        "tab": "Unify Feedback (Analyze)"
+      },
+      {
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": ["workflows/overview"]
+          },
+          {
+            "group": "Workflow Features",
+            "pages": ["workflows/build", "workflows/manage-and-monitor"]
+          }
+        ],
+        "tab": "Workflows (Act)"
       },
       {
         "groups": [
@@ -271,8 +308,10 @@
           {
             "group": "Configuration",
             "pages": [
+              "self-hosting/configuration",
               "self-hosting/configuration/custom-ssl",
               "self-hosting/configuration/environment-variables",
+              "self-hosting/configuration/job-runner",
               "self-hosting/configuration/smtp",
               "self-hosting/configuration/file-uploads",
               "self-hosting/configuration/domain-configuration",
@@ -287,13 +326,15 @@
                   "self-hosting/configuration/auth-sso/keycloak-oidc",
                   "self-hosting/configuration/auth-sso/azure-ad-oauth",
                   "self-hosting/configuration/auth-sso/google-oauth",
-                  "self-hosting/configuration/auth-sso/saml-sso"
+                  "self-hosting/configuration/auth-sso/saml-sso",
+                  "self-hosting/configuration/auth-sso/setup-saml-with-identity-providers"
                 ]
               },
               {
                 "group": "Integrations",
                 "icon": "bridge",
                 "pages": [
+                  "self-hosting/configuration/integrations",
                   "self-hosting/configuration/integrations/airtable",
                   "self-hosting/configuration/integrations/google-sheets",
                   "self-hosting/configuration/integrations/n8n",
@@ -309,6 +350,7 @@
             "group": "Advanced",
             "pages": [
               "self-hosting/advanced/migration",
+              "self-hosting/advanced/migrating-surveys",
               "self-hosting/advanced/license",
               "self-hosting/advanced/license-activation",
               {
@@ -324,7 +366,8 @@
                   "self-hosting/advanced/enterprise-features/audit-logging",
                   "self-hosting/advanced/enterprise-features/unify-feedback",
                   "self-hosting/advanced/enterprise-features/dashboards",
-                  "self-hosting/advanced/enterprise-features/ai-features"
+                  "self-hosting/advanced/enterprise-features/ai-features",
+                  "self-hosting/advanced/enterprise-features/workflows"
                 ]
               },
               "self-hosting/advanced/rate-limiting"
@@ -338,16 +381,6 @@
           {
             "group": "Development",
             "pages": ["development/overview"]
-          },
-          {
-            "group": "Local Setup",
-            "pages": [
-              "development/local-setup/linux",
-              "development/local-setup/mac",
-              "development/local-setup/windows",
-              "development/local-setup/gitpod",
-              "development/local-setup/github-codespaces"
-            ]
           },
           {
             "group": "Technical Handbook",
@@ -394,31 +427,23 @@
                 "icon": "shield",
                 "pages": [
                   "development/standards/qa/code-reviews",
-                  "development/standards/qa/testing-methodology"
+                  "development/standards/qa/testing-methodology",
+                  "development/standards/qa/screen-reader-pass"
                 ]
               }
             ]
-          },
-          {
-            "group": "Contributions",
-            "pages": ["development/contribution/contribution"]
-          },
-          {
-            "group": "Guides",
-            "pages": [
-              {
-                "group": "Auth & Provision",
-                "icon": "user-shield",
-                "pages": ["development/guides/auth-and-provision/setup-saml-with-identity-providers"]
-              }
-            ]
-          },
-          {
-            "group": "Support",
-            "pages": ["development/support/troubleshooting"]
           }
         ],
         "tab": "Development"
+      },
+      {
+        "groups": [
+          {
+            "group": "MCP",
+            "pages": ["platform/mcp/overview", "platform/mcp/setup"]
+          }
+        ],
+        "tab": "MCP"
       },
       {
         "groups": [
@@ -449,6 +474,42 @@
     ]
   },
   "redirects": [
+    {
+      "destination": "/docs/development/overview",
+      "source": "/docs/development/local-setup/linux"
+    },
+    {
+      "destination": "/docs/development/overview",
+      "source": "/docs/development/local-setup/mac"
+    },
+    {
+      "destination": "/docs/development/overview",
+      "source": "/docs/development/local-setup/windows"
+    },
+    {
+      "destination": "/docs/development/overview",
+      "source": "/docs/development/local-setup/gitpod"
+    },
+    {
+      "destination": "/docs/development/overview",
+      "source": "/docs/development/local-setup/github-codespaces"
+    },
+    {
+      "destination": "/docs/development/overview",
+      "source": "/docs/development/contribution/contribution"
+    },
+    {
+      "destination": "/docs/development/overview",
+      "source": "/docs/development/support/troubleshooting"
+    },
+    {
+      "destination": "/docs/self-hosting/configuration/auth-sso/setup-saml-with-identity-providers",
+      "source": "/docs/development/guides/auth-and-provision/setup-saml-with-identity-providers"
+    },
+    {
+      "destination": "/docs/unify-feedback/feedback-datasets",
+      "source": "/docs/unify-feedback/feedback-directories"
+    },
     {
       "destination": "/docs/platform/introduction",
       "source": "/docs/overview/introduction"
@@ -838,12 +899,16 @@
       "source": "/docs/app-surveys/actions"
     },
     {
-      "destination": "/docs/surveys/website-app-surveys/advanced-targeting",
+      "destination": "/docs/surveys/website-app-surveys/attribute-based-targeting",
       "source": "/docs/xm-and-surveys/surveys/website-app-surveys/advanced-targeting"
     },
     {
-      "destination": "/docs/surveys/website-app-surveys/advanced-targeting",
+      "destination": "/docs/surveys/website-app-surveys/attribute-based-targeting",
       "source": "/docs/app-surveys/advanced-targeting"
+    },
+    {
+      "destination": "/docs/surveys/website-app-surveys/attribute-based-targeting",
+      "source": "/docs/surveys/website-app-surveys/advanced-targeting"
     },
     {
       "destination": "/docs/surveys/website-app-surveys/user-identification",
@@ -1162,6 +1227,10 @@
       "source": "/docs/core-features/global/email-customization"
     },
     {
+      "destination": "/docs/self-hosting/configuration/job-runner",
+      "source": "/docs/self-hosting/configuration/workflow-runner"
+    },
+    {
       "destination": "/docs/self-hosting/setup/one-click",
       "source": "/docs/self-hosting/one-click"
     },
@@ -1206,7 +1275,7 @@
       "source": "/docs/developer-docs/rest-api"
     },
     {
-      "destination": "/docs/development/contribution/contribution",
+      "destination": "/docs/development/overview",
       "source": "/docs/developer-docs/contributing/get-started"
     },
     {
@@ -1214,7 +1283,7 @@
       "source": "/docs/api-docs"
     },
     {
-      "destination": "/docs/development/support/troubleshooting",
+      "destination": "/docs/development/overview",
       "source": "/docs/developer-docs/contributing/troubleshooting"
     }
   ],

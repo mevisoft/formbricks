@@ -16,7 +16,7 @@ export const DynamicPopupTab = ({ surveyId }: DynamicPopupTabProps) => {
 
   return (
     <div className="flex h-full flex-col justify-between gap-y-4" data-testid="dynamic-popup-container">
-      <Alert variant="info" size="default">
+      <Alert variant="info" size="default" role="status">
         <AlertTitle>{t("workspace.surveys.share.dynamic_popup.alert_title")}</AlertTitle>
         <AlertDescription>{t("workspace.surveys.share.dynamic_popup.alert_description")}</AlertDescription>
         <AlertButton asChild>
@@ -30,15 +30,15 @@ export const DynamicPopupTab = ({ surveyId }: DynamicPopupTabProps) => {
         links={[
           {
             title: t("workspace.surveys.share.dynamic_popup.attribute_based_targeting"),
-            href: "https://formbricks.com/docs/xm-and-surveys/surveys/website-app-surveys/advanced-targeting",
+            href: "https://formbricks.com/docs/surveys/website-app-surveys/advanced-targeting",
           },
           {
             title: t("workspace.surveys.share.dynamic_popup.code_no_code_triggers"),
-            href: "https://formbricks.com/docs/xm-and-surveys/surveys/website-app-surveys/actions",
+            href: "https://formbricks.com/docs/surveys/website-app-surveys/actions",
           },
           {
             title: t("workspace.surveys.share.dynamic_popup.recontact_options"),
-            href: "https://formbricks.com/docs/xm-and-surveys/surveys/website-app-surveys/recontact",
+            href: "https://formbricks.com/docs/surveys/website-app-surveys/recontact",
           },
         ]}
       />

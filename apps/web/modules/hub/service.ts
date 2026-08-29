@@ -2,52 +2,52 @@ import "server-only";
 import { createCacheKey } from "@formbricks/cache";
 import { logger } from "@formbricks/logger";
 import { cache } from "@/lib/cache";
-import { getHubClient } from "./hub-client";
+import { assertRepeatedArrayParams, getHubClient } from "./hub-client";
 import type {
+  CreateTaxonomyRunInput,
+  CreateTaxonomyRunResponse,
+  EnrichmentStatusResponse,
+  FeedbackRecordCountParams,
+  FeedbackRecordCountResponse,
   FeedbackRecordCreateParams,
   FeedbackRecordData,
   FeedbackRecordListParams,
   FeedbackRecordListResponse,
   FeedbackRecordUpdateParams,
+  ListTaxonomyRunsResponse,
+  RenameTaxonomyNodeInput,
   SemanticSearchInput,
   SemanticSearchResponse,
+  SimilarRecordsParams,
+  SimilarRecordsResponse,
+  TaxonomyFieldsResponse,
+  TaxonomyNode,
+  TaxonomyNodeRecordsResponse,
+  TaxonomyRecordCountsResponse,
+  TaxonomyRun,
+  TaxonomyScopeInput,
+  TaxonomyTreeResponse,
 } from "./types";
-
-type HubError = { status: number; message: string; detail: string };
+import {
+  type HubError,
+  type HubResult,
+  NO_CONFIG_ERROR,
+  createHubResultFromError,
+  getErrorStatus,
+  getHubErrorHint,
+} from "./utils";
 
 export type HubFeedbackRecordResult = {
   data: FeedbackRecordData | null;
   error: HubError | null;
 };
 
-const NO_CONFIG_ERROR = {
-  status: 0,
-  message: "HUB_API_KEY is not set; Hub integration is disabled.",
-  detail: "HUB_API_KEY is not set; Hub integration is disabled.",
-} as const;
-
-const getErrorMessage = (err: unknown): string => {
-  if (err instanceof Error) return err.message;
-  if (typeof err === "string") return err;
-  return "Unknown error";
-};
-
-// Duck-typed: `instanceof` against the SDK error class breaks under Next dev/Turbopack
-// when @formbricks/hub is loaded into more than one module scope.
-const getErrorStatus = (err: unknown): number =>
-  err && typeof err === "object" && typeof (err as { status?: unknown }).status === "number"
-    ? (err as { status: number }).status
-    : 0;
-
-const createResultFromError = (err: unknown): HubFeedbackRecordResult => {
-  const status = getErrorStatus(err);
-  const message = getErrorMessage(err);
-  return { data: null, error: { status, message, detail: message } };
-};
-
 /**
  * Create a single feedback record in the Hub.
  * Returns a result shape with data or error; logs failures.
+ *
+ * value_id (the stable id of the matched choice, ENG-1673) is sent through as-is:
+ * the deployed Hub accepts it, and the SDK forwards unknown fields untouched.
  */
 export const createFeedbackRecord = async (
   input: FeedbackRecordCreateParams
@@ -60,8 +60,11 @@ export const createFeedbackRecord = async (
     const data = await client.feedbackRecords.create(input);
     return { data, error: null };
   } catch (err) {
-    logger.warn({ err, fieldId: input.field_id }, "Hub: createFeedbackRecord failed");
-    return createResultFromError(err);
+    logger.warn(
+      { err, fieldId: input.field_id, hint: getHubErrorHint(err) },
+      "Hub: createFeedbackRecord failed"
+    );
+    return createHubResultFromError(err);
   }
 };
 
@@ -78,8 +81,8 @@ export const retrieveFeedbackRecord = async (id: string): Promise<HubFeedbackRec
     const data = await client.feedbackRecords.retrieve(id);
     return { data, error: null };
   } catch (err) {
-    logger.warn({ err, id }, "Hub: retrieveFeedbackRecord failed");
-    return createResultFromError(err);
+    logger.warn({ err, id, hint: getHubErrorHint(err) }, "Hub: retrieveFeedbackRecord failed");
+    return createHubResultFromError(err);
   }
 };
 
@@ -99,8 +102,8 @@ export const updateFeedbackRecord = async (
     const data = await client.feedbackRecords.update(id, input);
     return { data, error: null };
   } catch (err) {
-    logger.warn({ err, id }, "Hub: updateFeedbackRecord failed");
-    return createResultFromError(err);
+    logger.warn({ err, id, hint: getHubErrorHint(err) }, "Hub: updateFeedbackRecord failed");
+    return createHubResultFromError(err);
   }
 };
 
@@ -122,10 +125,10 @@ export const deleteFeedbackRecord = async (id: string): Promise<HubFeedbackRecor
     await client.feedbackRecords.delete(id);
     return { data: { deleted: true }, error: null };
   } catch (err) {
-    logger.warn({ err, id }, "Hub: deleteFeedbackRecord failed");
-    const status = getErrorStatus(err);
-    const message = getErrorMessage(err);
-    return { data: null, error: { status, message, detail: message } };
+    logger.warn({ err, id, hint: getHubErrorHint(err) }, "Hub: deleteFeedbackRecord failed");
+    // Via the shared helper so callers also get the Hub's problem members — an in-progress tenant purge
+    // arrives as a relayable, retryable 409 instead of an opaque failure.
+    return createHubResultFromError(err);
   }
 };
 
@@ -147,12 +150,18 @@ type TenantDataDeleteResponse = {
 };
 
 /**
- * Purge all Hub-owned data (feedback records, derived embeddings, webhooks) for a tenant.
- * Called when the owning organization is deleted so Hub-side rows don't become orphaned.
- * Idempotent on the Hub side; the caller treats failures as best-effort.
+ * Purge ALL Hub-owned data for a tenant: feedback records, derived embeddings, the tenant's entire
+ * taxonomy, its webhooks, and its settings. This is the offboarding purge — call it when the owning
+ * organization is deleted so Hub-side rows don't become orphaned, not to empty a dataset that stays
+ * in use (see `purgeHubFeedbackRecords` for that). Idempotent on the Hub side; the caller treats
+ * failures as best-effort.
  *
- * Hits `DELETE /v1/tenants/{tenant_id}/data` directly because the SDK doesn't yet expose
- * a typed method for this endpoint.
+ * Hits `DELETE /v1/tenants/{tenant_id}/data` directly rather than `client.tenants.deleteData()`
+ * purely to keep the call shape identical for both purge helpers; the typed SDK method exists.
+ *
+ * The Hub also returns per-table taxonomy counts. They are not surfaced because the only caller is
+ * the org-delete cascade, which logs nothing and acts on nothing — add them here if a caller ever
+ * needs to report what was removed.
  */
 export const deleteHubTenantData = async (tenantId: string): Promise<HubTenantDataDeleteResult> => {
   const client = getHubClient();
@@ -173,10 +182,53 @@ export const deleteHubTenantData = async (tenantId: string): Promise<HubTenantDa
       error: null,
     };
   } catch (err) {
-    logger.warn({ err, tenantId }, "Hub: deleteHubTenantData failed");
-    const status = getErrorStatus(err);
-    const message = getErrorMessage(err);
-    return { data: null, error: { status, message, detail: message } };
+    logger.warn({ err, tenantId, hint: getHubErrorHint(err) }, "Hub: deleteHubTenantData failed");
+    // Via the shared helper so callers get the Hub's problem members (`code`, `problemDetail`)
+    // rather than an opaque message — same reasoning as `deleteFeedbackRecord`.
+    return createHubResultFromError(err);
+  }
+};
+
+export type HubFeedbackRecordsPurgeResult = {
+  data: { tenantId: string; status: string } | null;
+  error: HubError | null;
+};
+
+type FeedbackRecordsPurgeResponse = {
+  tenant_id: string;
+  status: string;
+  message?: string;
+};
+
+/**
+ * Purge every feedback record for a tenant, everything derived from those records (embeddings and
+ * the enrichment stored on each record) and the taxonomy built on them. Unlike `deleteHubTenantData`
+ * it leaves the tenant's *configuration* — its webhooks and settings — in place, so the dataset
+ * stays usable and any integrator setup survives. This is the "empty this dataset" operation, not
+ * offboarding.
+ *
+ * Asynchronous on the Hub side: this returns once the purge has been *accepted*, not once it has
+ * run, so there is no deleted count to report and the records are still present when it resolves.
+ * `countFeedbackRecords` is how a caller can observe completion if it needs to. Safe to call
+ * repeatedly — a request while a purge is already running joins it.
+ *
+ * Hits `DELETE /v1/tenants/{tenant_id}/feedback-records` directly because the SDK has no typed
+ * method for it yet (added in hub#122; switch to the typed call after the next SDK release).
+ */
+export const purgeHubFeedbackRecords = async (tenantId: string): Promise<HubFeedbackRecordsPurgeResult> => {
+  const client = getHubClient();
+  if (!client) {
+    return { data: null, error: { ...NO_CONFIG_ERROR } };
+  }
+
+  try {
+    const data = await client.delete<FeedbackRecordsPurgeResponse>(
+      `/v1/tenants/${encodeURIComponent(tenantId)}/feedback-records`
+    );
+    return { data: { tenantId: data.tenant_id, status: data.status }, error: null };
+  } catch (err) {
+    logger.warn({ err, tenantId, hint: getHubErrorHint(err) }, "Hub: purgeHubFeedbackRecords failed");
+    return createHubResultFromError(err);
   }
 };
 
@@ -206,16 +258,57 @@ export const listFeedbackRecords = async (
     return { data: null, error: { ...NO_CONFIG_ERROR } };
   }
   try {
+    // Scoped here rather than in getHubClient(): only list/count send array-typed filters, so only they
+    // need to pay for (and fail loudly on) this check. Inside the try so a failure is the same relayed
+    // Hub error as any other, not an uncaught exception.
+    assertRepeatedArrayParams(client);
     const data = await client.feedbackRecords.list(params);
     return { data, error: null };
   } catch (err) {
-    logger.warn({ err }, "Hub: listFeedbackRecords failed");
-    const status = getErrorStatus(err);
-    const message = getErrorMessage(err);
-    return { data: null, error: { status, message, detail: message } };
+    logger.warn({ err, hint: getHubErrorHint(err) }, "Hub: listFeedbackRecords failed");
+    // Via the shared helper so callers also get the Hub's problem members (e.g. an invalid cursor or
+    // malformed since/until arrives as a relayable 400 rather than an opaque failure).
+    return createHubResultFromError(err);
   }
 };
 
+export type CountFeedbackRecordsResult = {
+  data: FeedbackRecordCountResponse | null;
+  error: HubError | null;
+};
+
+/**
+ * Total number of feedback records matching a filter set. The Hub takes the same filters as the list
+ * endpoint (minus pagination) and answers with just the count, so callers that only need "how many" don't
+ * page through records to find out.
+ */
+export const countFeedbackRecords = async (
+  params: FeedbackRecordCountParams
+): Promise<CountFeedbackRecordsResult> => {
+  const client = getHubClient();
+  if (!client) {
+    return { data: null, error: { ...NO_CONFIG_ERROR } };
+  }
+  try {
+    // See the matching comment in listFeedbackRecords: scoped to the two paths that send array filters.
+    assertRepeatedArrayParams(client);
+    const data = await client.feedbackRecords.count(params);
+    return { data, error: null };
+  } catch (err) {
+    logger.warn(
+      { err, tenantId: params.tenant_id, hint: getHubErrorHint(err) },
+      "Hub: countFeedbackRecords failed"
+    );
+    return createHubResultFromError(err);
+  }
+};
+
+/**
+ * Semantic (vector) search over a tenant's feedback records. Only available when the Hub has an embedding
+ * model configured — otherwise it fails with 503, which callers surface as an actionable message.
+ *
+ * The query text is never logged: it is caller-authored content.
+ */
 export const semanticSearchFeedbackRecords = async (
   input: SemanticSearchInput
 ): Promise<SemanticSearchFeedbackRecordsResult> => {
@@ -227,10 +320,50 @@ export const semanticSearchFeedbackRecords = async (
     const data = await client.feedbackRecords.search.performSemanticSearch(input);
     return { data, error: null };
   } catch (err) {
-    logger.warn({ err, tenantId: input.tenant_id }, "Hub: semanticSearchFeedbackRecords failed");
-    const status = getErrorStatus(err);
-    const message = getErrorMessage(err);
-    return { data: null, error: { status, message, detail: message } };
+    logger.warn(
+      { err, tenantId: input.tenant_id, hint: getHubErrorHint(err) },
+      "Hub: semanticSearchFeedbackRecords failed"
+    );
+    // Via the shared helper so the Hub's problem members survive — most importantly the 503 that says
+    // embeddings aren't configured, which would otherwise be indistinguishable from an outage.
+    return createHubResultFromError(err);
+  }
+};
+
+export type SimilarFeedbackRecordsResult = {
+  data: SimilarRecordsResponse | null;
+  error: HubError | null;
+};
+
+/**
+ * Nearest neighbours of one feedback record, by embedding similarity. The Hub derives the tenant from the
+ * record itself and applies no authorization, so callers MUST verify the record belongs to them first
+ * (see `requireOwnedFeedbackRecord`) — otherwise this reads across tenants.
+ *
+ * A 404 here means "no embedding for this record", not "no such record": the row may exist but not have
+ * been embedded yet (embedding is asynchronous, and records without text are never embedded).
+ */
+export const findSimilarFeedbackRecords = async (
+  id: string,
+  params: SimilarRecordsParams = {}
+): Promise<SimilarFeedbackRecordsResult> => {
+  const client = getHubClient();
+  if (!client) {
+    return { data: null, error: { ...NO_CONFIG_ERROR } };
+  }
+  try {
+    const data = await client.feedbackRecords.retrieveSimilar(id, params);
+    return { data, error: null };
+  } catch (err) {
+    // "No embedding for this record" is an expected state, not a fault: embedding is asynchronous and
+    // records without text are never embedded. Logged at debug so the normal case doesn't write a stack
+    // trace on every call — same treatment as a missing taxonomy tree below.
+    if (getErrorStatus(err) === 404) {
+      logger.debug({ id }, "Hub: no embedding for feedback record yet");
+    } else {
+      logger.warn({ err, id, hint: getHubErrorHint(err) }, "Hub: findSimilarFeedbackRecords failed");
+    }
+    return createHubResultFromError(err);
   }
 };
 
@@ -252,7 +385,7 @@ export const getFeedbackRecordTenant = async (recordId: string): Promise<Feedbac
 
     return { data, error: null };
   } catch (err) {
-    logger.warn({ err, recordId }, "Hub: getFeedbackRecordTenant failed");
+    logger.warn({ err, recordId, hint: getHubErrorHint(err) }, "Hub: getFeedbackRecordTenant failed");
     const status = getErrorStatus(err);
     const message = err instanceof Error ? err.message : String(err);
     return { data: null, error: { status, message, detail: message } };
@@ -279,10 +412,248 @@ export const createFeedbackRecordsBatch = async (
         const data = await client.feedbackRecords.create(input);
         return { data, error: null as HubFeedbackRecordResult["error"] };
       } catch (err) {
-        logger.warn({ err, fieldId: input.field_id }, "Hub: createFeedbackRecord failed");
-        return createResultFromError(err);
+        logger.warn(
+          { err, fieldId: input.field_id, hint: getHubErrorHint(err) },
+          "Hub: createFeedbackRecord failed"
+        );
+        return createHubResultFromError<FeedbackRecordData>(err);
       }
     })
   );
   return { results };
+};
+
+/**
+ * Per-tenant enrichment progress (translation, sentiment, emotions) — ENG-1670.
+ *
+ * A live query on the Hub side, so there is nothing to cache here: the caller polls it while work is
+ * outstanding and stops once nothing is pending.
+ */
+export const getEnrichmentStatus = async (tenantId: string): Promise<HubResult<EnrichmentStatusResponse>> => {
+  const client = getHubClient();
+  if (!client) {
+    return { data: null, error: { ...NO_CONFIG_ERROR } };
+  }
+
+  try {
+    const data = await client.enrichmentStatus.retrieve({ tenant_id: tenantId });
+    return { data, error: null };
+  } catch (err) {
+    logger.warn({ err, tenantId, hint: getHubErrorHint(err) }, "Hub: getEnrichmentStatus failed");
+    return createHubResultFromError(err);
+  }
+};
+
+export const listTaxonomyFields = async (tenantId: string): Promise<HubResult<TaxonomyFieldsResponse>> => {
+  const client = getHubClient();
+  if (!client) {
+    return { data: null, error: { ...NO_CONFIG_ERROR } };
+  }
+
+  try {
+    const data = await client.taxonomy.listFields({ tenant_id: tenantId });
+    return { data, error: null };
+  } catch (err) {
+    logger.warn({ err, tenantId, hint: getHubErrorHint(err) }, "Hub: listTaxonomyFields failed");
+    return createHubResultFromError(err);
+  }
+};
+
+export const createTaxonomyRun = async (
+  input: CreateTaxonomyRunInput
+): Promise<HubResult<CreateTaxonomyRunResponse>> => {
+  const client = getHubClient();
+  if (!client) {
+    return { data: null, error: { ...NO_CONFIG_ERROR } };
+  }
+
+  try {
+    const data = await client.taxonomy.runs.start(input);
+    return { data, error: null };
+  } catch (err) {
+    logger.warn(
+      {
+        err,
+        tenantId: input.tenant_id,
+        sourceType: input.source_type,
+        sourceId: input.source_id,
+        fieldId: input.field_id,
+        hint: getHubErrorHint(err),
+      },
+      "Hub: createTaxonomyRun failed"
+    );
+    return createHubResultFromError(err);
+  }
+};
+
+export const listTaxonomyRuns = async (
+  params: TaxonomyScopeInput & { limit?: number }
+): Promise<HubResult<ListTaxonomyRunsResponse>> => {
+  const client = getHubClient();
+  if (!client) {
+    return { data: null, error: { ...NO_CONFIG_ERROR } };
+  }
+
+  try {
+    const data = await client.taxonomy.runs.list(params);
+    return { data, error: null };
+  } catch (err) {
+    logger.warn(
+      { err, tenantId: params.tenant_id, hint: getHubErrorHint(err) },
+      "Hub: listTaxonomyRuns failed"
+    );
+    return createHubResultFromError(err);
+  }
+};
+
+export const getTaxonomyRun = async (runId: string, tenantId: string): Promise<HubResult<TaxonomyRun>> => {
+  const client = getHubClient();
+  if (!client) {
+    return { data: null, error: { ...NO_CONFIG_ERROR } };
+  }
+
+  try {
+    const data = await client.taxonomy.runs.retrieve(runId, { tenant_id: tenantId });
+    return { data, error: null };
+  } catch (err) {
+    // A run is polled every few seconds while it generates, so a 404 (the run was deleted, or the id is
+    // stale) would otherwise write a warning with a stack trace on every tick. It is a benign outcome —
+    // the v3 route returns a 404 of its own — so log it at debug, same as the missing tree below.
+    if (getErrorStatus(err) === 404) {
+      logger.debug({ runId, tenantId }, "Hub: taxonomy run not found");
+    } else {
+      logger.warn({ err, runId, tenantId, hint: getHubErrorHint(err) }, "Hub: getTaxonomyRun failed");
+    }
+    return createHubResultFromError(err);
+  }
+};
+
+export const getActiveTaxonomyTree = async (
+  scope: TaxonomyScopeInput
+): Promise<HubResult<TaxonomyTreeResponse>> => {
+  const client = getHubClient();
+  if (!client) {
+    return { data: null, error: { ...NO_CONFIG_ERROR } };
+  }
+
+  try {
+    const data = await client.taxonomy.runs.active.getTree(scope);
+    return { data, error: null };
+  } catch (err) {
+    if (getErrorStatus(err) === 404) {
+      logger.debug({ tenantId: scope.tenant_id }, "Hub: no active taxonomy tree yet");
+    } else {
+      logger.warn(
+        { err, tenantId: scope.tenant_id, hint: getHubErrorHint(err) },
+        "Hub: getActiveTaxonomyTree failed"
+      );
+    }
+    return createHubResultFromError(err);
+  }
+};
+
+export const getTaxonomyTree = async (
+  runId: string,
+  tenantId: string
+): Promise<HubResult<TaxonomyTreeResponse>> => {
+  const client = getHubClient();
+  if (!client) {
+    return { data: null, error: { ...NO_CONFIG_ERROR } };
+  }
+
+  try {
+    const data = await client.taxonomy.runs.getTree(runId, { tenant_id: tenantId });
+    return { data, error: null };
+  } catch (err) {
+    logger.warn({ err, runId, tenantId, hint: getHubErrorHint(err) }, "Hub: getTaxonomyTree failed");
+    return createHubResultFromError(err);
+  }
+};
+
+export const renameTaxonomyNode = async (
+  nodeId: string,
+  input: RenameTaxonomyNodeInput
+): Promise<HubResult<TaxonomyNode>> => {
+  const client = getHubClient();
+  if (!client) {
+    return { data: null, error: { ...NO_CONFIG_ERROR } };
+  }
+
+  try {
+    const data = await client.taxonomy.nodes.rename(nodeId, input);
+    return { data, error: null };
+  } catch (err) {
+    logger.warn(
+      { err, nodeId, tenantId: input.tenant_id, hint: getHubErrorHint(err) },
+      "Hub: renameTaxonomyNode failed"
+    );
+    return createHubResultFromError(err);
+  }
+};
+
+export const removeTaxonomyNode = async (
+  nodeId: string,
+  params: { tenant_id: string; actor_id: string }
+): Promise<HubResult<TaxonomyNode>> => {
+  const client = getHubClient();
+  if (!client) {
+    return { data: null, error: { ...NO_CONFIG_ERROR } };
+  }
+
+  try {
+    const data = await client.taxonomy.nodes.softRemove(nodeId, params);
+    return { data, error: null };
+  } catch (err) {
+    logger.warn(
+      { err, nodeId, tenantId: params.tenant_id, hint: getHubErrorHint(err) },
+      "Hub: removeTaxonomyNode failed"
+    );
+    return createHubResultFromError(err);
+  }
+};
+
+export const listTaxonomyNodeRecords = async (
+  nodeId: string,
+  params: { tenant_id: string; limit?: number }
+): Promise<HubResult<TaxonomyNodeRecordsResponse>> => {
+  const client = getHubClient();
+  if (!client) {
+    return { data: null, error: { ...NO_CONFIG_ERROR } };
+  }
+
+  try {
+    const data = await client.taxonomy.nodes.listRecords(nodeId, params);
+    return { data, error: null };
+  } catch (err) {
+    logger.warn(
+      { err, nodeId, tenantId: params.tenant_id, hint: getHubErrorHint(err) },
+      "Hub: listTaxonomyNodeRecords failed"
+    );
+    return createHubResultFromError(err);
+  }
+};
+
+/**
+ * Per-node distinct feedback-record counts (subtree totals) for a taxonomy run — one entry per visible
+ * node. Feeds the tree/records count badges.
+ */
+export const listTaxonomyNodeRecordCounts = async (
+  runId: string,
+  tenantId: string
+): Promise<HubResult<TaxonomyRecordCountsResponse>> => {
+  const client = getHubClient();
+  if (!client) {
+    return { data: null, error: { ...NO_CONFIG_ERROR } };
+  }
+
+  try {
+    const data = await client.taxonomy.runs.retrieveRecordCounts(runId, { tenant_id: tenantId });
+    return { data, error: null };
+  } catch (err) {
+    logger.warn(
+      { err, runId, tenantId, hint: getHubErrorHint(err) },
+      "Hub: listTaxonomyNodeRecordCounts failed"
+    );
+    return createHubResultFromError(err);
+  }
 };

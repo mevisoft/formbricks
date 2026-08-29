@@ -1,6 +1,6 @@
-import { IdentityProvider, Prisma } from "@prisma/client";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { prisma } from "@formbricks/database";
+import { IdentityProvider, Prisma } from "@formbricks/database/prisma";
 import { PrismaErrorType } from "@formbricks/database/types/error";
 import { DatabaseError, ResourceNotFoundError } from "@formbricks/types/errors";
 import { TOrganization } from "@formbricks/types/organizations";
@@ -34,11 +34,14 @@ describe("User Service", () => {
     vi.clearAllMocks();
   });
 
+  // Shaped as the `publicUserSelect` payload the service actually returns (no sensitive
+  // columns). Asserted to the full Prisma `User` row so the select-unaware vitest mocks accept
+  // it, while keeping the sensitive keys absent so the `not.toHaveProperty` checks below hold.
   const mockPrismaUser = {
     id: "user1",
     name: "Test User",
     email: "test@example.com",
-    emailVerified: new Date(),
+    emailVerified: true,
     createdAt: new Date(),
     updatedAt: new Date(),
     twoFactorEnabled: false,
@@ -51,7 +54,7 @@ describe("User Service", () => {
     locale: "en-US" as TUserLocale,
     lastLoginAt: new Date(),
     isActive: true,
-  };
+  } as Prisma.UserGetPayload<object>;
 
   const mockOrganizations: TOrganization[] = [
     {
@@ -183,7 +186,7 @@ describe("User Service", () => {
 
     test("should throw ResourceNotFoundError when user not found", async () => {
       const prismaError = new Prisma.PrismaClientKnownRequestError("Record not found", {
-        code: PrismaErrorType.RecordDoesNotExist,
+        code: PrismaErrorType.RecordNotFound,
         clientVersion: "5.0.0",
       });
       vi.mocked(prisma.user.update).mockRejectedValue(prismaError);

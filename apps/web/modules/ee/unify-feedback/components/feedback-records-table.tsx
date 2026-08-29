@@ -1,24 +1,17 @@
 "use client";
 
+import { useQueryClient } from "@tanstack/react-query";
 import { TFunction } from "i18next";
-import {
-  CalendarIcon,
-  ChevronDownIcon,
-  HashIcon,
-  MessageSquareTextIcon,
-  PlusIcon,
-  RefreshCwIcon,
-  ToggleLeftIcon,
-  TypeIcon,
-} from "lucide-react";
+import { ChevronDownIcon, MessageSquareTextIcon, PlusIcon, RefreshCwIcon } from "lucide-react";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import toast from "react-hot-toast";
 import { useTranslation } from "react-i18next";
 import type { TFeedbackSourceFieldMapping } from "@formbricks/types/feedback-source";
-import { listFeedbackRecordsAction } from "@/lib/feedback-source/actions";
+import { getFeedbackRecordContactsAction, listFeedbackRecordsAction } from "@/lib/feedback-source/actions";
 import { formatDateForDisplay, formatDateTimeForDisplay } from "@/lib/utils/datetime";
 import { getFormattedErrorMessage } from "@/lib/utils/helper";
+import { enrichmentStatusKeys } from "@/modules/ee/unify-feedback/enrichment-status/lib/query";
 import type { FeedbackRecordData } from "@/modules/hub/types";
 import { Badge } from "@/modules/ui/components/badge";
 import { Button } from "@/modules/ui/components/button";
@@ -28,67 +21,81 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/modules/ui/components/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/modules/ui/components/tooltip";
 import { deleteFeedbackRecordAction } from "../actions";
-import { formatSourceType } from "../lib/utils";
+import { FieldTypeIcon } from "../lib/field-type-icons";
+import { formatFieldType, formatSourceType, resolveFeedbackDisplayText } from "../lib/utils";
 import { CsvImportModal } from "../sources/components/csv-import-modal";
 import { FeedbackRecordFormDrawer } from "./feedback-record-form-drawer";
 import { FeedbackRecordsTableToolbarLeft } from "./feedback-records-table-toolbar-left";
+import { TranslatedBadge } from "./translated-badge";
 
 const RECORDS_PER_PAGE = 50;
+// Must not exceed the getFeedbackRecordContactsAction input cap (`userIds` is `.max(1000)`).
+const CONTACT_RESOLVE_BATCH_SIZE = 1000;
 
-const FIELD_TYPE_ICONS: Record<string, React.ReactNode> = {
-  text: <TypeIcon className="size-3.5" />,
-  categorical: <HashIcon className="size-3.5" />,
-  nps: <HashIcon className="size-3.5" />,
-  csat: <HashIcon className="size-3.5" />,
-  ces: <HashIcon className="size-3.5" />,
-  rating: <HashIcon className="size-3.5" />,
-  number: <HashIcon className="size-3.5" />,
-  boolean: <ToggleLeftIcon className="size-3.5" />,
-  date: <CalendarIcon className="size-3.5" />,
-};
-
-const formatValue = (record: FeedbackRecordData, t: TFunction, locale: string): string => {
-  if (record.value_text != null) return record.value_text;
+// resolvedText (translation-preferred) is computed once by the caller; null falls through to other types.
+const formatValue = (
+  record: FeedbackRecordData,
+  resolvedText: string | null,
+  t: TFunction,
+  locale: string
+): string => {
+  if (resolvedText != null) return resolvedText;
   if (record.value_number != null) return String(record.value_number);
   if (record.value_boolean != null) return record.value_boolean ? t("common.yes") : t("common.no");
   if (record.value_date != null) return formatDateForDisplay(new Date(record.value_date), locale);
   return "—";
 };
 
-function truncate(str: string, maxLen: number): string {
-  if (str.length <= maxLen) return str;
-  return str.slice(0, maxLen) + "…";
-}
-
 interface FeedbackRecordsTableProps {
   workspaceId: string;
   initialRecords: FeedbackRecordData[];
   initialCursors: Record<string, string>;
+  initialContactIdByUserId: Record<string, string>;
   frdMap: Record<string, string>;
   csvSources: { id: string; name: string; fieldMappings: TFeedbackSourceFieldMapping[] }[];
   canWrite: boolean;
+  /** Owners/managers only — records are directory-level, not workspace-level (ENG-1770). */
+  canDeleteRecords: boolean;
+}
+
+interface FeedbackRecordRowProps {
+  record: FeedbackRecordData;
+  workspaceId: string;
+  contactId?: string;
+  locale: string;
+  t: TFunction;
+  isSelectable: boolean;
+  isSelected: boolean;
+  onSelectChange: (checked: boolean) => void;
+  onClick: () => void;
 }
 
 export const FeedbackRecordsTable = ({
   workspaceId,
   initialRecords,
   initialCursors,
+  initialContactIdByUserId,
   frdMap,
   csvSources,
   canWrite,
+  canDeleteRecords,
 }: Readonly<FeedbackRecordsTableProps>) => {
   const { t, i18n } = useTranslation();
+  // Reaches the same query client as the enrichment-status banner (provided above this table by
+  // `feedback-records-page-client.tsx`), so a CSV import here can invalidate that read instead of
+  // leaving it stale until a manual reload — see EnrichmentStatus's doc comment.
+  const queryClient = useQueryClient();
   const [records, setRecords] = useState<FeedbackRecordData[]>(initialRecords);
   const [cursors, setCursors] = useState<Record<string, string>>(initialCursors);
+  const [contactIdByUserId, setContactIdByUserId] =
+    useState<Record<string, string>>(initialContactIdByUserId);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [drawerMode, setDrawerMode] = useState<"create" | "edit">("edit");
   const [drawerRecordId, setDrawerRecordId] = useState<string | undefined>();
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [csvImportSource, setCsvImportSource] = useState<{
@@ -164,10 +171,12 @@ export const FeedbackRecordsTable = ({
 
     const firstFailure = results.find((result) => !result?.data);
     if (firstFailure) {
+      // getFormattedErrorMessage returns "" (not nullish) when the action failed without a
+      // serverError, so `??` never reached the fallback and the user got a blank error.
       return {
         ok: false,
         errorMessage:
-          getFormattedErrorMessage(firstFailure) ?? t("workspace.unify.failed_to_load_feedback_records"),
+          getFormattedErrorMessage(firstFailure) || t("workspace.unify.failed_to_load_feedback_records"),
       };
     }
 
@@ -183,6 +192,31 @@ export const FeedbackRecordsTable = ({
 
     return { ok: true, records: fetchedRecords, newCursors };
   };
+
+  // Resolve any not-yet-known user_ids from a freshly fetched page to contact ids. Chunked to stay
+  // within the action's input cap, and failures are swallowed since contact links are a non-critical
+  // enhancement — the records still render without them.
+  const resolveContactsForRecords = useCallback(
+    async (recs: FeedbackRecordData[]) => {
+      const missing = [
+        ...new Set(recs.map((record) => record.user_id).filter((id): id is string => Boolean(id))),
+      ].filter((id) => !(id in contactIdByUserId));
+      if (missing.length === 0) return;
+
+      try {
+        for (let i = 0; i < missing.length; i += CONTACT_RESOLVE_BATCH_SIZE) {
+          const batch = missing.slice(i, i + CONTACT_RESOLVE_BATCH_SIZE);
+          const result = await getFeedbackRecordContactsAction({ workspaceId, userIds: batch });
+          if (result?.data) {
+            setContactIdByUserId((prev) => ({ ...prev, ...result.data }));
+          }
+        }
+      } catch {
+        // Ignore — contact deep-links are best-effort.
+      }
+    },
+    [contactIdByUserId, workspaceId]
+  );
 
   const handleRefresh = async () => {
     if (isRefreshing || isLoadingMore) return;
@@ -204,6 +238,16 @@ export const FeedbackRecordsTable = ({
     setSelectedIds(new Set());
     setIsRefreshing(false);
     toast.success(t("workspace.unify.feedback_records_refreshed"), { id: toastId });
+    void resolveContactsForRecords(mergedRecords);
+  };
+
+  // A CSV import creates records this list and the enrichment-status banner above it don't know
+  // about yet — neither refetches on its own. Refresh the list the same way the manual Refresh
+  // button does, and invalidate the banner's read so its next poll (or mount) picks up the new
+  // backlog instead of staying dark until someone reloads the page.
+  const handleImportComplete = () => {
+    void handleRefresh();
+    void queryClient.invalidateQueries({ queryKey: enrichmentStatusKeys.all });
   };
 
   const handleLoadMore = async () => {
@@ -223,11 +267,12 @@ export const FeedbackRecordsTable = ({
     );
     setCursors(result.newCursors);
     setIsLoadingMore(false);
+    void resolveContactsForRecords(result.records);
   };
 
   if (error) {
     return (
-      <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
+      <div className="rounded-xl border border-slate-200 bg-white shadow-xs">
         <div className="flex h-48 flex-col items-center justify-center gap-3 px-4 text-center">
           <MessageSquareTextIcon className="size-8 text-slate-400" />
           <p className="text-sm text-slate-500">{error}</p>
@@ -243,7 +288,7 @@ export const FeedbackRecordsTable = ({
 
   const handleBulkDelete = async () => {
     const ids = Array.from(selectedIds);
-    if (ids.length === 0) return;
+    if (ids.length === 0 || !canDeleteRecords) return;
     setIsDeleting(true);
     const CHUNK_SIZE = 5;
     const failedIds: string[] = [];
@@ -291,15 +336,8 @@ export const FeedbackRecordsTable = ({
     }
   };
 
-  const openEditDrawer = (recordId: string) => {
-    setDrawerMode("edit");
+  const openViewDrawer = (recordId: string) => {
     setDrawerRecordId(recordId);
-    setIsDrawerOpen(true);
-  };
-
-  const openCreateDrawer = () => {
-    setDrawerMode("create");
-    setDrawerRecordId(undefined);
     setIsDrawerOpen(true);
   };
 
@@ -324,40 +362,30 @@ export const FeedbackRecordsTable = ({
             onBulkDelete={() => setIsBulkDeleteDialogOpen(true)}
           />
           <div className="flex items-center gap-2">
-            {canWrite &&
-              (hasCsvSources ? (
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button size="sm" variant="secondary">
-                      <PlusIcon className="size-4" />
-                      {t("workspace.unify.add_feedback_record")}
-                      <ChevronDownIcon className="size-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem onClick={openCreateDrawer}>
-                      {t("workspace.unify.add_feedback_record")}
+            {canWrite && hasCsvSources && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button size="sm" variant="secondary">
+                    <PlusIcon className="size-4" />
+                    {t("workspace.unify.import_feedback")}
+                    <ChevronDownIcon className="size-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  {csvSources.map((source) => (
+                    <DropdownMenuItem
+                      key={source.id}
+                      onClick={() => {
+                        setCsvImportSource(source);
+                      }}>
+                      {t("workspace.unify.import_via_source_name", { sourceName: source.name })}
                     </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    {csvSources.map((source) => (
-                      <DropdownMenuItem
-                        key={source.id}
-                        onClick={() => {
-                          setCsvImportSource(source);
-                        }}>
-                        {t("workspace.unify.import_via_source_name", { sourceName: source.name })}
-                      </DropdownMenuItem>
-                    ))}
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              ) : (
-                <Button size="sm" variant="secondary" onClick={openCreateDrawer}>
-                  <PlusIcon className="size-4" />
-                  {t("workspace.unify.add_feedback_record")}
-                </Button>
-              ))}
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
             <Button size="sm" asChild>
-              <Link href={`/workspaces/${workspaceId}/settings/workspace/feedback-sources`}>
+              <Link href={`/workspaces/${workspaceId}/unify/sources`}>
                 {t("workspace.unify.manage_feedback_sources")}
               </Link>
             </Button>
@@ -372,31 +400,43 @@ export const FeedbackRecordsTable = ({
           </div>
         </div>
 
-        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xs">
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[900px]">
+            <table className="w-full min-w-[1040px] table-fixed">
+              <colgroup>
+                {canDeleteRecords && <col className="w-10" />}
+                <col className="w-40" />
+                <col className="w-40" />
+                <col className="w-40" />
+                <col className="w-52" />
+                <col className="w-28" />
+                <col />
+                <col className="w-44" />
+              </colgroup>
               <thead>
                 <tr className="border-b border-slate-200 text-left text-sm text-slate-900 [&>th]:font-semibold">
-                  <th className="w-10 px-4 py-3">
-                    <Checkbox
-                      aria-label={t("common.select_all")}
-                      checked={headerCheckboxChecked}
-                      onCheckedChange={(checked) => toggleAllOnPage(checked === true)}
-                    />
-                  </th>
-                  <th className="whitespace-nowrap px-4 py-3">{t("workspace.unify.collected_at")}</th>
-                  <th className="whitespace-nowrap px-4 py-3">{t("workspace.unify.source_type")}</th>
-                  <th className="whitespace-nowrap px-4 py-3">{t("workspace.unify.source_name")}</th>
-                  <th className="whitespace-nowrap px-4 py-3">{t("workspace.unify.field_label")}</th>
-                  <th className="whitespace-nowrap px-4 py-3">{t("workspace.unify.field_type")}</th>
-                  <th className="whitespace-nowrap px-4 py-3">{t("workspace.unify.value")}</th>
-                  <th className="whitespace-nowrap px-4 py-3">{t("workspace.unify.user_identifier")}</th>
+                  {canDeleteRecords && (
+                    <th className="w-10 px-4 py-3">
+                      <Checkbox
+                        aria-label={t("common.select_all")}
+                        checked={headerCheckboxChecked}
+                        onCheckedChange={(checked) => toggleAllOnPage(checked === true)}
+                      />
+                    </th>
+                  )}
+                  <th className="px-4 py-3 whitespace-nowrap">{t("workspace.unify.collected_at")}</th>
+                  <th className="px-4 py-3 whitespace-nowrap">{t("workspace.unify.source_type")}</th>
+                  <th className="px-4 py-3 whitespace-nowrap">{t("workspace.unify.source_name")}</th>
+                  <th className="px-4 py-3 whitespace-nowrap">{t("workspace.unify.field_label")}</th>
+                  <th className="px-4 py-3 whitespace-nowrap">{t("workspace.unify.field_type")}</th>
+                  <th className="px-4 py-3 whitespace-nowrap">{t("workspace.unify.value")}</th>
+                  <th className="px-4 py-3 whitespace-nowrap">{t("workspace.unify.user_identifier")}</th>
                 </tr>
               </thead>
               {isEmpty ? (
                 <tbody>
                   <tr>
-                    <td colSpan={8}>
+                    <td colSpan={canDeleteRecords ? 8 : 7}>
                       <div className="flex h-32 items-center justify-center">
                         <p className="text-sm text-slate-500">{t("workspace.unify.no_feedback_records")}</p>
                       </div>
@@ -410,11 +450,13 @@ export const FeedbackRecordsTable = ({
                       key={record.id}
                       record={record}
                       workspaceId={workspaceId}
+                      contactId={record.user_id ? contactIdByUserId[record.user_id] : undefined}
                       locale={i18n.resolvedLanguage ?? i18n.language ?? "en-US"}
                       t={t}
+                      isSelectable={canDeleteRecords}
                       isSelected={selectedIds.has(record.id)}
                       onSelectChange={(checked) => toggleOne(record.id, checked)}
-                      onClick={() => openEditDrawer(record.id)}
+                      onClick={() => openViewDrawer(record.id)}
                     />
                   ))}
                 </tbody>
@@ -438,13 +480,12 @@ export const FeedbackRecordsTable = ({
       </div>
 
       <FeedbackRecordFormDrawer
-        mode={drawerMode}
         open={isDrawerOpen}
         onOpenChange={setIsDrawerOpen}
         workspaceId={workspaceId}
         directories={directories}
-        canWrite={canWrite}
-        recordId={drawerMode === "edit" ? drawerRecordId : undefined}
+        canDelete={canDeleteRecords}
+        recordId={drawerRecordId}
         onSuccess={handleRefresh}
       />
 
@@ -468,6 +509,7 @@ export const FeedbackRecordsTable = ({
           feedbackSourceId={csvImportSource.id}
           workspaceId={workspaceId}
           fieldMappings={csvImportSource.fieldMappings}
+          onImportComplete={handleImportComplete}
         />
       )}
     </>
@@ -477,29 +519,25 @@ export const FeedbackRecordsTable = ({
 const FeedbackRecordRow = ({
   record,
   workspaceId,
+  contactId,
   locale,
   t,
+  isSelectable,
   isSelected,
   onSelectChange,
   onClick,
-}: {
-  record: FeedbackRecordData;
-  workspaceId: string;
-  locale: string;
-  t: TFunction;
-  isSelected: boolean;
-  onSelectChange: (checked: boolean) => void;
-  onClick: () => void;
-}) => {
-  const value = formatValue(record, t, locale);
+}: Readonly<FeedbackRecordRowProps>) => {
+  const { text, isTranslated, original, langKey } = resolveFeedbackDisplayText(record);
+  const value = formatValue(record, text, t, locale);
   const isLongValue = value.length > 60;
+  const collectedAt = formatDateTimeForDisplay(new Date(record.collected_at), locale);
   const isFormbricksSurveySource =
     (record.source_type === "formbricks" || record.source_type === "formbricks_survey") && !!record.source_id;
   const surveySummaryHref = `/workspaces/${workspaceId}/surveys/${record.source_id}/summary`;
 
   return (
     <tr
-      className={`cursor-pointer text-sm text-slate-700 transition-colors focus-within:bg-slate-50 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 ${isSelected ? "bg-slate-50" : ""}`}
+      className={`cursor-pointer text-sm text-slate-700 transition-colors focus-within:bg-slate-50 hover:bg-slate-50 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-slate-400 ${isSelected ? "bg-slate-50" : ""}`}
       tabIndex={0}
       aria-label={record.field_label ?? record.field_id}
       aria-selected={isSelected}
@@ -510,61 +548,80 @@ const FeedbackRecordRow = ({
           onClick();
         }
       }}>
-      <td
-        className="w-10 px-4 py-3"
-        onClick={(event) => event.stopPropagation()}
-        onKeyDown={(event) => event.stopPropagation()}>
-        <Checkbox
-          aria-label={record.field_label ?? record.field_id}
-          checked={isSelected}
-          onCheckedChange={(checked) => onSelectChange(checked === true)}
+      {isSelectable && (
+        <td
+          className="w-10 px-4 py-3"
+          onClick={(event) => event.stopPropagation()}
+          onKeyDown={(event) => event.stopPropagation()}>
+          <Checkbox
+            aria-label={record.field_label ?? record.field_id}
+            checked={isSelected}
+            onCheckedChange={(checked) => onSelectChange(checked === true)}
+          />
+        </td>
+      )}
+      <td className="px-4 py-3 text-slate-500" title={collectedAt}>
+        <span className="block min-w-0 truncate">{collectedAt}</span>
+      </td>
+      <td className="px-4 py-3" title={formatSourceType(record.source_type, t)}>
+        <Badge
+          text={formatSourceType(record.source_type, t)}
+          type="gray"
+          size="tiny"
+          className="inline-block max-w-40 truncate align-middle"
         />
       </td>
-      <td className="whitespace-nowrap px-4 py-3 text-slate-500">
-        {formatDateTimeForDisplay(new Date(record.collected_at), locale)}
-      </td>
-      <td className="whitespace-nowrap px-4 py-3">
-        <Badge text={formatSourceType(record.source_type, t)} type="gray" size="tiny" />
-      </td>
-      <td className="max-w-[150px] truncate px-4 py-3" title={record.source_name ?? undefined}>
+      <td className="px-4 py-3" title={record.source_name ?? undefined}>
         {isFormbricksSurveySource ? (
           <Link
             href={surveySummaryHref}
-            className="text-slate-700 underline underline-offset-2 hover:text-slate-900"
+            className="block min-w-0 truncate text-slate-700 underline underline-offset-2 hover:text-slate-900"
             onClick={(event) => event.stopPropagation()}>
             {record.source_name ?? "—"}
           </Link>
         ) : (
-          <span>{record.source_name ?? "—"}</span>
+          <span className="block min-w-0 truncate">{record.source_name ?? "—"}</span>
         )}
       </td>
-      <td className="max-w-[200px] truncate px-4 py-3" title={record.field_label ?? undefined}>
-        {record.field_label ?? record.field_id}
+      <td className="px-4 py-3" title={record.field_label ?? undefined}>
+        <span className="block min-w-0 truncate">{record.field_label ?? record.field_id}</span>
       </td>
-      <td className="whitespace-nowrap px-4 py-3">
+      <td className="px-4 py-3 whitespace-nowrap">
         <span className="inline-flex items-center gap-1 text-slate-600">
-          {FIELD_TYPE_ICONS[record.field_type] ?? <HashIcon className="size-3.5" />}
-          {record.field_type}
+          <FieldTypeIcon fieldType={record.field_type} className="size-3.5" />
+          {formatFieldType(record.field_type)}
         </span>
       </td>
-      <td className="max-w-[250px] px-4 py-3">
-        {isLongValue ? (
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span className="cursor-default truncate">{truncate(value, 60)}</span>
-              </TooltipTrigger>
-              <TooltipContent side="top" className="max-w-sm whitespace-pre-wrap">
-                {value}
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-        ) : (
-          <span>{value}</span>
-        )}
+      <td className="px-4 py-3" title={value}>
+        <div className="flex min-w-0 items-center gap-1.5">
+          {isLongValue ? (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="block min-w-0 cursor-default truncate">{value}</span>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="max-w-sm whitespace-pre-wrap">
+                  {value}
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          ) : (
+            <span className="block min-w-0 truncate">{value}</span>
+          )}
+          {isTranslated && <TranslatedBadge langKey={langKey} original={original} locale={locale} />}
+        </div>
       </td>
-      <td className="max-w-[120px] truncate px-4 py-3 text-slate-500" title={record.user_id}>
-        {record.user_id ?? "—"}
+      <td className="px-4 py-3 text-slate-500" title={record.user_id}>
+        {record.user_id && contactId ? (
+          <Link
+            href={`/workspaces/${workspaceId}/contacts/${contactId}`}
+            className="block min-w-0 truncate text-slate-700 underline underline-offset-2 hover:text-slate-900"
+            onClick={(event) => event.stopPropagation()}>
+            {record.user_id}
+          </Link>
+        ) : (
+          <span className="block min-w-0 truncate">{record.user_id ?? "—"}</span>
+        )}
       </td>
     </tr>
   );

@@ -11,10 +11,10 @@ import {
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { useAutoAnimate } from "@formkit/auto-animate/react";
 import { createId } from "@paralleldrive/cuid2";
-import { Workspace } from "@prisma/client";
 import React, { SetStateAction, useEffect, useMemo } from "react";
 import toast from "react-hot-toast";
 import { useTranslation } from "react-i18next";
+import { Workspace } from "@formbricks/database/prisma-browser";
 import { TI18nString } from "@formbricks/types/i18n";
 import { TSurveyQuota } from "@formbricks/types/quota";
 import { TSurveyBlock, TSurveyBlockLogic, TSurveyBlockLogicAction } from "@formbricks/types/surveys/blocks";
@@ -54,7 +54,12 @@ import {
 } from "@/modules/survey/editor/lib/utils";
 import { getElementsFromBlocks } from "@/modules/survey/lib/client-utils";
 import { ConfirmationModal } from "@/modules/ui/components/confirmation-modal";
-import { isEndingCardValid, isWelcomeCardValid, validateElement } from "../lib/validation";
+import {
+  isBlockLogicItemValid,
+  isEndingCardValid,
+  isWelcomeCardValid,
+  validateElement,
+} from "../lib/validation";
 
 interface ElementsViewProps {
   localSurvey: TSurvey;
@@ -73,7 +78,6 @@ interface ElementsViewProps {
   isStorageConfigured: boolean;
   quotas: TSurveyQuota[];
   isExternalUrlsAllowed: boolean;
-  moveHiddenFieldsToSettingsTab?: boolean;
 }
 
 export const ElementsView = ({
@@ -93,7 +97,6 @@ export const ElementsView = ({
   isStorageConfigured = true,
   quotas,
   isExternalUrlsAllowed,
-  moveHiddenFieldsToSettingsTab = false,
 }: ElementsViewProps) => {
   const { t } = useTranslation();
   const [logicDeletionWarning, setLogicDeletionWarning] = React.useState<{
@@ -724,65 +727,75 @@ export const ElementsView = ({
 
   // Validate survey when changes are made to languages or elements
   // using set for O(1) lookup
-  useEffect(
-    () => {
-      if (!invalidElements) return;
+  useEffect(() => {
+    if (!invalidElements) return;
 
-      const currentInvalidSet = new Set(invalidElements);
-      let hasChanges = false;
+    const currentInvalidSet = new Set(invalidElements);
+    let hasChanges = false;
 
-      // Validate each element
-      elements.forEach((element) => {
-        const isValid = validateElement(element, surveyLanguages);
-        if (isValid) {
-          if (currentInvalidSet.has(element.id)) {
-            currentInvalidSet.delete(element.id);
-            hasChanges = true;
-          }
-        } else if (!currentInvalidSet.has(element.id)) {
-          currentInvalidSet.add(element.id);
+    // Live re-validation: clear errors as elements become valid (including
+    // drafts), but don't flag freshly added drafts — save/publish does that.
+    elements.forEach((element) => {
+      const isValid = validateElement(element, surveyLanguages);
+      if (isValid) {
+        if (currentInvalidSet.has(element.id)) {
+          currentInvalidSet.delete(element.id);
           hasChanges = true;
         }
-      });
-
-      // Check welcome card
-      if (localSurvey.welcomeCard.enabled && !isWelcomeCardValid(localSurvey.welcomeCard, surveyLanguages)) {
-        if (!currentInvalidSet.has("start")) {
-          currentInvalidSet.add("start");
-          hasChanges = true;
-        }
-      } else if (currentInvalidSet.has("start")) {
-        currentInvalidSet.delete("start");
+      } else if (!element.isDraft && !currentInvalidSet.has(element.id)) {
+        currentInvalidSet.add(element.id);
         hasChanges = true;
       }
+    });
 
-      // Check thank you card
-      localSurvey.endings.forEach((ending) => {
-        if (!isEndingCardValid(ending, surveyLanguages)) {
-          if (!currentInvalidSet.has(ending.id)) {
-            currentInvalidSet.add(ending.id);
-            hasChanges = true;
-          }
-        } else if (currentInvalidSet.has(ending.id)) {
-          currentInvalidSet.delete(ending.id);
+    // Check welcome card
+    if (localSurvey.welcomeCard.enabled && !isWelcomeCardValid(localSurvey.welcomeCard, surveyLanguages)) {
+      if (!currentInvalidSet.has("start")) {
+        currentInvalidSet.add("start");
+        hasChanges = true;
+      }
+    } else if (currentInvalidSet.has("start")) {
+      currentInvalidSet.delete("start");
+      hasChanges = true;
+    }
+
+    // Check thank you card
+    localSurvey.endings.forEach((ending) => {
+      if (!isEndingCardValid(ending, surveyLanguages)) {
+        if (!currentInvalidSet.has(ending.id)) {
+          currentInvalidSet.add(ending.id);
+          hasChanges = true;
+        }
+      } else if (currentInvalidSet.has(ending.id)) {
+        currentInvalidSet.delete(ending.id);
+        hasChanges = true;
+      }
+    });
+
+    // Live-clear conditional logic errors as they get fixed. We only clear
+    // here (never add) so freshly added, not-yet-filled-in rules aren't
+    // flagged prematurely — logic errors are added on save/publish instead.
+    localSurvey.blocks.forEach((block) => {
+      (block.logic ?? []).forEach((logicItem) => {
+        if (currentInvalidSet.has(logicItem.id) && isBlockLogicItemValid(logicItem)) {
+          currentInvalidSet.delete(logicItem.id);
           hasChanges = true;
         }
       });
+    });
 
-      if (hasChanges) {
-        setInvalidElements(Array.from(currentInvalidSet));
-      }
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [
-      elements,
-      surveyLanguages,
-      invalidElements,
-      setInvalidElements,
-      localSurvey.welcomeCard,
-      localSurvey.endings,
-    ]
-  );
+    if (hasChanges) {
+      setInvalidElements(Array.from(currentInvalidSet));
+    }
+  }, [
+    elements,
+    surveyLanguages,
+    invalidElements,
+    setInvalidElements,
+    localSurvey.welcomeCard,
+    localSurvey.endings,
+    localSurvey.blocks,
+  ]);
 
   useEffect(() => {
     const elementWithEmptyFallback = checkForEmptyFallBackValue(localSurvey, selectedLanguageCode);
@@ -790,7 +803,6 @@ export const ElementsView = ({
       setActiveElementId(elementWithEmptyFallback.id);
       toast.error(t("workspace.surveys.edit.fallback_missing"));
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeElementId, setActiveElementId, localSurvey, selectedLanguageCode]);
 
   const sensors = useSensors(
@@ -924,25 +936,21 @@ export const ElementsView = ({
         {!isCxMode && (
           <>
             <AddEndingCardButton localSurvey={localSurvey} addEndingCard={addEndingCard} />
-            {!moveHiddenFieldsToSettingsTab && (
-              <>
-                <hr />
-                <HiddenFieldsCard
-                  localSurvey={localSurvey}
-                  setLocalSurvey={setLocalSurvey}
-                  setActiveElementId={setActiveElementId}
-                  activeElementId={activeElementId}
-                  quotas={quotas}
-                />
-                <SurveyVariablesCard
-                  localSurvey={localSurvey}
-                  setLocalSurvey={setLocalSurvey}
-                  activeElementId={activeElementId}
-                  setActiveElementId={setActiveElementId}
-                  quotas={quotas}
-                />
-              </>
-            )}
+            <hr />
+            <HiddenFieldsCard
+              localSurvey={localSurvey}
+              setLocalSurvey={setLocalSurvey}
+              setActiveElementId={setActiveElementId}
+              activeElementId={activeElementId}
+              quotas={quotas}
+            />
+            <SurveyVariablesCard
+              localSurvey={localSurvey}
+              setLocalSurvey={setLocalSurvey}
+              activeElementId={activeElementId}
+              setActiveElementId={setActiveElementId}
+              quotas={quotas}
+            />
           </>
         )}
       </div>

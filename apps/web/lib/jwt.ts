@@ -1,8 +1,9 @@
 import jwt, { JwtPayload, SignOptions } from "jsonwebtoken";
+import { createHmac } from "node:crypto";
 import { prisma } from "@formbricks/database";
 import { logger } from "@formbricks/logger";
 import { ENCRYPTION_KEY, NEXTAUTH_SECRET } from "@/lib/constants";
-import { symmetricDecrypt, symmetricEncrypt } from "@/lib/crypto";
+import { constantTimeEqual, symmetricDecrypt, symmetricEncrypt } from "@/lib/crypto";
 import { TGatewayAuthService, getGatewayAuthServiceTokenPurpose } from "@/modules/gateway-auth/lib/service";
 
 const FEEDBACK_RECORDS_GATEWAY_TOKEN_TTL_SECONDS = 60 * 10;
@@ -15,6 +16,21 @@ const decryptWithFallback = (encryptedText: string, key: string): string => {
     return encryptedText; // Return as-is if decryption fails (legacy format)
   }
 };
+
+/**
+ * Every token minted here is signed with the same `NEXTAUTH_SECRET`, so the signature alone proves
+ * nothing about *which* flow a token was issued for. Tokens that grant something must therefore carry
+ * an explicit `purpose` claim and the verifier must require it, otherwise a token handed out by one
+ * flow is replayable against another (e.g. an email- or invite-token accepted as proof of email
+ * verification for a link survey).
+ */
+export const LINK_SURVEY_EMAIL_VERIFICATION_PURPOSE = "link_survey_email_verification";
+export const EMAIL_DISPLAY_TOKEN_PURPOSE = "email_display";
+export const EMAIL_CHANGE_TOKEN_PURPOSE = "email_change";
+
+const LINK_SURVEY_TOKEN_TTL = "7d";
+const EMAIL_DISPLAY_TOKEN_TTL = "1d";
+const EMAIL_CHANGE_TOKEN_TTL = "1d";
 
 export const VERIFICATION_TOKEN_PURPOSES = ["email_verification", "sso_recovery"] as const;
 
@@ -35,16 +51,6 @@ type TSsoRelinkIntentPayload = {
   email: string;
   provider: string;
   providerAccountId: string;
-  userId: string;
-};
-
-type TAccountDeletionSsoReauthIntentPayload = {
-  id: string;
-  email: string;
-  provider: string;
-  providerAccountId: string;
-  purpose: "account_deletion_sso_reauth";
-  returnToUrl: string;
   userId: string;
 };
 
@@ -120,7 +126,69 @@ export const createTokenForLinkSurvey = (surveyId: string, userEmail: string): s
   }
 
   const encryptedEmail = symmetricEncrypt(userEmail, ENCRYPTION_KEY);
-  return jwt.sign({ email: encryptedEmail, surveyId }, NEXTAUTH_SECRET);
+  return jwt.sign(
+    { email: encryptedEmail, surveyId, purpose: LINK_SURVEY_EMAIL_VERIFICATION_PURPOSE },
+    NEXTAUTH_SECRET,
+    { expiresIn: LINK_SURVEY_TOKEN_TTL }
+  );
+};
+
+/**
+ * Fingerprint of the credential state an email-change token was minted against.
+ *
+ * The email-change link is deliberately consumable without a session — the user clicks it from the new
+ * mailbox, often in another browser — so for its whole lifetime the token *is* a credential that can
+ * move the account's login address, and with it where every future password-reset link is delivered. A
+ * bare `{ id, email }` JWT therefore outlived the events that are supposed to end an attacker's hold on
+ * the account: a password recovery revoked every session and rotated the password, yet a token minted
+ * before it stayed usable for the rest of its 24 hours, long enough to point the account at an
+ * attacker-controlled mailbox and reset the password back (ENG-2106, CWE-613).
+ *
+ * Binding the token to the login email plus the last write to the user's `credential` account ties it
+ * to that state, so a password reset or change — or any other email change — re-keys the fingerprint and
+ * kills every token issued before it. It also makes the link single-use for free: consuming it changes
+ * the email.
+ *
+ * The credential's `updatedAt` is the binding, deliberately not its password hash: no password-derived
+ * material then travels in the token at all, and it still invalidates a reset that happens to set the
+ * *same* password, which a hash would not. This relies on every write to that row going through Prisma,
+ * which applies `@updatedAt` — keep it that way; a raw-SQL password write would leave stale tokens live.
+ *
+ * HMAC rather than a bare hash so the claim, which travels in a readable JWT payload, cannot be
+ * recomputed or probed by whoever holds the token.
+ */
+const getEmailChangeCredentialFingerprint = async (userId: string): Promise<string> => {
+  if (!NEXTAUTH_SECRET) {
+    throw new Error("NEXTAUTH_SECRET is not set");
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: {
+      email: true,
+      // Scoped to the full `(provider, providerAccountId)` unique tuple, not just the provider: this
+      // must resolve to the one row Better Auth bumps `updatedAt` on for a password write — the same
+      // row getCredentialPasswordHash reads. Matching on `provider` alone would take an arbitrary
+      // first row if a user ever ended up with a second `credential` row under a different
+      // providerAccountId, binding the token to a timestamp that never moves on a reset.
+      accounts: {
+        where: { provider: "credential", providerAccountId: userId },
+        select: { updatedAt: true },
+      },
+    },
+  });
+
+  const credentialUpdatedAt = user?.accounts?.[0]?.updatedAt;
+
+  // Fail closed: with no credential account there is nothing to bind to, and an email change is only
+  // ever offered to credential users in the first place.
+  if (!user || !credentialUpdatedAt) {
+    throw new Error("Email change token cannot be bound: user has no credential account");
+  }
+
+  return createHmac("sha256", NEXTAUTH_SECRET)
+    .update(`${userId}:${user.email}:${credentialUpdatedAt.toISOString()}`)
+    .digest("hex");
 };
 
 export const verifyEmailChangeToken = async (token: string): Promise<{ id: string; email: string }> => {
@@ -135,15 +203,32 @@ export const verifyEmailChangeToken = async (token: string): Promise<{ id: strin
   const payload = jwt.verify(token, NEXTAUTH_SECRET, { algorithms: ["HS256"] }) as {
     id: string;
     email: string;
+    purpose?: string;
+    fingerprint?: string;
   };
 
   if (!payload?.id || !payload?.email) {
     throw new Error("Token is invalid or missing required fields");
   }
 
+  // Every token in this file is signed with the same NEXTAUTH_SECRET, so require the claims that say
+  // this one was minted for an email change and against which credential state. Both are mandatory —
+  // treating a missing claim as legacy-and-therefore-acceptable would leave exactly the unbound token
+  // this check exists to reject. Links already in flight when this shipped stop working; re-requesting
+  // the change issues a bound one.
+  if (payload.purpose !== EMAIL_CHANGE_TOKEN_PURPOSE || !payload.fingerprint) {
+    throw new Error("Token is invalid or missing required fields");
+  }
+
   // Decrypt both fields with fallback
   const decryptedId = decryptWithFallback(payload.id, ENCRYPTION_KEY);
   const decryptedEmail = decryptWithFallback(payload.email, ENCRYPTION_KEY);
+
+  const currentFingerprint = await getEmailChangeCredentialFingerprint(decryptedId);
+
+  if (!constantTimeEqual(payload.fingerprint, currentFingerprint, "hex")) {
+    throw new Error("Email change token is no longer valid");
+  }
 
   return {
     id: decryptedId,
@@ -183,7 +268,7 @@ export const verifyFeedbackRecordsGatewayToken = (
   return verifyGatewayServiceToken(token, "feedbackRecords");
 };
 
-export const createEmailChangeToken = (userId: string, email: string): string => {
+export const createEmailChangeToken = async (userId: string, email: string): Promise<string> => {
   if (!NEXTAUTH_SECRET) {
     throw new Error("NEXTAUTH_SECRET is not set");
   }
@@ -198,10 +283,14 @@ export const createEmailChangeToken = (userId: string, email: string): string =>
   const payload = {
     id: encryptedUserId,
     email: encryptedEmail,
+    purpose: EMAIL_CHANGE_TOKEN_PURPOSE,
+    // Ties the token to the credential state it was requested under; see
+    // getEmailChangeCredentialFingerprint.
+    fingerprint: await getEmailChangeCredentialFingerprint(userId),
   };
 
   return jwt.sign(payload, NEXTAUTH_SECRET, {
-    expiresIn: "1d",
+    expiresIn: EMAIL_CHANGE_TOKEN_TTL,
   });
 };
 
@@ -215,7 +304,11 @@ export const createEmailToken = (email: string): string => {
   }
 
   const encryptedEmail = symmetricEncrypt(email, ENCRYPTION_KEY);
-  return jwt.sign({ email: encryptedEmail }, NEXTAUTH_SECRET);
+  // Handed out by an unauthenticated action purely so the "check your inbox" screen can echo the
+  // address back. It must therefore be inert everywhere else: scope it with a purpose and a TTL.
+  return jwt.sign({ email: encryptedEmail, purpose: EMAIL_DISPLAY_TOKEN_PURPOSE }, NEXTAUTH_SECRET, {
+    expiresIn: EMAIL_DISPLAY_TOKEN_TTL,
+  });
 };
 
 export const getEmailFromEmailToken = (token: string): string => {
@@ -229,7 +322,15 @@ export const getEmailFromEmailToken = (token: string): string => {
 
   const payload = jwt.verify(token, NEXTAUTH_SECRET, { algorithms: ["HS256"] }) as JwtPayload & {
     email: string;
+    purpose?: string;
   };
+
+  // Tokens minted before the purpose claim existed have none; anything else was issued for a
+  // different flow and must not resolve to an email here.
+  if (payload.purpose !== undefined && payload.purpose !== EMAIL_DISPLAY_TOKEN_PURPOSE) {
+    throw new Error("Invalid token");
+  }
+
   return decryptWithFallback(payload.email, ENCRYPTION_KEY);
 };
 
@@ -253,7 +354,10 @@ export const verifyTokenForLinkSurvey = (token: string, surveyId: string): strin
   }
 
   try {
-    let payload: JwtPayload & { email: string; surveyId?: string };
+    let payload: JwtPayload & { email: string; surveyId?: string; purpose?: string };
+    // Legacy tokens carry no `surveyId` claim; they are bound to one survey by their signing key
+    // (`NEXTAUTH_SECRET + surveyId`) instead, so that path needs no claim check.
+    let isBoundBySigningKey = false;
 
     // Try primary method first (consistent secret)
     try {
@@ -269,14 +373,23 @@ export const verifyTokenForLinkSurvey = (token: string, surveyId: string): strin
         payload = jwt.verify(token, NEXTAUTH_SECRET + surveyId, { algorithms: ["HS256"] }) as JwtPayload & {
           email: string;
         };
+        isBoundBySigningKey = true;
       } catch (legacyError) {
         logger.error(legacyError, "Token verification failed with legacy method");
         throw new Error("Invalid token");
       }
     }
 
-    // Verify the surveyId matches if present in payload (new format)
-    if (payload.surveyId && payload.surveyId !== surveyId) {
+    // A token verified with the plain secret MUST name this survey. Accepting a missing `surveyId`
+    // here let any NEXTAUTH_SECRET-signed token that happens to carry an `email` claim — e.g. the one
+    // `createEmailToken` hands out for an arbitrary address — pass as a verified email for any survey.
+    if (!isBoundBySigningKey && payload.surveyId !== surveyId) {
+      return null;
+    }
+
+    // Reject tokens explicitly minted for a different flow. Tokens issued before the purpose claim
+    // existed have none; they are already survey-bound by the check above.
+    if (payload.purpose !== undefined && payload.purpose !== LINK_SURVEY_EMAIL_VERIFICATION_PURPOSE) {
       return null;
     }
 
@@ -345,10 +458,6 @@ const DEFAULT_SSO_RELINK_INTENT_OPTIONS: SignOptions = {
   expiresIn: "15m",
 };
 
-const DEFAULT_ACCOUNT_DELETION_SSO_REAUTH_INTENT_OPTIONS: SignOptions = {
-  expiresIn: "10m",
-};
-
 export const createSsoRelinkIntent = (
   payload: TSsoRelinkIntentPayload,
   options: SignOptions = DEFAULT_SSO_RELINK_INTENT_OPTIONS
@@ -407,77 +516,6 @@ export const verifySsoRelinkIntent = (token: string): TSsoRelinkIntentPayload =>
     provider: payload.provider,
     providerAccountId: decryptWithFallback(payload.providerAccountId, ENCRYPTION_KEY),
     callbackUrl: decryptWithFallback(payload.callbackUrl, ENCRYPTION_KEY),
-  };
-};
-
-export const createAccountDeletionSsoReauthIntent = (
-  payload: TAccountDeletionSsoReauthIntentPayload,
-  options: SignOptions = DEFAULT_ACCOUNT_DELETION_SSO_REAUTH_INTENT_OPTIONS
-): string => {
-  if (!NEXTAUTH_SECRET) {
-    throw new Error("NEXTAUTH_SECRET is not set");
-  }
-
-  if (!ENCRYPTION_KEY) {
-    throw new Error("ENCRYPTION_KEY is not set");
-  }
-
-  return jwt.sign(
-    {
-      id: symmetricEncrypt(payload.id, ENCRYPTION_KEY),
-      userId: symmetricEncrypt(payload.userId, ENCRYPTION_KEY),
-      email: symmetricEncrypt(payload.email, ENCRYPTION_KEY),
-      provider: payload.provider,
-      providerAccountId: symmetricEncrypt(payload.providerAccountId, ENCRYPTION_KEY),
-      purpose: payload.purpose,
-      returnToUrl: symmetricEncrypt(payload.returnToUrl, ENCRYPTION_KEY),
-    },
-    NEXTAUTH_SECRET,
-    options
-  );
-};
-
-export const verifyAccountDeletionSsoReauthIntent = (
-  token: string
-): TAccountDeletionSsoReauthIntentPayload => {
-  if (!NEXTAUTH_SECRET) {
-    throw new Error("NEXTAUTH_SECRET is not set");
-  }
-
-  if (!ENCRYPTION_KEY) {
-    throw new Error("ENCRYPTION_KEY is not set");
-  }
-
-  const payload = jwt.verify(token, NEXTAUTH_SECRET, { algorithms: ["HS256"] }) as JwtPayload & {
-    id: string;
-    userId: string;
-    email: string;
-    provider: string;
-    providerAccountId: string;
-    purpose: string;
-    returnToUrl: string;
-  };
-
-  if (
-    !payload?.id ||
-    !payload?.userId ||
-    !payload?.email ||
-    !payload?.provider ||
-    !payload?.providerAccountId ||
-    payload?.purpose !== "account_deletion_sso_reauth" ||
-    !payload?.returnToUrl
-  ) {
-    throw new Error("Token is invalid or missing required fields");
-  }
-
-  return {
-    id: decryptWithFallback(payload.id, ENCRYPTION_KEY),
-    userId: decryptWithFallback(payload.userId, ENCRYPTION_KEY),
-    email: decryptWithFallback(payload.email, ENCRYPTION_KEY),
-    provider: payload.provider,
-    providerAccountId: decryptWithFallback(payload.providerAccountId, ENCRYPTION_KEY),
-    purpose: "account_deletion_sso_reauth",
-    returnToUrl: decryptWithFallback(payload.returnToUrl, ENCRYPTION_KEY),
   };
 };
 

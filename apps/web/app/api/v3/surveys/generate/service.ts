@@ -3,6 +3,7 @@ import { createId } from "@paralleldrive/cuid2";
 import { TSurveyElementTypeEnum } from "@formbricks/types/surveys/constants";
 import type { InvalidParam } from "@/app/api/v3/lib/response";
 import { generateOrganizationAIObject } from "@/lib/ai/service";
+import { AI_TRACING_FEATURE } from "@/lib/posthog/ai-tracing-feature";
 import { type TV3SurveyPrepareResult, prepareV3SurveyCreateInput } from "../prepare";
 import { DEFAULT_V3_SURVEY_LANGUAGE, type TV3CreateSurveyBody, formatV3ZodInvalidParams } from "../schemas";
 import {
@@ -30,6 +31,13 @@ export type TV3SurveyGenerateResult = {
   payload: TV3CreateSurveyBody;
   validation: TV3SurveyGenerateValidation;
 };
+
+const V3_SURVEY_GENERATION_TIMEOUT_MS = 45_000;
+
+// Gemini 2.5 Flash spends a large share of the output budget on reasoning tokens before emitting
+// the survey JSON; 8192 leaves headroom for both so long prompts don't stop with finishReason
+// "length" (the previous 3000 budget did).
+const V3_SURVEY_GENERATION_MAX_OUTPUT_TOKENS = 8192;
 
 export class V3SurveyGeneratePromptError extends Error {
   invalidParams: InvalidParam[];
@@ -351,6 +359,10 @@ function buildCreatePayload(input: TV3SurveyGenerateBody, generatedSurvey: TGene
     ],
     hiddenFields: { enabled: false },
     variables: [],
+    // AI generates content only. For app surveys, seed a valid default distribution (display once,
+    // no triggers, no targeting) the user finishes wiring in the editor. Omitted scalars fall back to
+    // the schema/DB defaults; the auto-created empty segment means "show to everyone".
+    ...(input.type === "app" ? { distribution: { displayOption: "displayOnce", triggers: [] } } : {}),
   };
 }
 
@@ -366,6 +378,8 @@ function serializeValidation(
 
 export async function generateV3SurveyCreatePayloadFromPrompt(params: {
   organizationId: string;
+  workspaceId: string;
+  userId?: string | null;
   input: TV3SurveyGenerateBody;
 }): Promise<TV3SurveyGenerateResult> {
   const invalidParams = getPromptInvalidParams(params.input.prompt);
@@ -376,6 +390,13 @@ export async function generateV3SurveyCreatePayloadFromPrompt(params: {
 
   const generation = await generateOrganizationAIObject({
     organizationId: params.organizationId,
+    aiTracing: params.userId
+      ? {
+          distinctId: params.userId,
+          feature: AI_TRACING_FEATURE.SurveyGeneration,
+          workspaceId: params.workspaceId,
+        }
+      : undefined,
     schema: ZGeneratedSurveyDraftForAI,
     schemaName: "FormbricksSurveyDraft",
     schemaDescription: "A concise Formbricks survey draft that can be converted to a v3 create payload.",
@@ -387,7 +408,8 @@ export async function generateV3SurveyCreatePayloadFromPrompt(params: {
       V3_SURVEY_GENERATE_ALLOWED_LOCALES
     ),
     temperature: 0.2,
-    maxOutputTokens: 3000,
+    maxOutputTokens: V3_SURVEY_GENERATION_MAX_OUTPUT_TOKENS,
+    timeout: V3_SURVEY_GENERATION_TIMEOUT_MS,
   });
 
   const generatedSurvey = ZGeneratedSurveyDraft.safeParse(generation.object);

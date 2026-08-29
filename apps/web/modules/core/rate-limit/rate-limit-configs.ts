@@ -5,6 +5,7 @@ export const rateLimitConfigs = {
     signup: { interval: 3600, allowedPerInterval: 30, namespace: "auth:signup" }, // 30 per hour
     forgotPassword: { interval: 3600, allowedPerInterval: 5, namespace: "auth:forgot" }, // 5 per hour
     verifyEmail: { interval: 3600, allowedPerInterval: 10, namespace: "auth:verify" }, // 10 per hour
+    emailToken: { interval: 3600, allowedPerInterval: 10, namespace: "auth:email-token" }, // 10 per hour — unauthenticated, tells the caller whether an email is registered
   },
 
   // API endpoints - higher limits for legitimate usage
@@ -12,11 +13,17 @@ export const rateLimitConfigs = {
     v1: { interval: 60, allowedPerInterval: 100, namespace: "api:v1" }, // 100 per minute (Management API)
     v2: { interval: 60, allowedPerInterval: 100, namespace: "api:v2" }, // 100 per minute
     v3: { interval: 60, allowedPerInterval: 100, namespace: "api:v3" }, // 100 per minute
+    mcpAuth: { interval: 60, allowedPerInterval: 30, namespace: "api:mcp:auth" }, // 30 per minute
     v3SurveyGenerate: {
       interval: 60,
       allowedPerInterval: 10,
       namespace: "api:v3:surveys:generate",
     }, // 10 per minute (AI survey generation)
+    internalDatasetPurge: {
+      interval: 3600,
+      allowedPerInterval: 5,
+      namespace: "api:internal:feedback-datasets:purge",
+    }, // 5 per hour — irreversible and dataset-wide; nobody legitimately purges more often than that
     client: { interval: 60, allowedPerInterval: 100, namespace: "api:client" }, // 100 per minute (Client API)
     clientEnvironment: {
       interval: 60,
@@ -35,22 +42,31 @@ export const rateLimitConfigs = {
       allowedPerInterval: 10,
       namespace: "action:send-link-survey-email",
     }, // 10 per hour
-    isSurveyResponsePresent: {
-      interval: 60,
-      allowedPerInterval: 10,
-      namespace: "action:survey-response-present",
-    }, // 10 per minute — prevents email-enumeration oracle
     validateSurveyPin: {
       interval: 60,
       allowedPerInterval: 10,
       namespace: "action:validate-survey-pin",
     }, // 10 per minute — prevents brute-force PIN guessing
     licenseRecheck: { interval: 60, allowedPerInterval: 5, namespace: "action:license-recheck" }, // 5 per minute
+    unsplash: { interval: 60, allowedPerInterval: 30, namespace: "action:unsplash" }, // 30 per minute per user — bounds one account exhausting the instance-wide UNSPLASH_ACCESS_KEY quota
+    inviteMember: { interval: 3600 * 24, allowedPerInterval: 20, namespace: "action:invite-member" }, // 20 per day  — bounds invite-spam abuse
+    bulkInviteMembers: {
+      interval: 3600 * 24,
+      allowedPerInterval: 5,
+      namespace: "action:bulk-invite-members",
+    }, // 5 bulk imports per day per org
     generateExampleResponses: {
       interval: 60,
       allowedPerInterval: 1,
       namespace: "action:generate-example-responses",
     }, // 1 per minute per user — closes the multi-click race and bounds LLM spend
+    integrationMutation: {
+      interval: 60,
+      allowedPerInterval: 30,
+      namespace: "action:integration-mutation",
+    }, // 30 per minute per user — one save or delete per UI interaction, so this bounds a readWrite
+    // member churning integration rows (each write hits the provider config and the audit log) without
+    // getting in the way of legitimate mapping edits
   },
 
   storage: {

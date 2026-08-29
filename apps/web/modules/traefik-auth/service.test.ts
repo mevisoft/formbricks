@@ -136,8 +136,8 @@ describe("authorizeTraefikRequest", () => {
       type: "apiKey",
       apiKeyId: "key_1",
       organizationId: "org_1",
-      organizationAccess: { accessControl: { read: true, write: true } },
-      workspacePermissions: [],
+      organizationAccess: { accessControl: { read: false, write: false } },
+      workspacePermissions: [{ workspaceId: "workspace_1", workspaceName: "Linked", permission: "manage" }],
     });
 
     const response = await authorizeTraefikRequest(
@@ -163,8 +163,8 @@ describe("authorizeTraefikRequest", () => {
       type: "apiKey",
       apiKeyId: "key_1",
       organizationId: "org_1",
-      organizationAccess: { accessControl: { read: true, write: true } },
-      workspacePermissions: [],
+      organizationAccess: { accessControl: { read: false, write: false } },
+      workspacePermissions: [{ workspaceId: "workspace_1", workspaceName: "Linked", permission: "manage" }],
     });
 
     const response = await authorizeTraefikRequest(
@@ -187,6 +187,7 @@ describe("authorizeTraefikRequest", () => {
     expect(response.status).toBe(400);
   });
 
+  // ENG-1770: changing an existing record is organization-level, so there is no workspace-team fallback.
   test("authorizes record lookups through the shared FeedbackRecords authorizer", async () => {
     mockGetBearerTokenFromHeaders.mockReturnValue("header.payload.signature");
     mockVerifyFeedbackRecordsGatewayToken.mockReturnValue({ userId: "user_1" });
@@ -211,13 +212,26 @@ describe("authorizeTraefikRequest", () => {
           type: "organization",
           roles: ["owner", "manager"],
         },
-        {
-          type: "workspaceTeam",
-          workspaceId: "workspace_1",
-          minPermission: "readWrite",
-        },
       ],
     });
+  });
+
+  test("authorizes similar feedback by resolving the record tenant", async () => {
+    mockGetBearerTokenFromHeaders.mockReturnValue("header.payload.signature");
+    mockVerifyFeedbackRecordsGatewayToken.mockReturnValue({ userId: "user_1" });
+
+    const response = await authorizeTraefikRequest(
+      createRequest({
+        forwardedUri: `/v1/feedback-records/${feedbackRecordId}/similar`,
+        headers: {
+          authorization: "Bearer header.payload.signature",
+        },
+      })
+    );
+
+    expect(response.status).toBe(200);
+    expect(mockGetFeedbackRecordTenant).toHaveBeenCalledWith(feedbackRecordId);
+    expect(mockGetFeedbackDirectoryAuthContext).toHaveBeenCalledWith(feedbackDirectoryId);
   });
 
   test("returns 401 for invalid explicit JWT instead of falling back to session cookies", async () => {

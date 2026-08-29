@@ -15,12 +15,25 @@ import {
   TSegmentOperator,
   TSegmentPersonFilter,
   TSegmentSegmentFilter,
+  TSegmentSurveyInteractionFilterValue,
+  TSurveyInteractionOperator,
 } from "@formbricks/types/segment";
 
 // type guard to check if a resource is a filter
 export const isResourceFilter = (resource: TSegmentFilter | TBaseFilters): resource is TSegmentFilter => {
   return (resource as TSegmentFilter).root !== undefined;
 };
+
+/**
+ * Upper bound on ids per `IN (...)` survey lookup in the segment write path (segments.ts and
+ * helper.ts). The Zod boundary already bounds what a client can submit (MAX_SEGMENT_SURVEYS,
+ * MAX_SEGMENT_SURVEY_INTERACTION_IDS_PER_TREE), so batching is defense in depth: it keeps each
+ * query's SQL parameter payload flat for within-cap totals (a handful of batches at most) and
+ * holds for callers whose arrays never went through those schemas (the survey editor's draft-save
+ * path). Batches run sequentially — the point is to cap per-query and concurrent database work,
+ * not to fan it out.
+ */
+export const SURVEY_WORKSPACE_LOOKUP_BATCH_SIZE = 200;
 
 export const convertOperatorToText = (operator: TAllOperators, t: TFunction) => {
   switch (operator) {
@@ -64,6 +77,16 @@ export const convertOperatorToText = (operator: TAllOperators, t: TFunction) => 
       return t("workspace.segments.operator_is_between");
     case "isSameDay":
       return t("workspace.segments.operator_is_same_day");
+    case "haveCompleted":
+      return t("workspace.segments.operator_have_completed");
+    case "haveNotCompleted":
+      return t("workspace.segments.operator_have_not_completed");
+    case "haveSeen":
+      return t("workspace.segments.operator_have_seen");
+    case "haveNotSeen":
+      return t("workspace.segments.operator_have_not_seen");
+    case "haveStartedRespondingTo":
+      return t("workspace.segments.operator_have_started_responding_to");
     default:
       return operator;
   }
@@ -111,6 +134,16 @@ export const convertOperatorToTitle = (operator: TAllOperators, t: TFunction) =>
       return t("workspace.segments.operator_title_is_between");
     case "isSameDay":
       return t("workspace.segments.operator_title_is_same_day");
+    case "haveCompleted":
+      return t("workspace.segments.operator_title_have_completed");
+    case "haveNotCompleted":
+      return t("workspace.segments.operator_title_have_not_completed");
+    case "haveSeen":
+      return t("workspace.segments.operator_title_have_seen");
+    case "haveNotSeen":
+      return t("workspace.segments.operator_title_have_not_seen");
+    case "haveStartedRespondingTo":
+      return t("workspace.segments.operator_title_have_started_responding_to");
     default:
       return operator;
   }
@@ -355,7 +388,7 @@ export const toggleFilterConnector = (
 export const updateOperatorInFilter = (
   group: TBaseFilters,
   filterId: string,
-  newOperator: TAttributeOperator | TSegmentOperator | TDeviceOperator
+  newOperator: TAttributeOperator | TSegmentOperator | TDeviceOperator | TSurveyInteractionOperator
 ) => {
   for (let i = 0; i < group.length; i++) {
     const { resource } = group[i];
@@ -456,6 +489,23 @@ export const updateDeviceTypeInFilter = (
       }
     } else {
       updateDeviceTypeInFilter(resource, filterId, newDeviceType);
+    }
+  }
+};
+
+export const updateSurveyInteractionValueInFilter = (
+  group: TBaseFilters,
+  filterId: string,
+  newValue: TSegmentSurveyInteractionFilterValue
+) => {
+  for (const { resource } of group) {
+    if (isResourceFilter(resource)) {
+      if (resource.id === filterId) {
+        resource.value = newValue;
+        break;
+      }
+    } else {
+      updateSurveyInteractionValueInFilter(resource, filterId, newValue);
     }
   }
 };

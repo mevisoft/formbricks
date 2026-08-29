@@ -1,17 +1,16 @@
-import { getServerSession } from "next-auth";
 import { NextResponse } from "next/server";
 import { logger } from "@formbricks/logger";
 import { verifySsoRelinkIntent } from "@/lib/jwt";
-import { deleteSessionBySessionToken } from "@/modules/auth/lib/auth-session-repository";
-import { authOptions } from "@/modules/auth/lib/authOptions";
+import { getSession } from "@/modules/auth/lib/session";
 import {
-  NEXT_AUTH_SESSION_COOKIE_NAMES,
+  BETTER_AUTH_SESSION_COOKIE_NAMES,
   getSessionTokenFromCookieHeader,
 } from "@/modules/auth/lib/session-cookie";
+import { revokeSessionByToken } from "@/modules/auth/lib/session-revocation";
 import { completeSsoRecovery, getSsoRecoveryFailureRedirectUrl } from "@/modules/ee/sso/lib/sso-recovery";
 
 const clearSessionCookies = (response: NextResponse) => {
-  for (const cookieName of NEXT_AUTH_SESSION_COOKIE_NAMES) {
+  for (const cookieName of BETTER_AUTH_SESSION_COOKIE_NAMES) {
     response.cookies.set({
       name: cookieName,
       value: "",
@@ -32,7 +31,9 @@ const buildFailedRecoveryResponse = async (request: Request, callbackUrl?: strin
   }
 
   try {
-    await deleteSessionBySessionToken(sessionToken);
+    // Through the two-store revocation, not a raw Prisma delete: sessions live in Redis too, and a
+    // DB-only delete would leave this one resolvable by `getSession` until its TTL (ENG-2557).
+    await revokeSessionByToken(sessionToken);
   } catch (error) {
     logger.error(error, "Failed to delete SSO recovery session after recovery completion error");
   }
@@ -49,10 +50,12 @@ export const GET = async (request: Request) => {
   }
 
   try {
-    const session = await getServerSession(authOptions);
+    const session = await getSession();
     const callbackUrl = await completeSsoRecovery({
       intentToken,
       sessionUserId: session?.user.id,
+      // Spared by the post-commit session sweep, so the redirect below still lands signed in.
+      sessionToken: getSessionTokenFromCookieHeader(request.headers.get("cookie")) ?? undefined,
     });
 
     return NextResponse.redirect(callbackUrl);

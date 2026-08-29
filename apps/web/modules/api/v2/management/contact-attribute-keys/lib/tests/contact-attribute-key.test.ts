@@ -1,6 +1,6 @@
-import { ContactAttributeKey, Prisma } from "@prisma/client";
 import { describe, expect, test, vi } from "vitest";
 import { prisma } from "@formbricks/database";
+import { ContactAttributeKey, Prisma } from "@formbricks/database/prisma";
 import { PrismaErrorType } from "@formbricks/database/types/error";
 import {
   TContactAttributeKeyInput,
@@ -152,7 +152,7 @@ describe("createContactAttributeKey", () => {
 
   test("returns not found error when related record does not exist", async () => {
     const errToThrow = new Prisma.PrismaClientKnownRequestError("Mock error message", {
-      code: PrismaErrorType.RelatedRecordDoesNotExist,
+      code: PrismaErrorType.RelatedRecordNotFound,
       clientVersion: "0.0.1",
     });
     vi.mocked(prisma.contactAttributeKey.create).mockRejectedValueOnce(errToThrow);

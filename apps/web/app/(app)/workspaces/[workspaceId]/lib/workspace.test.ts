@@ -1,6 +1,6 @@
-import { Prisma } from "@prisma/client";
 import { describe, expect, test, vi } from "vitest";
 import { prisma } from "@formbricks/database";
+import { Prisma } from "@formbricks/database/prisma";
 import { DatabaseError } from "@formbricks/types/errors";
 import { TMembership } from "@formbricks/types/memberships";
 import { getWorkspacesByUserId, getWritableWorkspacesByUserId } from "./workspace";
@@ -47,6 +47,7 @@ describe("Workspace", () => {
           id: true,
           name: true,
         },
+        orderBy: { createdAt: "asc" },
       });
       expect(result).toEqual(mockWorkspaces);
     });
@@ -77,6 +78,7 @@ describe("Workspace", () => {
           id: true,
           name: true,
         },
+        orderBy: { createdAt: "asc" },
       });
       expect(result).toEqual(mockWorkspaces);
     });
@@ -139,6 +141,7 @@ describe("Workspace", () => {
           id: true,
           name: true,
         },
+        orderBy: { createdAt: "asc" },
       });
       expect(result).toEqual(mockWorkspaces);
     });
@@ -184,6 +187,7 @@ describe("Workspace", () => {
           id: true,
           name: true,
         },
+        orderBy: { createdAt: "asc" },
       });
       expect(result).toEqual(mockWorkspaces);
     });
@@ -203,6 +207,7 @@ describe("Workspace", () => {
           id: true,
           name: true,
         },
+        orderBy: { createdAt: "asc" },
       });
       expect(result).toEqual(mockWorkspaces);
     });
@@ -234,6 +239,7 @@ describe("Workspace", () => {
           id: true,
           name: true,
         },
+        orderBy: { createdAt: "asc" },
       });
       expect(result).toEqual(mockWorkspaces);
     });

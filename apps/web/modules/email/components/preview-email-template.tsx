@@ -1,11 +1,5 @@
 import { TFunction } from "i18next";
-import {
-  CalendarDaysIcon,
-  type LucideIcon,
-  SquareArrowOutUpRightIcon,
-  StarIcon,
-  UploadIcon,
-} from "lucide-react";
+import { CalendarDaysIcon, type LucideIcon, SquareArrowOutUpRightIcon, UploadIcon } from "lucide-react";
 import React from "react";
 import {
   Column,
@@ -20,6 +14,7 @@ import {
   Text,
   render,
 } from "@formbricks/email";
+import { isSafeLinkUrl } from "@formbricks/types/common";
 import {
   type TSurveyAddressElement,
   type TSurveyCTAElement,
@@ -63,6 +58,7 @@ import {
   getSecondaryButtonStyle,
   importantStyle,
   normalizeRichTextSpacing,
+  suppressNestedListMarkers,
 } from "../lib/preview-email-template-styles";
 import { getNPSOptionColor, getRatingNumberOptionColor } from "../lib/utils";
 
@@ -111,6 +107,7 @@ const getRatingContent = (scale: string, i: number, range: number, isColorCoding
         addColors={isColorCodingEnabled}
         baseUrl={WEBAPP_URL}
         size={EMAIL_RATING_SMILEY_SIZE}
+        centered
       />
     );
   }
@@ -118,12 +115,14 @@ const getRatingContent = (scale: string, i: number, range: number, isColorCoding
     return i + 1;
   }
   if (scale === "star") {
+    // Hosted PNG instead of an inline SVG: Gmail and Outlook strip <svg>,
+    // so stars rendered as lucide icons never show up in real email clients.
     return (
-      <StarIcon
-        color="#cbd5e1"
-        fill="#cbd5e1"
-        size={28}
-        strokeWidth={2}
+      <Img
+        src={`${WEBAPP_URL}/star-icons/star.png`}
+        alt="star"
+        width={28}
+        height={28}
         style={{
           display: "inline-block",
           marginTop: "9px",
@@ -162,9 +161,9 @@ function PreviewElementHeader({
   return (
     <ElementHeader
       className={className}
-      headline={normalizeRichTextSpacing(headline)}
+      headline={suppressNestedListMarkers(normalizeRichTextSpacing(headline))}
       style={getLightModeTextStyle(styleTokens)}
-      subheader={subheader ? normalizeRichTextSpacing(subheader) : undefined}
+      subheader={subheader ? suppressNestedListMarkers(normalizeRichTextSpacing(subheader)) : undefined}
       subheaderStyle={{
         ...getForcedColorStyle(styleTokens.elementDescriptionColor),
         fontSize: styleTokens.elementDescriptionFontSize,
@@ -450,27 +449,33 @@ export async function PreviewEmailTemplate({
       const ctaElement = firstQuestion as TSurveyCTAElement;
       return (
         <PreviewQuestionCard headline={headline} styleTokens={styleTokens} subheader={subheader} t={t}>
-          {ctaElement.buttonExternal && ctaElement.ctaButtonLabel && ctaElement.buttonUrl && (
-            <Section className="mt-4 text-left" style={{ textAlign: "left" }}>
-              <EmailButton
-                className={SECONDARY_BUTTON_CLASSNAME}
-                style={getPrimaryButtonStyle(styleTokens)}
-                href={ctaElement.buttonUrl}
-                target={PREVIEW_LINK_TARGET}>
-                {getLocalizedValue(ctaElement.ctaButtonLabel, defaultLanguageCode)}
-                <SquareArrowOutUpRightIcon
-                  color={styleTokens.buttonTextColor}
-                  size={16}
-                  strokeWidth={2}
-                  style={{
-                    display: "inline-block",
-                    marginLeft: "8px",
-                    verticalAlign: "text-bottom",
-                  }}
-                />
-              </EmailButton>
-            </Section>
-          )}
+          {/* `isSafeLinkUrl`: the button URL is an editable survey field, and drafts are persisted
+              without schema validation, so a stored value can carry a `javascript:` scheme. Rendering
+              it into an `href` would ship that payload inside the email preview. */}
+          {ctaElement.buttonExternal &&
+            ctaElement.ctaButtonLabel &&
+            ctaElement.buttonUrl &&
+            isSafeLinkUrl(ctaElement.buttonUrl) && (
+              <Section className="mt-4 text-left" style={{ textAlign: "left" }}>
+                <EmailButton
+                  className={SECONDARY_BUTTON_CLASSNAME}
+                  style={getPrimaryButtonStyle(styleTokens)}
+                  href={ctaElement.buttonUrl}
+                  target={PREVIEW_LINK_TARGET}>
+                  {getLocalizedValue(ctaElement.ctaButtonLabel, defaultLanguageCode)}
+                  <SquareArrowOutUpRightIcon
+                    color={styleTokens.buttonTextColor}
+                    size={16}
+                    strokeWidth={2}
+                    style={{
+                      display: "inline-block",
+                      marginLeft: "8px",
+                      verticalAlign: "text-bottom",
+                    }}
+                  />
+                </EmailButton>
+              </Section>
+            )}
         </PreviewQuestionCard>
       );
     }
@@ -572,7 +577,7 @@ export async function PreviewEmailTemplate({
           <Section className="mx-0 mt-4">
             {firstQuestion.choices.map((choice) => (
               <Link
-                className="rounded-custom mb-3 mr-3 inline-block h-[150px] w-[250px]"
+                className="rounded-custom mr-3 mb-3 inline-block h-[150px] w-[250px]"
                 href={getPrefilledSurveyUrl(surveyUrl, firstQuestion.id, choice.id)}
                 key={choice.id}
                 target={PREVIEW_LINK_TARGET}>
@@ -618,11 +623,11 @@ export async function PreviewEmailTemplate({
           <Container className="mx-0">
             <Section className="w-full table-auto">
               <Row>
-                <Column className="w-40 break-words px-4 py-2" />
+                <Column className="w-40 px-4 py-2 wrap-break-word" />
                 {firstQuestion.columns.map((column) => {
                   return (
                     <Column
-                      className="text-question-color max-w-40 break-words px-4 py-2 text-center"
+                      className="text-question-color max-w-40 px-4 py-2 text-center wrap-break-word"
                       key={column.id}
                       style={{ ...getLightModeTextStyle(styleTokens), textAlign: "center" }}>
                       {getLocalizedValue(column.label, "default")}
@@ -642,7 +647,9 @@ export async function PreviewEmailTemplate({
                           }
                         : undefined
                     }>
-                    <Column className="w-40 break-words px-4 py-2" style={getLightModeTextStyle(styleTokens)}>
+                    <Column
+                      className="w-40 px-4 py-2 wrap-break-word"
+                      style={getLightModeTextStyle(styleTokens)}>
                       {getLocalizedValue(row.label, "default")}
                     </Column>
                     {firstQuestion.columns.map((column) => {
@@ -880,7 +887,7 @@ function PreviewFieldList({
       {fields.map((field) => (
         <Section className="mt-3 w-full" key={field.id}>
           <Text
-            className="text-question-color font-survey m-0 mb-2 text-sm font-normal leading-6"
+            className="text-question-color font-survey m-0 mb-2 text-sm leading-6 font-normal"
             style={getFieldLabelStyle(styleTokens)}>
             {field.label}
           </Text>

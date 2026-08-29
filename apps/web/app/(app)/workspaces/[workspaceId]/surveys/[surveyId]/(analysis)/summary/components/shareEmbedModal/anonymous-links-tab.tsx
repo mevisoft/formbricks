@@ -267,7 +267,7 @@ export const AnonymousLinksTab = ({
               />
 
               <div className="w-full">
-                <Alert variant="info" size="default">
+                <Alert variant="info" size="default" role="status">
                   <AlertTitle>
                     {t("workspace.surveys.share.anonymous_links.multi_use_powers_other_channels_title")}
                   </AlertTitle>
@@ -373,19 +373,19 @@ export const AnonymousLinksTab = ({
           links={[
             {
               title: t("workspace.surveys.share.anonymous_links.single_use_links"),
-              href: "https://example.com/docs/xm-and-surveys/surveys/link-surveys/single-use-links",
+              href: "https://example.com/docs/surveys/link-surveys/single-use-links",
             },
             {
               title: t("workspace.surveys.share.anonymous_links.data_prefilling"),
-              href: "https://example.com/docs/xm-and-surveys/surveys/link-surveys/data-prefilling",
+              href: "https://example.com/docs/surveys/link-surveys/data-prefilling",
             },
             {
               title: t("workspace.surveys.share.anonymous_links.source_tracking"),
-              href: "https://example.com/docs/xm-and-surveys/surveys/link-surveys/source-tracking",
+              href: "https://example.com/docs/surveys/link-surveys/source-tracking",
             },
             {
               title: t("workspace.surveys.share.anonymous_links.custom_start_point"),
-              href: "https://example.com/docs/xm-and-surveys/surveys/link-surveys/start-at-block",
+              href: "https://example.com/docs/surveys/link-surveys/start-at-block",
             },
           ]}
         />

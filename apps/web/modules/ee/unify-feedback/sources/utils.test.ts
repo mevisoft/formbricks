@@ -1,10 +1,19 @@
 import { describe, expect, test } from "vitest";
-import { CSV_HIDDEN_STATIC_MAPPINGS, MAX_CSV_VALUES, TFieldMapping, TSourceField } from "./types";
+import {
+  CSV_HIDDEN_STATIC_MAPPINGS,
+  MAX_CSV_VALUES,
+  TFieldMapping,
+  TSourceField,
+  TUnifySurvey,
+} from "./types";
 import {
   areAllRequiredCsvFieldsMapped,
   autoMapCsvSourceFields,
+  getCsvIdentityMappingAlert,
   getFeedbackSourceOptions,
+  getSuggestedSurveys,
   inferFieldType,
+  isCsvUserDefinedStaticValueMapping,
   isFeedbackSourceNameValid,
   parseCSVColumnsToFields,
   titleizeFromFileName,
@@ -14,6 +23,52 @@ import {
 
 const mockT = (key: string) => key;
 
+const makeUnifySurvey = (overrides: Partial<TUnifySurvey> = {}): TUnifySurvey => ({
+  id: "survey-1",
+  name: "Survey 1",
+  status: "active",
+  elements: [],
+  createdAt: new Date("2026-01-01T00:00:00Z"),
+  ...overrides,
+});
+
+describe("getSuggestedSurveys", () => {
+  test("excludes surveys already backing a feedback source", () => {
+    const surveys = [makeUnifySurvey({ id: "connected" }), makeUnifySurvey({ id: "unconnected" })];
+    const result = getSuggestedSurveys(surveys, ["connected"]);
+    expect(result.map((s) => s.id)).toEqual(["unconnected"]);
+  });
+
+  test("excludes draft surveys", () => {
+    const surveys = [
+      makeUnifySurvey({ id: "draft", status: "draft" }),
+      makeUnifySurvey({ id: "active", status: "active" }),
+      makeUnifySurvey({ id: "paused", status: "paused" }),
+      makeUnifySurvey({ id: "completed", status: "completed" }),
+    ];
+    const result = getSuggestedSurveys(surveys, []);
+    expect(result.map((s) => s.id)).toEqual(["active", "paused", "completed"]);
+  });
+
+  test("excludes surveys that are both connected and drafts", () => {
+    const surveys = [
+      makeUnifySurvey({ id: "connected-draft", status: "draft" }),
+      makeUnifySurvey({ id: "connected-active", status: "active" }),
+      makeUnifySurvey({ id: "suggestable", status: "active" }),
+    ];
+    const result = getSuggestedSurveys(surveys, ["connected-draft", "connected-active"]);
+    expect(result.map((s) => s.id)).toEqual(["suggestable"]);
+  });
+
+  test("returns an empty array when every survey is a draft or connected", () => {
+    const surveys = [
+      makeUnifySurvey({ id: "draft", status: "draft" }),
+      makeUnifySurvey({ id: "connected", status: "active" }),
+    ];
+    expect(getSuggestedSurveys(surveys, ["connected"])).toEqual([]);
+  });
+});
+
 describe("getFeedbackSourceOptions", () => {
   test("returns formbricks, csv, api ingestion, and mcp options", () => {
     const options = getFeedbackSourceOptions(mockT as never);
@@ -22,11 +77,6 @@ describe("getFeedbackSourceOptions", () => {
     expect(options[1].id).toBe("csv");
     expect(options[2].id).toBe("api_ingestion");
     expect(options[3].id).toBe("feedback_record_mcp");
-  });
-
-  test("both options are enabled by default", () => {
-    const options = getFeedbackSourceOptions(mockT as never);
-    expect(options.every((o) => !o.disabled)).toBe(true);
   });
 
   test("uses translation keys for name and description", () => {
@@ -73,8 +123,12 @@ describe("parseCSVColumnsToFields", () => {
   });
 });
 
-const createMockFile = (name: string, size: number, type: string): File =>
-  new File(["x".repeat(size)], name, { type });
+const createMockFile = (name: string, size: number, type: string): File => {
+  const file = new File([], name, { type });
+  Object.defineProperty(file, "size", { value: size });
+
+  return file;
+};
 
 describe("validateCsvFile", () => {
   test("accepts a valid .csv file", () => {
@@ -119,6 +173,12 @@ describe("validateCsvFile", () => {
     expect(result).toEqual({ valid: true });
   });
 
+  test("accepts a CSV file larger than 14MB", () => {
+    const file = createMockFile("large.csv", 14 * 1024 * 1024, "text/csv");
+    const result = validateCsvFile(file, mockT as never);
+    expect(result).toEqual({ valid: true });
+  });
+
   test("checks extension before MIME type", () => {
     const file = createMockFile("data.txt", 100, "text/csv");
     const result = validateCsvFile(file, mockT as never);
@@ -146,6 +206,58 @@ describe("isFeedbackSourceNameValid", () => {
 
   test("returns true for single character", () => {
     expect(isFeedbackSourceNameValid("a")).toBe(true);
+  });
+});
+
+describe("getCsvIdentityMappingAlert", () => {
+  test("returns both_fixed when submission_id and field_id use fixed values", () => {
+    expect(
+      getCsvIdentityMappingAlert([
+        { targetFieldId: "submission_id", staticValue: "batch-1" },
+        { targetFieldId: "field_id", staticValue: "nps-score" },
+      ])
+    ).toEqual({ type: "both_fixed" });
+  });
+
+  test("returns submission_id when only submission_id uses a fixed value", () => {
+    expect(
+      getCsvIdentityMappingAlert([
+        { targetFieldId: "submission_id", staticValue: "batch-1" },
+        { targetFieldId: "field_id", sourceFieldId: "question_id" },
+      ])
+    ).toEqual({ type: "single_fixed", field: "submission_id" });
+  });
+
+  test("returns field_id when only field_id uses a fixed value", () => {
+    expect(
+      getCsvIdentityMappingAlert([
+        { targetFieldId: "submission_id", sourceFieldId: "response_id" },
+        { targetFieldId: "field_id", staticValue: "nps-score" },
+      ])
+    ).toEqual({ type: "single_fixed", field: "field_id" });
+  });
+
+  test("returns null when both identity fields are column-mapped", () => {
+    expect(
+      getCsvIdentityMappingAlert([
+        { targetFieldId: "submission_id", sourceFieldId: "response_id" },
+        { targetFieldId: "field_id", sourceFieldId: "question_id" },
+      ])
+    ).toBeNull();
+  });
+});
+
+describe("isCsvUserDefinedStaticValueMapping", () => {
+  test("returns false for $now timestamp mappings", () => {
+    expect(isCsvUserDefinedStaticValueMapping({ targetFieldId: "collected_at", staticValue: "$now" })).toBe(
+      false
+    );
+  });
+
+  test("returns false for column mappings", () => {
+    expect(
+      isCsvUserDefinedStaticValueMapping({ targetFieldId: "submission_id", sourceFieldId: "response_id" })
+    ).toBe(false);
   });
 });
 
@@ -424,6 +536,57 @@ describe("autoMapCsvSourceFields", () => {
       expect(result.confidence.field_type).toBe("high");
     }
   );
+
+  test.each(["Embedded Data - DeviceType", "Page Type", "Website Type"])(
+    "does not auto-map field_type to an unrelated 'type' column (%s)",
+    (typeColumn) => {
+      const result = autoMapCsvSourceFields({
+        sourceFields: buildSourceFields(["response_id", "question", "answer", typeColumn]),
+        sampleRow: {
+          response_id: "resp-1",
+          question: "How was it?",
+          answer: "Great",
+          [typeColumn]: "Desktop",
+        },
+        fileName: "feedback.csv",
+      });
+
+      // The column merely contains the word "type" and must not be claimed by field_type.
+      expect(result.mappings.some((m) => m.sourceFieldId === typeColumn)).toBe(false);
+
+      // field_type should be inferred as a static hub field type from the response value instead.
+      const fieldTypeMapping = result.mappings.find((m) => m.targetFieldId === "field_type");
+      expect(fieldTypeMapping?.sourceFieldId).toBeUndefined();
+      expect(fieldTypeMapping?.staticValue).toBe("text");
+    }
+  );
+
+  test("does not auto-map a target to a column that is empty in the sample row", () => {
+    // "response_id" matches the submission_id alias, but it has no data in the sample row. Binding
+    // it would make every row skip the transform, so it must be left unmapped for the user to fix.
+    const result = autoMapCsvSourceFields({
+      sourceFields: buildSourceFields(["response_id", "answer"]),
+      sampleRow: { response_id: "", answer: "Great" },
+      fileName: "feedback.csv",
+    });
+
+    expect(result.mappings.some((m) => m.sourceFieldId === "response_id")).toBe(false);
+    expect(result.mappings.find((m) => m.targetFieldId === "submission_id")).toBeUndefined();
+  });
+
+  test("does not auto-map field_label/field_id to a descriptive '...Label' column", () => {
+    // Descriptive analytics columns ending in "Label" must not be treated as field_label (and then
+    // borrowed as field_id) — their values are long free text that fails the hub's field_id limit.
+    const labelColumn = "Translated Comments - Topic Sentiment Label";
+    const result = autoMapCsvSourceFields({
+      sourceFields: buildSourceFields(["response_id", "answer", labelColumn]),
+      sampleRow: { response_id: "r1", answer: "Great", [labelColumn]: "Very Negative,Neutral,Positive" },
+      fileName: "feedback.csv",
+    });
+
+    expect(result.mappings.some((m) => m.sourceFieldId === labelColumn)).toBe(false);
+    expect(result.mappings.find((m) => m.targetFieldId === "field_label")).toBeUndefined();
+  });
 });
 
 describe("toggleQuestionId", () => {

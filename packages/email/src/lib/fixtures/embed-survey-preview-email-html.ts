@@ -18,7 +18,7 @@ export const embedSurveyPreviewEmailHtml = `
           cellpadding="0"
           cellspacing="0"
           role="presentation"
-          style="max-width:37.5em;color:#1f2937 !important;margin:0rem;display:block;font-size:16px;line-height:1.5rem;font-weight:600;margin-right:2rem;color-scheme:only light;font-family:Inter, Helvetica, Arial, sans-serif">
+          style="max-width:37.5em;color:#1f2937 !important;margin:0rem;display:block;font-size:16px;line-height:1.5rem;font-weight:500;margin-right:2rem;color-scheme:only light;font-family:Inter, Helvetica, Arial, sans-serif">
           <tbody>
             <tr style="width:100%">
               <td><div>Which fruits do you like</div></td>
@@ -126,7 +126,7 @@ export const embedSurveyPreviewEmailHtml = `
             <tr style="width:100%">
               <td>
                 <a
-                  href="https://formbricks.com?utm_source=email_branding"
+                  href="https://formbricks.com?utm_source=formbricks-app&amp;utm_medium=email&amp;utm_campaign=powered_by_badge"
                   style="color:#4c545f !important;text-decoration-line:none;font-size:0.75rem;line-height:1.3333333333333333;color-scheme:only light;font-family:Inter, Helvetica, Arial, sans-serif"
                   target="_blank"
                   >Powered by Formbricks</a

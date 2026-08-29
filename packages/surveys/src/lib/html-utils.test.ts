@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, expect, test } from "vitest";
-import { isValidHTML, stripInlineStyles } from "./html-utils";
+import { htmlToPlainText, isValidHTML, sanitizeSurveyHtml, stripInlineStyles } from "./html-utils";
 
 describe("html-utils", () => {
   describe("stripInlineStyles", () => {
@@ -80,6 +80,35 @@ describe("html-utils", () => {
 
     test("should handle HTML with inline styles (they should be stripped)", () => {
       expect(isValidHTML('<p style="color: red;">Test</p>')).toBe(true);
+    });
+  });
+
+  describe("htmlToPlainText", () => {
+    test("returns plain text unchanged", () => {
+      expect(htmlToPlainText("Just text")).toBe("Just text");
+    });
+
+    test("strips tags from rich-text headlines", () => {
+      expect(htmlToPlainText("<p>Hello <strong>world</strong></p>")).toBe("Hello world");
+    });
+
+    test("decodes entities and trims surrounding whitespace", () => {
+      expect(htmlToPlainText("  Tom &amp; Jerry  ")).toBe("Tom & Jerry");
+    });
+
+    test("returns empty string unchanged", () => {
+      expect(htmlToPlainText("")).toBe("");
+    });
+  });
+
+  // Behavior is covered in survey-ui, which owns the implementation; this checks the
+  // re-export survives the survey bundle's React → Preact aliasing.
+  describe("sanitizeSurveyHtml", () => {
+    test("opens a link pasted as plain text in a new tab", () => {
+      const sanitized = sanitizeSurveyHtml('<p>Read the <a href="https://example.com">policy</a></p>');
+
+      expect(sanitized).toContain('target="_blank"');
+      expect(sanitized).toContain('rel="noopener noreferrer"');
     });
   });
 });

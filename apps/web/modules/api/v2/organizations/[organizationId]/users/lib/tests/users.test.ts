@@ -1,6 +1,6 @@
-import { Prisma } from "@prisma/client";
 import { describe, expect, test, vi } from "vitest";
 import { prisma } from "@formbricks/database";
+import { Prisma } from "@formbricks/database/prisma";
 import { PrismaErrorType } from "@formbricks/database/types/error";
 import { TGetUsersFilter } from "@/modules/api/v2/organizations/[organizationId]/users/types/users";
 import { createUser, getUsers, updateUser } from "../users";
@@ -22,12 +22,16 @@ const mockUser = {
   teamUsers: [{ team: { name: "Test Team", id: "team123", workspaceTeams: [{ workspaceId: "proj789" }] } }],
 };
 
+// getOrganizationOwnerCount (pulled in via the last-owner guard) request-caches its result with
+// React's cache(); mocked to identity so repeated calls across tests re-hit the prisma mock below.
+vi.mock("react", () => ({ cache: (fn: Function) => fn }));
+
 vi.mock("@formbricks/database", () => ({
   prisma: {
     user: {
       findMany: vi.fn(),
       count: vi.fn(),
-      findUnique: vi.fn(),
+      findFirst: vi.fn(),
       create: vi.fn(),
       update: vi.fn(),
     },
@@ -37,6 +41,9 @@ vi.mock("@formbricks/database", () => ({
     teamUser: {
       create: vi.fn(),
       delete: vi.fn(),
+    },
+    membership: {
+      count: vi.fn(),
     },
     $transaction: vi.fn(),
   },
@@ -109,11 +116,19 @@ describe("Users Lib", () => {
     });
 
     test("returns conflict error if user with email already exists", async () => {
+      // Real Prisma 7 + adapter-pg P2002 shape: NO meta.target; columns nested under
+      // driverAdapterError.cause.constraint.fields. This is the shape that shipped the 500 bug.
       (prisma.user.create as any).mockRejectedValueOnce(
-        new Prisma.PrismaClientKnownRequestError("Unique constraint failed on the fields: (`email`)", {
+        new Prisma.PrismaClientKnownRequestError("Unique constraint failed", {
           code: PrismaErrorType.UniqueConstraintViolation,
           clientVersion: "1.0.0",
-          meta: { target: ["email"] },
+          meta: {
+            modelName: "User",
+            driverAdapterError: {
+              name: "DriverAdapterError",
+              cause: { kind: "UniqueConstraintViolation", constraint: { fields: ["email"] } },
+            },
+          },
         })
       );
       const result = await createUser(
@@ -129,16 +144,15 @@ describe("Users Lib", () => {
       }
     });
 
-    test("returns internal_server_error if unique constraint violation is not on email", async () => {
+    test("maps a driver-adapter P2002 with no recoverable fields to conflict, never 500 (ENG-1801)", async () => {
+      // Degrade-safe: even when neither meta.target nor constraint.fields is present, a P2002 on
+      // this create (email is the only unique key) must return 409, not fall through to a 500.
       (prisma.user.create as any).mockRejectedValueOnce(
-        new Prisma.PrismaClientKnownRequestError(
-          "Unique constraint failed on the fields: (`organizationId`,`email`)",
-          {
-            code: PrismaErrorType.UniqueConstraintViolation,
-            clientVersion: "1.0.0",
-            meta: { target: ["organizationId"] },
-          }
-        )
+        new Prisma.PrismaClientKnownRequestError("Unique constraint failed", {
+          code: PrismaErrorType.UniqueConstraintViolation,
+          clientVersion: "1.0.0",
+          meta: { modelName: "User", driverAdapterError: { cause: { kind: "UniqueConstraintViolation" } } },
+        })
       );
       const result = await createUser(
         { name: "Duplicate", email: "test@example.com", role: "member" },
@@ -146,17 +160,17 @@ describe("Users Lib", () => {
       );
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error.type).toBe("internal_server_error");
+        expect(result.error.type).toBe("conflict");
       }
     });
   });
 
   describe("updateUser", () => {
     test("updates user and revalidates caches", async () => {
-      (prisma.user.findUnique as any).mockResolvedValueOnce(mockUser);
+      (prisma.user.findFirst as any).mockResolvedValueOnce(mockUser);
       (prisma.$transaction as any).mockResolvedValueOnce([{ ...mockUser, name: "Updated User" }]);
       const result = await updateUser({ email: mockUser.email, name: "Updated User" }, "org456");
-      expect(prisma.user.findUnique).toHaveBeenCalled();
+      expect(prisma.user.findFirst).toHaveBeenCalled();
       expect(result.ok).toBe(true);
       if (result.ok) {
         expect(result.data.name).toBe("Updated User");
@@ -168,7 +182,7 @@ describe("Users Lib", () => {
     });
 
     test("returns not_found if user doesn't exist", async () => {
-      (prisma.user.findUnique as any).mockResolvedValueOnce(null);
+      (prisma.user.findFirst as any).mockResolvedValueOnce(null);
       const result = await updateUser({ email: "unknown@example.com" }, "org456");
       expect(result.ok).toBe(false);
       if (!result.ok) {
@@ -176,14 +190,129 @@ describe("Users Lib", () => {
       }
     });
 
+    test("scopes the lookup to a membership in the authenticated organization", async () => {
+      (prisma.user.findFirst as any).mockResolvedValueOnce(null);
+
+      const result = await updateUser(
+        { email: "outsider@example.com", isActive: false, teams: [] },
+        "org456"
+      );
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.type).toBe("not_found");
+      }
+
+      // The lookup MUST filter by both email and an organization membership; otherwise a
+      // caller could mutate a user that belongs only to another organization.
+      const lookupArgs = (prisma.user.findFirst as any).mock.calls[0]?.[0];
+      expect(lookupArgs?.where).toEqual({
+        email: "outsider@example.com",
+        memberships: { some: { organizationId: "org456" } },
+      });
+      // No write should happen when the user is not in the caller's organization.
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    test("only loads teamUsers for the authenticated organization", async () => {
+      (prisma.user.findFirst as any).mockResolvedValueOnce({
+        ...mockUser,
+        teamUsers: [],
+      });
+      (prisma.team.findMany as any).mockResolvedValueOnce([]);
+      (prisma.$transaction as any).mockResolvedValueOnce([{ ...mockUser, name: mockUser.name }]);
+
+      await updateUser({ email: mockUser.email, teams: [] }, "org456");
+
+      const lookupArgs = (prisma.user.findFirst as any).mock.calls[0]?.[0];
+      expect(lookupArgs?.include?.teamUsers).toMatchObject({
+        where: { team: { organizationId: "org456" } },
+      });
+    });
+
+    test("updates the user by id rather than email", async () => {
+      (prisma.user.findFirst as any).mockResolvedValueOnce({
+        ...mockUser,
+        teamUsers: [],
+      });
+      (prisma.team.findMany as any).mockResolvedValueOnce([]);
+      (prisma.$transaction as any).mockResolvedValueOnce([{ ...mockUser, name: "Renamed" }]);
+
+      await updateUser({ email: mockUser.email, name: "Renamed" }, "org456");
+
+      // Find the user.update call inside the transaction args.
+      expect(prisma.user.update).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: mockUser.id } })
+      );
+    });
+
     test("returns internal_server_error if update fails", async () => {
-      (prisma.user.findUnique as any).mockResolvedValueOnce(mockUser);
+      (prisma.user.findFirst as any).mockResolvedValueOnce(mockUser);
       (prisma.$transaction as any).mockRejectedValueOnce(new Error("Update error"));
       const result = await updateUser({ email: mockUser.email }, "org456");
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error.type).toBe("internal_server_error");
       }
+    });
+
+    test("blocks demoting the organization's last owner", async () => {
+      // The re-check runs inside the transaction, so the mock has to actually invoke the
+      // callback (against the same mocked client, standing in for `tx`) for the guard to run.
+      (prisma.$transaction as any).mockImplementationOnce((callback: any) => callback(prisma));
+      (prisma.user.findFirst as any).mockResolvedValueOnce({
+        ...mockUser,
+        memberships: [{ organizationId: "org456", role: "owner" }],
+      });
+      (prisma.membership.count as any).mockResolvedValueOnce(1);
+
+      const result = await updateUser({ email: mockUser.email, role: "member" }, "org456");
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.type).toBe("conflict");
+      }
+      expect(prisma.user.update).not.toHaveBeenCalled();
+    });
+
+    test("allows demoting an owner when the organization has another owner", async () => {
+      (prisma.$transaction as any).mockImplementationOnce((callback: any) => callback(prisma));
+      (prisma.user.findFirst as any).mockResolvedValueOnce({
+        ...mockUser,
+        memberships: [{ organizationId: "org456", role: "owner" }],
+        teamUsers: [],
+      });
+      (prisma.membership.count as any).mockResolvedValueOnce(2);
+      (prisma.team.findMany as any).mockResolvedValueOnce([]);
+      (prisma.user.update as any).mockResolvedValueOnce({
+        ...mockUser,
+        memberships: [{ organizationId: "org456", role: "member" }],
+      });
+
+      const result = await updateUser({ email: mockUser.email, role: "member" }, "org456");
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.data.role).toBe("member");
+      }
+    });
+
+    test("allows demoting an already-inactive owner without checking the owner count", async () => {
+      (prisma.user.findFirst as any).mockResolvedValueOnce({
+        ...mockUser,
+        isActive: false,
+        memberships: [{ organizationId: "org456", role: "owner" }],
+        teamUsers: [],
+      });
+      (prisma.team.findMany as any).mockResolvedValueOnce([]);
+      (prisma.$transaction as any).mockResolvedValueOnce([
+        { ...mockUser, isActive: false, memberships: [{ organizationId: "org456", role: "member" }] },
+      ]);
+
+      const result = await updateUser({ email: mockUser.email, role: "member" }, "org456");
+
+      expect(result.ok).toBe(true);
+      expect(prisma.membership.count).not.toHaveBeenCalled();
     });
   });
 
@@ -209,7 +338,7 @@ describe("Users Lib", () => {
 
   describe("updateUser with team changes", () => {
     test("removes a team and adds new team", async () => {
-      (prisma.user.findUnique as any).mockResolvedValueOnce({
+      (prisma.user.findFirst as any).mockResolvedValueOnce({
         ...mockUser,
         teamUsers: [
           { team: { id: "team123", name: "OldTeam", workspaceTeams: [{ workspaceId: "proj789" }] } },
@@ -234,7 +363,7 @@ describe("Users Lib", () => {
         "org456"
       );
 
-      expect(prisma.user.findUnique).toHaveBeenCalled();
+      expect(prisma.user.findFirst).toHaveBeenCalled();
       expect(result.ok).toBe(true);
       if (result.ok) {
         expect(result.data.teams).toContain("NewTeam");

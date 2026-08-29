@@ -14,9 +14,9 @@ Keep the survey styling consistent over all surveys with a Styling Theme. Custom
 
 ## Configuration
 
-In the left side bar, you find the `Settings` page. On this page you find the `Appearance` section:
+In the left sidebar, open **Settings → Workspace → Appearance**:
 
-![Appearance](/images/xm-and-surveys/core-features/styling-theme/form-css-styling.webp)
+![The Appearance settings, with the theme editor and a live preview](/images/platform/features/styling-theme/appearance.webp)
 
 ## Survey styling
 
@@ -125,31 +125,12 @@ Customize your survey with your brand's logo.
 
 <Note>Brand logos are only visible on Link Survey pages.</Note>
 
-<Steps>
-  <Step title="Open Logo Settings">
-    In the **Appearance** page in Workspace settings, scroll down to the **Logo Upload** box.
+1. In **Settings → Workspace → Appearance**, scroll down to **Logo**.
+2. Upload your logo. Logos must be 5 MB or less.
+3. Optionally turn on **Add background color** — useful for a transparent logo that needs a solid backdrop.
+4. Choose **Save**. The logo only takes effect once saved.
 
-    ![Logo upload box](/images/xm-and-surveys/core-features/styling-theme/step-four.webp)
-  </Step>
-
-  <Step title="Upload Your Logo">
-    Upload your logo. Logos must be 5 MB or less.
-
-    ![Upload logo](/images/xm-and-surveys/core-features/styling-theme/step-five.webp)
-  </Step>
-
-  <Step title="Add Background Color (Optional)">
-    If you've uploaded a transparent image and want to add a background to it, enable the toggle and select a color.
-
-    ![Logo background color](/images/xm-and-surveys/core-features/styling-theme/step-six.webp)
-  </Step>
-
-  <Step title="Save">
-    Remember to save your changes!
-
-    ![Save changes](/images/xm-and-surveys/core-features/styling-theme/step-seven.webp)
-  </Step>
-</Steps>
+![The Logo section with a logo uploaded](/images/platform/features/styling-theme/logo.webp)
 
 <Note>The logo settings apply across all Link Survey pages.</Note>
 
@@ -157,12 +138,12 @@ Customize your survey with your brand's logo.
 
 You can allow overwriting the styling theme for individual surveys to create unique styles per survey:
 
-![Allow overwrite toggle](/images/xm-and-surveys/core-features/styling-theme/allow-overwrite.webp)
+![The Enable custom styling toggle](/images/platform/features/styling-theme/enable-custom-styling.webp)
 
-In the survey editor, a **Styling** tab will appear where you can overwrite the default styling theme. See the [Custom Styling](/xm-and-surveys/surveys/general-features/overwrite-styling) guide for details.
+In the survey editor, a **Styling** tab will appear where you can overwrite the default styling theme. See the [Custom Styling](/surveys/general-features/overwrite-styling) guide for details.
 
 ## CSS Variables Reference
 
 Under the hood, every styling property maps to a CSS variable prefixed with `--fb-`. For App & Website Surveys, you can override these directly in your global CSS file (e.g., `globals.css`) by targeting the `#fbjs` selector.
 
-See the full [CSS Variables Reference](/xm-and-surveys/surveys/general-features/overwrite-styling#overwrite-css-styles-for-app--website-surveys) in the Custom Styling guide.
+See the full [CSS Variables Reference](/surveys/general-features/overwrite-styling#overwrite-css-styles-for-app--website-surveys) in the Custom Styling guide.

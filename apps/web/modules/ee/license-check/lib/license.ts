@@ -6,7 +6,7 @@ import { createCacheKey } from "@formbricks/cache";
 import { prisma } from "@formbricks/database";
 import { logger } from "@formbricks/logger";
 import { cache } from "@/lib/cache";
-import { E2E_TESTING } from "@/lib/constants";
+import { COMMUNITY_WORKSPACE_LIMIT, E2E_TESTING } from "@/lib/constants";
 import { env } from "@/lib/env";
 import { hashString } from "@/lib/hash-string";
 import { getInstanceId } from "@/lib/instance";
@@ -91,6 +91,7 @@ const LicenseFeaturesSchema = z.object({
   quotas: z.boolean(),
   feedbackDirectories: z.boolean().default(false),
   dashboards: z.boolean().default(false),
+  workflows: z.boolean().default(false),
 });
 
 const LicenseDetailsSchema = z.object({
@@ -146,7 +147,7 @@ export const getCacheKeys = () => {
 // Default features
 const DEFAULT_FEATURES: TEnterpriseLicenseFeatures = {
   isMultiOrgEnabled: false,
-  workspaces: 3,
+  workspaces: COMMUNITY_WORKSPACE_LIMIT,
   twoFactorAuth: false,
   sso: false,
   whitelabel: false,
@@ -160,6 +161,7 @@ const DEFAULT_FEATURES: TEnterpriseLicenseFeatures = {
   quotas: false,
   feedbackDirectories: false,
   dashboards: false,
+  workflows: false,
 };
 
 // Helper functions
@@ -331,7 +333,6 @@ const fetchLicenseFromServerInternal = async (retryCount = 0): Promise<TEnterpri
   if (!env.ENTERPRISE_LICENSE_KEY) return null;
 
   // Skip license checks during build time
-  // eslint-disable-next-line turbo/no-undeclared-env-vars -- NEXT_PHASE is a next.js env variable
   if (process.env.NEXT_PHASE === "phase-production-build") {
     return null;
   }
@@ -435,7 +436,6 @@ export const fetchLicense = async (): Promise<TEnterpriseLicenseDetails | null> 
   if (!env.ENTERPRISE_LICENSE_KEY) return null;
 
   // Skip license checks during build time - check before cache access
-  // eslint-disable-next-line turbo/no-undeclared-env-vars -- NEXT_PHASE is a next.js env variable
   if (process.env.NEXT_PHASE === "phase-production-build") {
     return null;
   }
@@ -619,11 +619,7 @@ const computeLicenseState = async (
 };
 
 export const getEnterpriseLicense = reactCache(async (): Promise<TEnterpriseLicenseResult> => {
-  if (
-    process.env.NODE_ENV !== "test" &&
-    memoryCache &&
-    Date.now() - memoryCache.timestamp < MEMORY_CACHE_TTL_MS
-  ) {
+  if (env.NODE_ENV !== "test" && memoryCache && Date.now() - memoryCache.timestamp < MEMORY_CACHE_TTL_MS) {
     return memoryCache.data;
   }
 

@@ -4,8 +4,8 @@ import { createId } from "@paralleldrive/cuid2";
 import { CopyIcon, Trash2Icon } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { TSurveyFollowUp } from "@formbricks/database/types/survey-follow-up";
 import { TSurveyElementTypeEnum } from "@formbricks/types/surveys/elements";
+import { TSurveyFollowUp } from "@formbricks/types/surveys/follow-up";
 import { TSurvey } from "@formbricks/types/surveys/types";
 import { TUserLocale } from "@formbricks/types/user";
 import { TFollowUpEmailToUser } from "@/modules/survey/editor/types/survey-follow-up";
@@ -156,7 +156,7 @@ export const FollowUpItem = ({
           </div>
         </button>
 
-        <div className="absolute right-4 top-4 flex items-center">
+        <div className="absolute top-4 right-4 flex items-center">
           <TooltipRenderer tooltipContent={t("common.delete")}>
             <Button
               variant="ghost"

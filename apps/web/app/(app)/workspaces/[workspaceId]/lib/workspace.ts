@@ -1,6 +1,6 @@
-import { Prisma } from "@prisma/client";
 import { cache as reactCache } from "react";
 import { prisma } from "@formbricks/database";
+import { Prisma } from "@formbricks/database/prisma";
 import { ZId } from "@formbricks/types/common";
 import { DatabaseError } from "@formbricks/types/errors";
 import { TMembership, ZMembership } from "@formbricks/types/memberships";
@@ -42,6 +42,9 @@ const findWorkspacesForMembership = async (
         id: true,
         name: true,
       },
+      // Deterministic order so the org-settings fallback workspace (workspaces[0]) is stable
+      // rather than arbitrary DB order when no active-workspace cookie is present.
+      orderBy: { createdAt: "asc" },
     });
     return workspaces;
   } catch (error) {

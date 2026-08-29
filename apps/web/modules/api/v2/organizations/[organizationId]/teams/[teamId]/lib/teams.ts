@@ -1,7 +1,7 @@
-import { Prisma, Team } from "@prisma/client";
 import { cache as reactCache } from "react";
 import { z } from "zod";
 import { prisma } from "@formbricks/database";
+import { Prisma, Team } from "@formbricks/database/prisma";
 import { PrismaErrorType } from "@formbricks/database/types/error";
 import { Result, err, ok } from "@formbricks/types/error-handlers";
 import { ZTeamUpdateSchema } from "@/modules/api/v2/organizations/[organizationId]/teams/[teamId]/types/teams";
@@ -52,8 +52,8 @@ export const deleteTeam = async (
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError) {
       if (
-        error.code === PrismaErrorType.RecordDoesNotExist ||
-        error.code === PrismaErrorType.RelatedRecordDoesNotExist
+        error.code === PrismaErrorType.RelatedRecordNotFound ||
+        error.code === PrismaErrorType.RecordNotFound
       ) {
         return err({
           type: "not_found",
@@ -90,8 +90,8 @@ export const updateTeam = async (
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError) {
       if (
-        error.code === PrismaErrorType.RecordDoesNotExist ||
-        error.code === PrismaErrorType.RelatedRecordDoesNotExist
+        error.code === PrismaErrorType.RelatedRecordNotFound ||
+        error.code === PrismaErrorType.RecordNotFound
       ) {
         return err({
           type: "not_found",

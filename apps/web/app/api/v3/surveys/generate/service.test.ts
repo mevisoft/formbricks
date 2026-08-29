@@ -72,6 +72,7 @@ describe("generateV3SurveyCreatePayloadFromPrompt", () => {
     await expect(
       generateV3SurveyCreatePayloadFromPrompt({
         organizationId: "org_1",
+        workspaceId,
         input: {
           workspaceId,
           type: "link",
@@ -83,6 +84,7 @@ describe("generateV3SurveyCreatePayloadFromPrompt", () => {
     await expect(
       generateV3SurveyCreatePayloadFromPrompt({
         organizationId: "org_1",
+        workspaceId,
         input: {
           workspaceId,
           type: "link",
@@ -148,6 +150,7 @@ describe("generateV3SurveyCreatePayloadFromPrompt", () => {
 
     const result = await generateV3SurveyCreatePayloadFromPrompt({
       organizationId: "org_1",
+      workspaceId,
       input: generateInput,
     });
 
@@ -157,6 +160,8 @@ describe("generateV3SurveyCreatePayloadFromPrompt", () => {
         schema: ZGeneratedSurveyDraftForAI,
         schemaName: "FormbricksSurveyDraft",
         temperature: 0.2,
+        maxOutputTokens: 8192,
+        timeout: 45_000,
       })
     );
     const generationOptions = vi.mocked(generateOrganizationAIObject).mock.calls[0][0];
@@ -192,6 +197,57 @@ describe("generateV3SurveyCreatePayloadFromPrompt", () => {
       invalid_params: [],
       languages: [{ code: "en-US", default: true, enabled: true }],
     });
+  });
+
+  test("seeds a default app distribution when generating an app survey", async () => {
+    vi.mocked(generateOrganizationAIObject).mockResolvedValueOnce({
+      object: {
+        language: "en-US",
+        name: "In-App Onboarding Feedback",
+        description: null,
+        welcomeCard: { enabled: false, headline: null, subheader: null, buttonLabel: null },
+        blocks: [
+          {
+            name: "Onboarding",
+            questions: [
+              {
+                type: "openText",
+                headline: "How was your setup experience?",
+                subheader: null,
+                required: false,
+                placeholder: null,
+                longAnswer: true,
+                choices: null,
+                lowerLabel: null,
+                upperLabel: null,
+                scale: null,
+                range: null,
+              },
+            ],
+          },
+        ],
+        ending: { headline: "Thanks for the feedback", subheader: null },
+      },
+    } as Awaited<ReturnType<typeof generateOrganizationAIObject>>);
+
+    const result = await generateV3SurveyCreatePayloadFromPrompt({
+      organizationId: "org_1",
+      workspaceId,
+      input: {
+        workspaceId,
+        type: "app",
+        prompt: "Create an in-app onboarding feedback survey for brand new users.",
+      },
+    });
+
+    const generationOptions = vi.mocked(generateOrganizationAIObject).mock.calls[0][0];
+    expect(generationOptions.system).toContain("app survey draft");
+
+    expect(result.payload.type).toBe("app");
+    expect(result.payload.distribution).toMatchObject({ displayOption: "displayOnce", triggers: [] });
+    expect(result.payload).not.toHaveProperty("targeting");
+    expect(result.validation.valid).toBe(true);
+    expect(prepareV3SurveyCreateInput(result.payload).ok).toBe(true);
   });
 
   test("maps generated blocks to separate v3 create blocks", async () => {
@@ -271,6 +327,7 @@ describe("generateV3SurveyCreatePayloadFromPrompt", () => {
 
     const result = await generateV3SurveyCreatePayloadFromPrompt({
       organizationId: "org_1",
+      workspaceId,
       input: {
         ...generateInput,
         prompt:
@@ -351,6 +408,7 @@ describe("generateV3SurveyCreatePayloadFromPrompt", () => {
 
     const result = await generateV3SurveyCreatePayloadFromPrompt({
       organizationId: "org_1",
+      workspaceId,
       input: generateInput,
     });
 
@@ -408,6 +466,7 @@ describe("generateV3SurveyCreatePayloadFromPrompt", () => {
 
     const result = await generateV3SurveyCreatePayloadFromPrompt({
       organizationId: "org_1",
+      workspaceId,
       input: generateInput,
     });
 
@@ -464,6 +523,7 @@ describe("generateV3SurveyCreatePayloadFromPrompt", () => {
 
     const result = await generateV3SurveyCreatePayloadFromPrompt({
       organizationId: "org_1",
+      workspaceId,
       input: generateInput,
     });
 
@@ -547,6 +607,7 @@ describe("generateV3SurveyCreatePayloadFromPrompt", () => {
 
     const result = await generateV3SurveyCreatePayloadFromPrompt({
       organizationId: "org_1",
+      workspaceId,
       input: generateInput,
     });
     const elements = result.payload.blocks.flatMap((block) => block.elements);
@@ -622,6 +683,7 @@ describe("generateV3SurveyCreatePayloadFromPrompt", () => {
     await expect(
       generateV3SurveyCreatePayloadFromPrompt({
         organizationId: "org_1",
+        workspaceId,
         input: generateInput,
       })
     ).rejects.toThrow(V3SurveyGeneratedPayloadValidationError);
@@ -668,6 +730,7 @@ describe("generateV3SurveyCreatePayloadFromPrompt", () => {
 
     const result = await generateV3SurveyCreatePayloadFromPrompt({
       organizationId: "org_1",
+      workspaceId,
       input: {
         ...generateInput,
         language: "es-ES",
@@ -721,6 +784,7 @@ describe("generateV3SurveyCreatePayloadFromPrompt", () => {
     await expect(
       generateV3SurveyCreatePayloadFromPrompt({
         organizationId: "org_1",
+        workspaceId,
         input: generateInput,
       })
     ).rejects.toThrow(V3SurveyGeneratedPayloadValidationError);
@@ -760,6 +824,7 @@ describe("generateV3SurveyCreatePayloadFromPrompt", () => {
     await expect(
       generateV3SurveyCreatePayloadFromPrompt({
         organizationId: "org_1",
+        workspaceId,
         input: generateInput,
       })
     ).rejects.toThrow(V3SurveyGeneratedPayloadValidationError);

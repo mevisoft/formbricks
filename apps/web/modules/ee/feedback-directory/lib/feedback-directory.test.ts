@@ -1,6 +1,6 @@
-import { Prisma } from "@prisma/client";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { prisma } from "@formbricks/database";
+import { Prisma, type PrismaClientKnownRequestError } from "@formbricks/database/prisma";
 import { DatabaseError, InvalidInputError, ResourceNotFoundError } from "@formbricks/types/errors";
 import {
   createFeedbackDirectory,
@@ -36,7 +36,6 @@ vi.mock("@formbricks/database", () => {
     },
     feedbackSource: {
       count: vi.fn().mockResolvedValue(0),
-      updateMany: vi.fn().mockResolvedValue({ count: 0 }),
     },
     $transaction: vi.fn(async (cb: (tx: unknown) => Promise<unknown>) => cb(prismaMock)),
   };
@@ -66,6 +65,26 @@ const mockDirectoryDetailsDbRow = {
   ],
   feedbackSources: [],
 };
+
+// Mirrors the real P2003 `meta` produced by Prisma 7 with the @prisma/adapter-pg driver: the
+// constraint name is nested under driverAdapterError.cause, not at the top level.
+const makeForeignKeyError = (constraintName: string): PrismaClientKnownRequestError =>
+  new Prisma.PrismaClientKnownRequestError("Foreign key constraint violated", {
+    code: "P2003",
+    clientVersion: "7.8.0",
+    meta: {
+      modelName: "FeedbackDirectoryWorkspace",
+      driverAdapterError: {
+        name: "DriverAdapterError",
+        cause: {
+          kind: "ForeignKeyConstraintViolation",
+          originalCode: "23503",
+          originalMessage: `update or delete on table "FeedbackDirectoryWorkspace" violates foreign key constraint "${constraintName}"`,
+          constraint: { index: constraintName },
+        },
+      },
+    },
+  });
 
 describe("FeedbackDirectory Service", () => {
   beforeEach(() => {
@@ -189,6 +208,13 @@ describe("FeedbackDirectory Service", () => {
 
       await expect(getFeedbackDirectoryDetails(mockDirectoryId)).rejects.toThrow(DatabaseError);
     });
+
+    test("re-throws unexpected errors", async () => {
+      const error = new Error("Unexpected error");
+      vi.mocked(prisma.feedbackDirectory.findUnique).mockRejectedValueOnce(error);
+
+      await expect(getFeedbackDirectoryDetails(mockDirectoryId)).rejects.toThrow(error);
+    });
   });
 
   describe("getFeedbackDirectoryAuthContext", () => {
@@ -236,6 +262,13 @@ describe("FeedbackDirectory Service", () => {
       vi.mocked(prisma.feedbackDirectory.findUnique).mockRejectedValueOnce(prismaError);
 
       await expect(getFeedbackDirectoryAuthContext(mockDirectoryId)).rejects.toThrow(DatabaseError);
+    });
+
+    test("re-throws unexpected errors", async () => {
+      const error = new Error("Unexpected error");
+      vi.mocked(prisma.feedbackDirectory.findUnique).mockRejectedValueOnce(error);
+
+      await expect(getFeedbackDirectoryAuthContext(mockDirectoryId)).rejects.toThrow(error);
     });
   });
 
@@ -473,30 +506,53 @@ describe("FeedbackDirectory Service", () => {
       });
     });
 
-    test("pauses feedbackSources in removed workspaces when requested", async () => {
+    test("blocks removing a workspace that still has feedback sources", async () => {
       vi.mocked(prisma.feedbackDirectory.findUnique).mockResolvedValueOnce(mockDirectoryDetailsDbRow as any);
       vi.mocked(prisma.workspace.count).mockResolvedValueOnce(1);
-      vi.mocked(prisma.feedbackDirectory.update).mockResolvedValueOnce({} as any);
+      // The removed workspace (workspace2) still owns feedback sources in this directory.
+      vi.mocked(prisma.feedbackSource.count).mockResolvedValueOnce(2);
 
-      const result = await updateFeedbackDirectory(
-        mockDirectoryId,
-        mockOrganizationId,
-        {
+      await expect(
+        updateFeedbackDirectory(mockDirectoryId, mockOrganizationId, {
           workspaceIds: [mockWorkspaceId1],
-        },
-        { pauseFeedbackSourcesInRemovedWorkspaces: true }
-      );
+        })
+      ).rejects.toThrow(new InvalidInputError("DIRECTORY_WORKSPACE_HAS_FEEDBACK_SOURCES"));
 
-      expect(result).toBe(true);
-      expect(prisma.feedbackSource.updateMany).toHaveBeenCalledWith({
+      expect(prisma.feedbackSource.count).toHaveBeenCalledWith({
         where: {
           feedbackDirectoryId: mockDirectoryId,
           workspaceId: { in: [mockWorkspaceId2] },
         },
-        data: {
-          status: "paused",
-        },
       });
+      expect(prisma.feedbackDirectory.update).not.toHaveBeenCalled();
+    });
+
+    test("maps a composite-FK violation (concurrent source create) to the blocked error", async () => {
+      vi.mocked(prisma.feedbackDirectory.findUnique).mockResolvedValueOnce(mockDirectoryDetailsDbRow as any);
+      vi.mocked(prisma.workspace.count).mockResolvedValueOnce(1);
+      vi.mocked(prisma.feedbackDirectory.update).mockRejectedValueOnce(
+        makeForeignKeyError("FeedbackSource_feedbackDirectoryId_workspaceId_fkey")
+      );
+
+      await expect(
+        updateFeedbackDirectory(mockDirectoryId, mockOrganizationId, {
+          workspaceIds: [mockWorkspaceId1],
+        })
+      ).rejects.toThrow(new InvalidInputError("DIRECTORY_WORKSPACE_HAS_FEEDBACK_SOURCES"));
+    });
+
+    test("throws DatabaseError on an unrelated foreign-key violation", async () => {
+      vi.mocked(prisma.feedbackDirectory.findUnique).mockResolvedValueOnce(mockDirectoryDetailsDbRow as any);
+      vi.mocked(prisma.workspace.count).mockResolvedValueOnce(1);
+      vi.mocked(prisma.feedbackDirectory.update).mockRejectedValueOnce(
+        makeForeignKeyError("FeedbackDirectoryWorkspace_workspaceId_fkey")
+      );
+
+      await expect(
+        updateFeedbackDirectory(mockDirectoryId, mockOrganizationId, {
+          workspaceIds: [mockWorkspaceId1],
+        })
+      ).rejects.toThrow(DatabaseError);
     });
 
     test("throws ResourceNotFoundError when directory does not exist (P2025)", async () => {

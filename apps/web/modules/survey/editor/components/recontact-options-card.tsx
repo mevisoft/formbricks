@@ -1,6 +1,5 @@
 "use client";
 
-import { useAutoAnimate } from "@formkit/auto-animate/react";
 import * as Collapsible from "@radix-ui/react-collapsible";
 import { CheckIcon } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -36,20 +35,20 @@ export const RecontactOptionsCard = ({ localSurvey, setLocalSurvey }: RecontactO
       {
         id: "respect",
         value: null,
-        name: t("workspace.surveys.edit.respect_global_waiting_time"),
-        description: t("workspace.surveys.edit.respect_global_waiting_time_description"),
+        name: t("workspace.surveys.edit.respect_global_cooldown_period"),
+        description: t("workspace.surveys.edit.respect_global_cooldown_period_description"),
       },
       {
         id: "ignore",
         value: 0,
-        name: t("workspace.surveys.edit.ignore_global_waiting_time"),
-        description: t("workspace.surveys.edit.ignore_global_waiting_time_description"),
+        name: t("workspace.surveys.edit.ignore_global_cooldown_period"),
+        description: t("workspace.surveys.edit.ignore_global_cooldown_period_description"),
       },
       {
         id: "overwrite",
         value: 1,
-        name: t("workspace.surveys.edit.overwrite_global_waiting_time"),
-        description: t("workspace.surveys.edit.overwrite_global_waiting_time_description"),
+        name: t("workspace.surveys.edit.overwrite_global_cooldown_period"),
+        description: t("workspace.surveys.edit.overwrite_global_cooldown_period_description"),
       },
     ],
     [t]
@@ -95,7 +94,6 @@ export const RecontactOptionsCard = ({ localSurvey, setLocalSurvey }: RecontactO
   };
 
   // Auto animate
-  const [parent] = useAutoAnimate();
 
   const handleWaitingTimeChange = (optionId: string) => {
     const option = waitingTimeOptions.find((opt) => opt.id === optionId);
@@ -157,7 +155,7 @@ export const RecontactOptionsCard = ({ localSurvey, setLocalSurvey }: RecontactO
         className="h-full w-full cursor-pointer rounded-lg hover:bg-slate-50"
         id="recontactOptionsCardTrigger">
         <div className="inline-flex px-4 py-4">
-          <div className="flex items-center pl-2 pr-5">
+          <div className="flex items-center pr-5 pl-2">
             <CheckIcon
               strokeWidth={3}
               className="size-7 rounded-full border border-green-300 bg-green-100 p-1.5 text-green-600"
@@ -173,16 +171,17 @@ export const RecontactOptionsCard = ({ localSurvey, setLocalSurvey }: RecontactO
           </div>
         </div>
       </Collapsible.CollapsibleTrigger>
-      <Collapsible.CollapsibleContent className={`flex flex-col ${open && "pb-3"}`} ref={parent}>
+      <Collapsible.CollapsibleContent
+        className={`flex flex-col ${open && "pb-3"} overflow-hidden data-[state=closed]:animate-collapsible-up data-[state=open]:animate-collapsible-down`}>
         <hr className="py-1 text-slate-600" />
         <div className="p-3">
           {/* Waiting Time Section */}
           <div className="mb-4 space-y-1 px-1">
             <h3 className="font-semibold text-slate-800">
-              {t("workspace.surveys.edit.waiting_time_across_surveys")}
+              {t("workspace.surveys.edit.cooldown_period_across_surveys")}
             </h3>
             <p className="text-sm text-slate-500">
-              {t("workspace.surveys.edit.waiting_time_across_surveys_description")}
+              {t("workspace.surveys.edit.cooldown_period_across_surveys_description")}
             </p>
           </div>
 
@@ -193,12 +192,12 @@ export const RecontactOptionsCard = ({ localSurvey, setLocalSurvey }: RecontactO
             {waitingTimeOptions.map((option) => (
               <div key={option.id}>
                 <Label
-                  htmlFor={`waiting-time-${option.id}`}
+                  htmlFor={`cooldown-period-${option.id}`}
                   className="flex w-full cursor-pointer items-center rounded-lg border bg-slate-50 p-4"
-                  data-testid={`waiting-time-option-${option.id}`}>
+                  data-testid={`cooldown-period-option-${option.id}`}>
                   <RadioGroupItem
                     value={option.id}
-                    id={`waiting-time-${option.id}`}
+                    id={`cooldown-period-${option.id}`}
                     className="mx-5 disabled:border-slate-400 aria-checked:border-2 aria-checked:border-brand-dark"
                   />
                   <div>
@@ -221,7 +220,7 @@ export const RecontactOptionsCard = ({ localSurvey, setLocalSurvey }: RecontactO
                                 id="overwriteDays"
                                 value={inputDays}
                                 onChange={handleOverwriteDaysChange}
-                                className="ml-2 mr-2 inline w-20 bg-white text-center text-sm"
+                                className="mr-2 ml-2 inline w-20 bg-white text-center text-sm"
                               />
                             ),
                           }}
@@ -296,7 +295,7 @@ export const RecontactOptionsCard = ({ localSurvey, setLocalSurvey }: RecontactO
                                 id="displayLimit"
                                 value={displayLimit.toString()}
                                 onChange={(e) => handleDisplayLimitChange(e)}
-                                className="ml-2 mr-2 inline w-20 bg-white text-center text-sm"
+                                className="mr-2 ml-2 inline w-20 bg-white text-center text-sm"
                               />
                             ),
                           }}

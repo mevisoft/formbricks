@@ -1,6 +1,6 @@
-import { Prisma } from "@prisma/client";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { prisma } from "@formbricks/database";
+import { Prisma } from "@formbricks/database/prisma";
 import { DatabaseError } from "@formbricks/types/errors";
 import { getPublishedLinkSurveys } from "./surveys";
 
@@ -37,7 +37,7 @@ describe("getPublishedLinkSurveys", () => {
     expect(result[2]).toEqual({ id: "survey3", name: "NPS Survey" });
 
     expect(prisma.survey.findMany).toHaveBeenCalledWith({
-      where: { workspaceId: workspaceId, status: "inProgress", type: "link" },
+      where: { workspaceId: workspaceId, status: "inProgress", type: "link", archivedAt: null },
       select: {
         id: true,
         name: true,

@@ -1,6 +1,6 @@
-import { ContactAttributeKey } from "@prisma/client";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { prisma } from "@formbricks/database";
+import { ContactAttributeKey } from "@formbricks/database/prisma";
 import { PrismaErrorType } from "@formbricks/database/types/error";
 import { InvalidInputError, OperationNotAllowedError, ResourceNotFoundError } from "@formbricks/types/errors";
 import {
@@ -155,7 +155,9 @@ describe("createContactAttributeKey", () => {
   });
 
   test("rethrows unknown prisma error codes", async () => {
-    const err = Object.assign(new Error("Some prisma error"), { code: PrismaErrorType.RecordDoesNotExist });
+    const err = Object.assign(new Error("Some prisma error"), {
+      code: "P2016", // a Prisma code the service does not handle → must be rethrown as-is
+    });
     vi.mocked(prisma.contactAttributeKey.create).mockRejectedValue(err);
 
     try {

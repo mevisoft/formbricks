@@ -1,5 +1,4 @@
 import { google } from "googleapis";
-import { getServerSession } from "next-auth";
 import { NextRequest } from "next/server";
 import { logger } from "@formbricks/logger";
 import { responses } from "@/app/lib/api/response";
@@ -9,8 +8,8 @@ import {
   GOOGLE_SHEETS_REDIRECT_URL,
 } from "@/lib/constants";
 import { createIntegrationOAuthState } from "@/lib/oauth/integration-state";
-import { hasUserWorkspaceAccess } from "@/lib/workspace/auth";
-import { authOptions } from "@/modules/auth/lib/authOptions";
+import { canUserWriteWorkspaceIntegrations } from "@/lib/workspace/auth";
+import { getSession } from "@/modules/auth/lib/session";
 
 const scopes = [
   "https://www.googleapis.com/auth/spreadsheets",
@@ -19,7 +18,7 @@ const scopes = [
 
 export const GET = async (req: NextRequest) => {
   const workspaceId = req.headers.get("workspaceId");
-  const session = await getServerSession(authOptions);
+  const session = await getSession();
 
   if (!workspaceId) {
     return responses.badRequestResponse("workspaceId is missing");
@@ -29,7 +28,7 @@ export const GET = async (req: NextRequest) => {
     return responses.notAuthenticatedResponse();
   }
 
-  const canUserAccessWorkspace = await hasUserWorkspaceAccess(session?.user.id, workspaceId);
+  const canUserAccessWorkspace = await canUserWriteWorkspaceIntegrations(session?.user.id, workspaceId);
   if (!canUserAccessWorkspace) {
     return responses.unauthorizedResponse();
   }

@@ -1,12 +1,13 @@
+import { normalizeLanguageCode } from "@formbricks/i18n-utils/src/canonical";
 import type { TSurvey as TInternalSurvey } from "@formbricks/types/surveys/types";
 import type { TSurvey as TSurveyListRecord } from "@/modules/survey/list/types/surveys";
+import { surveyToV3Distribution, surveyToV3Targeting } from "./distribution";
 import { isInternalI18nString, isPlainObject } from "./guards";
 import {
   type TV3SurveyResolverLanguage,
   getV3SurveyDefaultLanguage,
   getV3SurveyLanguages,
   getV3SurveyResolverLanguages,
-  normalizeV3SurveyLanguageIdentifier,
   resolveV3SurveyLanguageCode,
 } from "./language";
 import { V3_SURVEY_TRANSLATABLE_METADATA_KEYS } from "./translation-fields";
@@ -21,9 +22,11 @@ type TV3SurveyListItemBase = Pick<
   | "type"
   | "status"
   | "publishOn"
+  | "archivedAt"
   | "createdAt"
   | "updatedAt"
   | "responseCount"
+  | "completedResponseCount"
 >;
 
 export type TV3SurveyListItem = TV3SurveyListItemBase & {
@@ -79,9 +82,11 @@ export function serializeV3SurveyListItem(survey: TSurveyListRecord): TV3SurveyL
     type: survey.type,
     status: survey.status,
     publishOn: survey.publishOn,
+    archivedAt: survey.archivedAt,
     createdAt: survey.createdAt,
     updatedAt: survey.updatedAt,
     responseCount: survey.responseCount,
+    completedResponseCount: survey.completedResponseCount,
     creator: serializeV3SurveyCreator(survey.creator),
   };
 }
@@ -96,7 +101,7 @@ function getI18nValueForLanguage(value: Record<string, string>, languageCode: st
   }
 
   const matchingKey = Object.keys(value).find(
-    (key) => normalizeV3SurveyLanguageIdentifier(key)?.toLowerCase() === languageCode.toLowerCase()
+    (key) => normalizeLanguageCode(key)?.toLowerCase() === languageCode.toLowerCase()
   );
   return matchingKey ? value[matchingKey] : undefined;
 }
@@ -221,6 +226,7 @@ export function serializeV3SurveyResource(survey: TInternalSurvey, options?: { l
     name: survey.name,
     type: survey.type,
     status: survey.status,
+    archivedAt: survey.archivedAt ? toIsoString(survey.archivedAt) : null,
     metadata: serializeMetadata(survey.metadata, defaultLanguage, languageCodes, {
       fallbackMissingTranslations: requestedLanguages.length > 0,
     }),
@@ -236,5 +242,10 @@ export function serializeV3SurveyResource(survey: TInternalSurvey, options?: { l
     endings: serializeValue(survey.endings),
     hiddenFields: survey.hiddenFields,
     variables: survey.variables,
+    // App-only runtime/distribution + targeting, via the shared survey→public mappers. Omitted
+    // entirely for link surveys to keep the contract clean.
+    ...(survey.type === "app"
+      ? { distribution: surveyToV3Distribution(survey), targeting: surveyToV3Targeting(survey) }
+      : {}),
   };
 }

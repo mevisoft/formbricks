@@ -1,10 +1,13 @@
 # formbricks
 
-![Version: 0.0.0-dev](https://img.shields.io/badge/Version-0.0.0--dev-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 5.0.0-rc.1](https://img.shields.io/badge/AppVersion-5.0.0--rc.1-informational?style=flat-square)
+![Version: 5.3.4](https://img.shields.io/badge/Version-5.3.4-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 5.3.4](https://img.shields.io/badge/AppVersion-5.3.4-informational?style=flat-square)
 
 A Helm chart for Formbricks with PostgreSQL, Valkey
 
 **Homepage:** <https://example.com/docs/self-hosting/setup/kubernetes>
+
+The version badges describe the latest published OCI chart. The source `Chart.yaml` keeps the development chart
+version at `0.0.0-dev`; the release workflow stamps the requested chart version into the packaged artifact.
 
 ## Maintainers
 
@@ -14,11 +17,12 @@ A Helm chart for Formbricks with PostgreSQL, Valkey
 
 ## Requirements
 
-| Repository                               | Name         | Version |
-| ---------------------------------------- | ------------ | ------- |
-| oci://registry-1.docker.io/bitnamicharts | postgresql   | 16.4.16 |
-| oci://docker.io/envoyproxy               | gateway-helm | v1.7.1  |
-| oci://registry-1.docker.io/bitnamicharts | envoyRedis   | 20.11.2 |
+| Repository                                      | Name         | Version |
+| ----------------------------------------------- | ------------ | ------- |
+| oci://registry-1.docker.io/bitnamicharts        | postgresql   | 16.4.16 |
+| oci://docker.io/envoyproxy                      | gateway-helm | v1.7.1  |
+| oci://registry-1.docker.io/bitnamicharts        | envoyRedis   | 20.11.2 |
+| https://vllm-project.github.io/production-stack | vllm-stack   | 0.1.11  |
 
 ## Envoy bundle modes
 
@@ -45,6 +49,13 @@ The intended defaults are:
 - self-hosted / single-tenant clusters: bundled controller mode
 - shared clusters with an existing platform controller: external-controller mode
 
+The chart leaves both `ingress.enabled` and `envoy.enabled` disabled because ingress and gateway choices are
+cluster-specific. Do not expose Formbricks v5 directly with those defaults: enable the chart-managed Envoy path
+or provide equivalent edge rate limiting for the documented route coverage. The default
+`autoscaling.minReplicas: 1` and `pdb.minAvailable: 1` are also a quick-start combination; raise the minimum to at
+least two for availability during voluntary disruptions, or change/disable the PDB for an intentional
+single-replica deployment.
+
 ## Cube
 
 Cube is part of the baseline Formbricks v5 stack and is deployed by this chart by default
@@ -59,17 +70,28 @@ Cube is part of the baseline Formbricks v5 stack and is deployed by this chart b
 - The generated app secret supplies `CUBEJS_API_SECRET` by default. If you disable generated secrets,
   provide it through your existing secret management flow.
 - Provide `CUBEJS_DB_*` connection variables to the Cube deployment through `cube.envFrom` or `cube.env`.
-- Keep `cube.replicas=1` while `cube.env.CUBEJS_CACHE_AND_QUEUE_DRIVER` is `memory`. Configure Cube Store before running multiple Cube replicas.
+- The bundled single-replica Cube has no external pre-aggregations and defaults
+  `cube.env.CUBEJS_EXTERNAL_DEFAULT` to `false`, so it does not require Cube Store. If you add external
+  pre-aggregations, configure Cube Store before overriding this value to `true`.
+- Keep `cube.replicas=1` while `cube.env.CUBEJS_CACHE_AND_QUEUE_DRIVER` is `memory`. Configure Cube Store
+  and switch cache and queue storage away from memory before running multiple Cube replicas.
 - Keep Hub enabled. Cube should point at the same feedback records database that Hub writes to, unless you intentionally split that storage.
 
 ## Hub worker and self-hosted embeddings
 
 The chart deploys Hub API and, by default, a `hub-worker` deployment. Hub API is insert-only for River jobs; webhook dispatch and embedding jobs are processed by `hub-worker`.
+When `hub.worker.waitForApi.enabled` is enabled (the default), the worker waits for Hub API health
+before it starts. Each health request and the delay between failed checks are bounded to five
+seconds; `hub.worker.waitForApi.maxAttempts` limits the failed checks before the init container
+exits. Setting `hub.worker.waitForApi.enabled=false` omits the health gate, so the worker starts
+without waiting for Hub API health.
 
 When the Formbricks migration job is enabled, Hub waits for the `formbricks-migration` Job to complete before its own goose/river init migrations run. This keeps fresh shared-database installs from creating Hub tables before Prisma has initialized the Formbricks schema.
 If the Job has already been cleaned up, Hub only continues after all expected Prisma and data migration success markers are present in the database.
 
-When deployed with Argo CD, chart-managed Secrets and ExternalSecrets render in sync wave `-2`, and the Formbricks and Hub migration hooks run in sync wave `-1`. This lets app and Hub secrets exist before migration jobs start.
+Before migrations start, the migration Job waits for the effective PostgreSQL endpoint to accept TCP connections. `MIGRATE_DATABASE_URL` takes precedence over `DATABASE_URL`, matching the migration runner. Configure the timeout and retry interval under `migration.waitForDatabase`, or disable the readiness check for deployments that provide their own gate.
+
+When deployed with Argo CD, chart-managed Secrets, ExternalSecrets, and bundled PostgreSQL render in sync wave `-2`, and the Formbricks and Hub migration hooks run in sync wave `-1`. This lets app and Hub secrets exist and PostgreSQL become healthy before migration jobs start.
 
 Self-hosted embeddings are disabled by default. Set `hub.embeddings.enabled=true` to deploy an internal Hugging Face Text Embeddings Inference (TEI) service and wire Hub API plus Hub worker to it through the OpenAI-compatible endpoint added in Hub:
 
@@ -91,11 +113,366 @@ The generated Hub embedding configuration is:
 - `EMBEDDING_BASE_URL=http://<release>-hub-embeddings:8080/v1`
 - `EMBEDDING_PROVIDER_API_KEY` from a dedicated embeddings Secret
 
+For sustained background throughput, enable the worker-only TEI pool. Hub API and semantic-search
+queries continue to use the foreground service; only `hub-worker` receives the background URL and
+micro-batch settings:
+
+```yaml
+hub:
+  embeddings:
+    enabled: true
+    background:
+      enabled: true
+      maxConcurrent: "48"
+      batchSize: "8"
+      batchMaxWaitMs: "100"
+      batchMaxInFlight: "12"
+      httpDisableKeepAlives: "true"
+      persistence:
+        storageClass: gp3
+      resources:
+        requests:
+          cpu: "8"
+          memory: 8Gi
+      autoscaling:
+        enabled: true
+        minReplicas: 1
+        maxReplicas: 6
+```
+
+The background pool is a StatefulSet with one retained RWO cache PVC per replica. Before a planned
+backfill, temporarily set both autoscaling replica bounds to the desired pre-warmed count and wait
+for every pod to become Ready. Restore the steady-state bounds after the backlog drains.
+An existing `hub.worker.env.EMBEDDING_HTTP_DISABLE_KEEP_ALIVES` override remains supported and takes
+precedence over `hub.embeddings.background.httpDisableKeepAlives` during chart upgrades.
+
+Embedding backfills are opt-in and never render a Job unless `hub.embeddingBackfill.enabled=true`.
+Each deliberate run requires a new `runId`; start with `countOnly: true`, then use `tenantId` or
+`maxRecords` to limit canary waves before an unlimited run. The selected Hub image must include
+`/app/backfill-embeddings` (a release containing [formbricks/hub#121](https://github.com/formbricks/hub/pull/121));
+older images cannot run this Job.
+
+Hub exports the durable missing-record count as
+`hub_enrichment_pending_records{enrichment="taxonomy_embedding"}`. Alert when it remains above zero
+while `hub_river_queue_depth{queue="embeddings"}` remains zero for 15 minutes; that detects a
+stranded taxonomy backfill even when the UI progress bar has stopped moving.
+
 The TEI service is internal-only (`ClusterIP`) and not exposed through ingress. For private or gated models, provide `hub.embeddings.huggingFace.token` or set `hub.embeddings.huggingFace.existingSecret`.
 
 When TEI auth is enabled, configure the shared key through `hub.embeddings.auth.apiKey` or `hub.embeddings.auth.existingSecret`; the chart manages both TEI `API_KEY` and Hub `EMBEDDING_PROVIDER_API_KEY` from that source.
 
+Configure Hub enrichment providers through `hub.env`. API-key providers can keep their secrets in
+`hub.existingSecret`. Providers that need credential files, custom CA bundles, or other pod-level
+configuration can use the provider-neutral `hub.extraVolumes` and `hub.extraVolumeMounts`
+settings, which apply to both Hub API and hub-worker.
+
+For example, a Vertex AI deployment can mount an existing Google credential JSON Secret and point
+Application Default Credentials at it:
+
+```yaml
+hub:
+  extraVolumes:
+    - name: google-cloud-credentials
+      secret:
+        secretName: formbricks-app-secrets
+        items:
+          - key: GOOGLE_APPLICATION_CREDENTIALS_JSON
+            path: credentials.json
+
+  extraVolumeMounts:
+    - name: google-cloud-credentials
+      mountPath: /var/run/secrets/formbricks/google
+      readOnly: true
+
+  env:
+    GOOGLE_APPLICATION_CREDENTIALS: /var/run/secrets/formbricks/google/credentials.json
+    SENTIMENT_PROVIDER: google-gemini
+    SENTIMENT_MODEL: gemini-2.5-flash
+    SENTIMENT_GOOGLE_CLOUD_PROJECT: your-google-cloud-project
+    SENTIMENT_GOOGLE_CLOUD_LOCATION: global
+```
+
+The chart renders these additions unchanged into both Hub processes. Keep credential values out of
+values files and reference existing Kubernetes Secrets instead.
+
 Autoscaling is opt-in for Hub API, Hub worker, and the embeddings runtime. If you scale the embeddings runtime above one replica while persistence is enabled, the cache PVC must support `ReadWriteMany`; otherwise set `hub.embeddings.persistence.enabled=false` or provide a compatible `existingClaim`.
+
+## Web AI with self-hosted Qwen/vLLM
+
+The chart can optionally deploy a Formbricks-provided Qwen runtime through the `vllm-stack` dependency. It is disabled by default so existing installs keep using their current AI provider settings.
+
+To deploy the bundled Qwen/vLLM runtime and automatically point the Formbricks app at it:
+
+```yaml
+llm:
+  enabled: true
+```
+
+This renders the vLLM router and Qwen serving engine, then injects these app env vars unless you override them in `deployment.env`:
+
+```yaml
+AI_PROVIDER: openai-compatible
+AI_MODEL: qwen3-14b-awq
+AI_OPENAI_COMPATIBLE_BASE_URL: http://<release-name>-router-service:8000/v1
+AI_OPENAI_COMPATIBLE_PROVIDER_NAME: vllm
+AI_OPENAI_COMPATIBLE_SUPPORTS_STRUCTURED_OUTPUTS: "1"
+```
+
+Set `llm.autoConfigureApp=false` to deploy the bundled runtime without injecting Formbricks app AI env vars.
+
+If you manage your own LLM runtime, keep `llm.enabled=false` and point the web app at your OpenAI-compatible `/v1` endpoint through `deployment.env`.
+
+Only set these variables when you use `AI_PROVIDER=openai-compatible`; Google Vertex, AWS Bedrock, and Azure continue to use their own provider-specific variables.
+
+```yaml
+deployment:
+  env:
+    AI_PROVIDER: openai-compatible
+    AI_MODEL: qwen3-14b-awq
+    AI_OPENAI_COMPATIBLE_BASE_URL: http://vllm:8000/v1
+    AI_OPENAI_COMPATIBLE_PROVIDER_NAME: vllm
+    AI_OPENAI_COMPATIBLE_SUPPORTS_STRUCTURED_OUTPUTS: "1"
+    AI_OPENAI_COMPATIBLE_API_KEY:
+      valueFrom:
+        secretKeyRef:
+          name: formbricks-ai-secrets
+          key: AI_OPENAI_COMPATIBLE_API_KEY
+```
+
+Optional JSON fields such as `AI_OPENAI_COMPATIBLE_HEADERS_JSON` and `AI_OPENAI_COMPATIBLE_QUERY_PARAMS_JSON` can use the same `valueFrom.secretKeyRef` pattern. If you use External Secrets, render a dedicated Secret and reference it from `deployment.env`:
+
+```yaml
+externalSecret:
+  enabled: true
+  files:
+    ai-secrets:
+      data:
+        AI_OPENAI_COMPATIBLE_API_KEY:
+          remoteRef:
+            key: formbricks/qwen-vllm
+            property: apiKey
+```
+
+## AI Taxonomy Beta
+
+The chart can optionally deploy the standalone AI taxonomy service. It is disabled by default and remains internal
+to the cluster through a `ClusterIP` service.
+
+No cloud LLM is hardwired into the chart. `taxonomy.llm.provider` defaults to the OpenAI-compatible protocol and
+`taxonomy.llm.model` is operator-selectable. The taxonomy runtime currently provides these adapters:
+
+| Provider value | Use case | Provider-specific values |
+| --- | --- | --- |
+| `openai-compatible` | Bundled vLLM, OpenAI, or another compatible `/v1` endpoint | `baseUrl` and `existingSecret` |
+| `bedrock` | A model available through Amazon Bedrock | `bedrock.region`; AWS credentials use the standard SDK chain and must be supplied through workload identity or a Secret |
+| `vertex-gemini` | Gemini through Google Vertex AI | `vertex.project`, `vertex.location`, and `vertex.existingSecret` |
+
+Only the selected adapter's environment variables and credentials are rendered. Provider-specific blocks for the
+other adapters remain inactive. The selected model and its exact context window must satisfy `/v1/preflight`.
+
+To deploy taxonomy and reuse the bundled Qwen/vLLM runtime:
+
+```yaml
+llm:
+  enabled: true
+  servingEngineSpec:
+    modelSpec:
+      - name: qwen
+        enabled: true
+        repository: vllm/vllm-openai
+        tag: v0.14.0
+        modelURL: Qwen/Qwen3-14B-AWQ
+        replicaCount: 1
+        requestCPU: 4
+        requestMemory: 24Gi
+        limitCPU: 8
+        limitMemory: 32Gi
+        requestGPU: 1
+        requestGPUType: nvidia.com/gpu
+        pvcStorage: 100Gi
+        runtimeClassName: ""
+        shmSize: 8Gi
+        vllmConfig:
+          maxModelLen: 65536
+          dtype: float16
+          tensorParallelSize: 1
+          maxNumSeqs: 8
+          gpuMemoryUtilization: 0.9
+          extraArgs:
+            - --served-model-name
+            - qwen3-14b-awq
+            - --default-chat-template-kwargs
+            - '{"enable_thinking": false}'
+        lmcacheConfig:
+          enabled: false
+        keda:
+          enabled: false
+
+taxonomy:
+  enabled: true
+  llm:
+    bundledModelSpecName: qwen
+    structuredOutputMode: json-schema
+    contextWindowTokens: "65536"
+```
+
+When applying this as a Helm override, preserve the bundled model defaults and raise the selected model's
+`vllmConfig.maxModelLen` to the same value. `taxonomy.llm.bundledModelSpecName` selects the enabled `modelSpec`
+entry whose deployment limit the chart checks. It may be omitted when exactly one model is enabled, but is
+required when multiple bundled models are enabled. Helm replaces lists supplied through values or `--set`, so
+copy the complete `modelSpec` entry into the override; a partial list item discards required image and resource
+fields.
+
+The bounded maximum-size hierarchy request requires at least 58,176 context tokens with the default output
+and reserve budgets. This uses a conservative one-token-per-UTF-8-byte input bound instead of an average
+tokenization ratio. The chart's general-purpose bundled vLLM default remains 8,192 tokens so existing
+non-taxonomy installs do not pay the KV-cache cost; taxonomy operators must explicitly raise the selected model
+deployment limit as shown above. The chart requires the configured context window and, for a bundled model,
+checks it against that selected deployment's `maxModelLen`. Taxonomy startup and `/ready` remain authoritative
+for the full prompt, output, and reserve calculation and for external provider/model preflight.
+
+`taxonomy.maxClusters` remains configurable for upgrade compatibility, but production Taxonomy images enforce
+the 80-cluster quality invariant at startup. The Taxonomy and Hub runtimes likewise validate retry, timeout,
+heartbeat, stale-run, and total-run settings. Keep the default 30-second heartbeat well below the 1,800-second
+stale-run timeout; a heartbeat value of `0` intentionally disables heartbeats in supporting Taxonomy images.
+
+When `taxonomy.enabled=true`, the chart creates the taxonomy Deployment and Service, creates or uses the
+configured Secrets, then injects these Hub API env vars unless `taxonomy.autoConfigureHub=false`:
+
+```yaml
+TAXONOMY_SERVICE_URL: http://formbricks-taxonomy:8000
+TAXONOMY_SERVICE_TOKEN: <from taxonomy auth secret>
+HUB_INTERNAL_API_TOKEN: <from taxonomy auth secret>
+TAXONOMY_STUCK_RUN_TIMEOUT_SECONDS: "1800"
+TAXONOMY_REAPER_INTERVAL_SECONDS: "60"
+```
+
+If `llm.enabled=true` and `taxonomy.llm.baseUrl` is empty, taxonomy uses the bundled vLLM router at
+`http://<release-name>-router-service:8000/v1`. To use an external OpenAI-compatible LLM instead:
+
+```yaml
+taxonomy:
+  enabled: true
+  llm:
+    provider: openai-compatible
+    model: qwen3-14b-awq
+    baseUrl: http://my-llm-gateway:8000/v1
+    existingSecret: taxonomy-llm-secret
+    structuredOutputMode: json-object
+    contextWindowTokens: "65536"
+```
+
+Generic OpenAI-compatible endpoints default to JSON-object mode; set `json-schema` only after the exact
+deployment passes preflight. Vertex selects JSON Schema automatically. Bedrock selects prompt-only mode unless
+you opt an exact supported model into schema mode.
+
+To use Amazon Bedrock instead:
+
+```yaml
+taxonomy:
+  enabled: true
+  llm:
+    provider: bedrock
+    model: your-bedrock-model-id
+    contextWindowTokens: "200000"
+    bedrock:
+      region: us-east-1
+```
+
+Prefer an IAM role delivered to the pod through EKS Pod Identity, IRSA, or the equivalent workload-identity
+mechanism for your cluster. Configure that association for the Kubernetes service account used by the Taxonomy
+pod. If role-based credentials are unavailable, create a Kubernetes Secret outside the values file and load it
+through `taxonomy.envFrom` so the AWS SDK can read `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and, when
+required, `AWS_SESSION_TOKEN`:
+
+```yaml
+taxonomy:
+  envFrom:
+    - secretRef:
+        name: taxonomy-aws-credentials
+```
+
+Never put AWS credentials in `taxonomy.env`, a committed values file, or `--set` arguments.
+
+The default `v0.1.0` taxonomy image exposes public `/health`, so the chart uses it for both liveness and readiness
+probes. Taxonomy images that implement the newer readiness contract also expose `/ready` for cached Hub-auth,
+context-budget, provider, and structured-output readiness; set `taxonomy.probes.readinessProbe.httpGet.path` to
+`/ready` only with such an image. Use authenticated `/v1/preflight` as an operator check after install:
+
+```sh
+kubectl exec -n formbricks deploy/formbricks-taxonomy -- \
+  python -c 'import os, urllib.request; req = urllib.request.Request("http://127.0.0.1:8000/v1/preflight", headers={"Authorization": "Bearer " + os.environ["TAXONOMY_SERVICE_TOKEN"]}); print(urllib.request.urlopen(req, timeout=10).read().decode())'
+```
+
+To use Gemini on Vertex AI instead of an OpenAI-compatible endpoint:
+
+```yaml
+taxonomy:
+  enabled: true
+  llm:
+    provider: vertex-gemini
+    model: gemini-2.5-flash
+    contextWindowTokens: "1048576"
+    vertex:
+      project: example-project-id
+      location: us-central1
+      existingSecret: taxonomy-vertex-credentials
+```
+
+The `taxonomy-vertex-credentials` secret must contain `TAXONOMY_GOOGLE_CLOUD_CREDENTIALS_JSON` with service-account
+JSON that can call Vertex AI.
+
+## Hub and Taxonomy metrics and structured logs
+
+Hub and the taxonomy service can export OpenTelemetry metrics over OTLP/HTTP, and Hub can additionally export
+traces. Configure the standard `OTEL_*` environment variables through the existing `hub.env` and `taxonomy.env`
+maps; no chart-specific collector values are required. The example below uses a SigNoz collector in the `signoz`
+namespace and labels both services as `production`. Replace the collector DNS name and `deployment.environment`
+with values matching each cluster and environment:
+
+```yaml
+hub:
+  env:
+    LOG_FORMAT: json
+    OTEL_METRICS_EXPORTER: otlp
+    OTEL_TRACES_EXPORTER: otlp
+    OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+    OTEL_EXPORTER_OTLP_ENDPOINT: http://signoz-otel-collector.signoz.svc.cluster.local:4318
+    OTEL_RESOURCE_ATTRIBUTES: deployment.environment=production,service.namespace=formbricks
+
+taxonomy:
+  env:
+    LOG_FORMAT: json
+    OTEL_METRICS_EXPORTER: otlp
+    OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+    OTEL_EXPORTER_OTLP_ENDPOINT: http://signoz-otel-collector.signoz.svc.cluster.local:4318
+    OTEL_SERVICE_NAME: formbricks-taxonomy
+    OTEL_RESOURCE_ATTRIBUTES: deployment.environment=production,service.namespace=formbricks
+```
+
+`OTEL_TRACES_EXPORTER` is set for Hub only, and it is what puts `trace_id` and `span_id` in Hub's logs — Hub
+stamps them onto a log record only when tracing is enabled. Without it, Hub's JSON logs carry `request_id` alone
+and Hub warns `tracing not enabled (OTEL_TRACES_EXPORTER empty or unset)` at startup. The taxonomy service exports
+metrics but does not emit traces, so the variable is deliberately absent from `taxonomy.env`; it correlates its
+logs through `request_id` and `run_id`, both of which Hub also logs, so a run can still be followed across the two
+services.
+
+`OTEL_SERVICE_NAME` is set for the taxonomy service but deliberately not for Hub. `hub.env` is applied to both
+the Hub API and the Hub worker Deployments, so setting it there would report two different processes under one
+`service.name` and make them indistinguishable at the collector. Hub already names each binary itself —
+`hub-api` and `hub-worker` — and only falls back to that when the variable is unset, so leaving it out is what
+keeps them apart. If you do want custom names, override per component in `hub.worker.env` rather than widening
+`hub.env`. The taxonomy service has no such built-in default and would report `unknown_service` without it.
+
+Both blocks need recent images. Hub reads `LOG_FORMAT` from 0.8.3 onward, and the taxonomy service's
+OpenTelemetry and JSON-logging support is newer than `v0.1.0`. Older images ignore these variables entirely
+rather than failing, so applying them ahead of the image bump is silent — expect text logs and no taxonomy
+metrics until each image is new enough.
+
+Hub's metric attributes are restricted to a fixed, low-cardinality set — for its taxonomy metrics that is
+`scope_type`, `status`, `failure_code`, and `reason`. Run, request, tenant, source, and field identifiers are
+emitted only in correlated JSON logs. Prompt text, feedback, model output, embeddings, credentials, authorization
+tokens, provider response bodies, and collector URLs are never telemetry fields.
 
 ## Values
 
@@ -132,13 +509,16 @@ Autoscaling is opt-in for Hub API, Hub worker, and the embeddings runtime. If yo
 | deployment.command                                                 | list   | `[]`                                                                        |                                                           |
 | deployment.containerSecurityContext.readOnlyRootFilesystem         | bool   | `true`                                                                      |                                                           |
 | deployment.containerSecurityContext.runAsNonRoot                   | bool   | `true`                                                                      |                                                           |
-| deployment.env                                                     | object | `{}`                                                                        |                                                           |
-| deployment.envFrom                                                 | string | `nil`                                                                       |                                                           |
+| deployment.env                                                     | object | `{}`                                                                        | App container environment variables. Supports scalar values and `valueFrom` maps such as `secretKeyRef`. |
+| deployment.envFrom                                                 | string | `nil`                                                                       | Additional app container environment sources from ConfigMaps or Secrets. |
+| deployment.extraVolumeMounts                                       | list   | `[]`                                                                        | Additional app container volume mounts.                   |
+| deployment.extraVolumes                                            | list   | `[]`                                                                        | Additional app pod volumes.                               |
 | deployment.image.digest                                            | string | `""`                                                                        | When set, takes precedence over tag.                      |
 | deployment.image.pullPolicy                                        | string | `"IfNotPresent"`                                                            |                                                           |
 | deployment.image.repository                                        | string | `"ghcr.io/formbricks/formbricks"`                                           |                                                           |
 | deployment.image.tag                                               | string | `""`                                                                        |                                                           |
 | deployment.imagePullSecrets                                        | string | `""`                                                                        |                                                           |
+| deployment.lifecycle                                               | object | `{}`                                                                        | Optional app container lifecycle hooks.                   |
 | deployment.nodeSelector                                            | object | `{}`                                                                        |                                                           |
 | deployment.ports.http.containerPort                                | int    | `3000`                                                                      |                                                           |
 | deployment.ports.http.exposed                                      | bool   | `true`                                                                      |                                                           |
@@ -171,10 +551,11 @@ Autoscaling is opt-in for Hub API, Hub worker, and the embeddings runtime. If yo
 | deployment.revisionHistoryLimit                                    | int    | `2`                                                                         |                                                           |
 | deployment.securityContext                                         | object | `{}`                                                                        |                                                           |
 | deployment.strategy.type                                           | string | `"RollingUpdate"`                                                           |                                                           |
+| deployment.terminationGracePeriodSeconds                           | int    | `30`                                                                        | Time allowed for graceful Pod shutdown; must exceed any preStop drain. |
 | deployment.tolerations                                             | list   | `[]`                                                                        |                                                           |
 | deployment.topologySpreadConstraints                               | list   | `[]`                                                                        |                                                           |
-| enterprise.enabled                                                 | bool   | `false`                                                                     |                                                           |
-| enterprise.licenseKey                                              | string | `""`                                                                        |                                                           |
+| enterprise.enabled                                                 | bool   | `false`                                                                     | Deprecated compatibility value; it has no template effect. |
+| enterprise.licenseKey                                              | string | `""`                                                                        | Adds the license to the chart-generated app Secret.       |
 | externalSecret.enabled                                             | bool   | `false`                                                                     |                                                           |
 | externalSecret.files                                               | object | `{}`                                                                        |                                                           |
 | externalSecret.refreshInterval                                     | string | `"1h"`                                                                      |                                                           |
@@ -189,6 +570,22 @@ Autoscaling is opt-in for Hub API, Hub worker, and the embeddings runtime. If yo
 | hub.embeddings.auth.enabled                                        | bool   | `true`                                                                      |                                                           |
 | hub.embeddings.auth.existingSecret                                 | string | `""`                                                                        |                                                           |
 | hub.embeddings.auth.secretKey                                      | string | `"EMBEDDING_PROVIDER_API_KEY"`                                              |                                                           |
+| hub.embeddings.background.autoscaling.enabled                      | bool   | `false`                                                                     |                                                           |
+| hub.embeddings.background.autoscaling.maxReplicas                  | int    | `6`                                                                         |                                                           |
+| hub.embeddings.background.autoscaling.minReplicas                  | int    | `1`                                                                         |                                                           |
+| hub.embeddings.background.baseUrl                                  | string | `""`                                                                        | Defaults to the worker-only background TEI service URL.   |
+| hub.embeddings.background.batchMaxInFlight                         | string | `"1"`                                                                       |                                                           |
+| hub.embeddings.background.batchMaxWaitMs                           | string | `"25"`                                                                      |                                                           |
+| hub.embeddings.background.batchSize                                | string | `"1"`                                                                       |                                                           |
+| hub.embeddings.background.enabled                                  | bool   | `false`                                                                     |                                                           |
+| hub.embeddings.background.httpDisableKeepAlives                    | string | `"false"`                                                                 | Opens a new worker provider connection per request. Existing `hub.worker.env` override wins. |
+| hub.embeddings.background.maxConcurrent                            | string | `"5"`                                                                       |                                                           |
+| hub.embeddings.background.persistence.enabled                      | bool   | `true`                                                                      |                                                           |
+| hub.embeddings.background.persistence.size                         | string | `"10Gi"`                                                                    | One retained cache volume per StatefulSet replica.        |
+| hub.embeddings.background.persistence.storageClass                 | string | `""`                                                                        |                                                           |
+| hub.embeddings.background.replicas                                 | int    | `1`                                                                         | Used when background autoscaling is disabled.             |
+| hub.embeddings.background.resources.requests.cpu                   | string | `"8"`                                                                       |                                                           |
+| hub.embeddings.background.resources.requests.memory                | string | `"8Gi"`                                                                     |                                                           |
 | hub.embeddings.autoscaling.enabled                                 | bool   | `false`                                                                     |                                                           |
 | hub.embeddings.autoscaling.maxReplicas                             | int    | `2`                                                                         |                                                           |
 | hub.embeddings.autoscaling.minReplicas                             | int    | `1`                                                                         |                                                           |
@@ -218,11 +615,19 @@ Autoscaling is opt-in for Hub API, Hub worker, and the embeddings runtime. If yo
 | hub.embeddings.service.port                                        | int    | `8080`                                                                      |                                                           |
 | hub.embeddings.service.type                                        | string | `"ClusterIP"`                                                               |                                                           |
 | hub.env                                                            | object | `{}`                                                                        |                                                           |
+| hub.embeddingBackfill.countOnly                                    | bool   | `true`                                                                      | Preview missing records without enqueueing.               |
+| hub.embeddingBackfill.enabled                                      | bool   | `false`                                                                     |                                                           |
+| hub.embeddingBackfill.maxRecords                                   | int    | `0`                                                                         | Zero means unlimited.                                     |
+| hub.embeddingBackfill.runId                                        | string | `""`                                                                        | Required unique identifier for each enabled Job run.      |
+| hub.embeddingBackfill.taxonomy                                     | bool   | `false`                                                                     | Use taxonomy-translated embedding input.                  |
+| hub.embeddingBackfill.tenantId                                     | string | `""`                                                                        | Restrict the run to one tenant.                           |
 | hub.existingSecret                                                 | string | `""`                                                                        |                                                           |
-| hub.image.digest                                                   | string | `"sha256:14db7b3d285b6e9165b55693f9b83d08beff840a255fd77dd12882ee0a62f5cb"` | When set, takes precedence over tag (immutable pin).      |
+| hub.extraVolumeMounts                                              | list   | `[]`                                                                        | Additional volume mounts for Hub API and worker.          |
+| hub.extraVolumes                                                   | list   | `[]`                                                                        | Additional pod volumes for Hub API and worker.            |
+| hub.image.digest                                                   | string | `"sha256:9f4c109e6589993ef15708f834d57241ed3a73e3246e3565620777a66a231b59"` | When set, takes precedence over tag (immutable pin).      |
 | hub.image.pullPolicy                                               | string | `"IfNotPresent"`                                                            |                                                           |
 | hub.image.repository                                               | string | `"ghcr.io/formbricks/hub"`                                                  |                                                           |
-| hub.image.tag                                                      | string | `"0.3.0"`                                                                   | Fallback when digest is empty.                            |
+| hub.image.tag                                                      | string | `"0.8.5"`                                                                   | Fallback when digest is empty.                            |
 | hub.migration.activeDeadlineSeconds                                | int    | `900`                                                                       |                                                           |
 | hub.migration.backoffLimit                                         | int    | `3`                                                                         |                                                           |
 | hub.migration.ttlSecondsAfterFinished                              | int    | `300`                                                                       |                                                           |
@@ -246,7 +651,7 @@ Autoscaling is opt-in for Hub API, Hub worker, and the embeddings runtime. If yo
 | hub.worker.resources.requests.cpu                                  | string | `"100m"`                                                                    |                                                           |
 | hub.worker.resources.requests.memory                               | string | `"256Mi"`                                                                   |                                                           |
 | hub.worker.waitForApi.enabled                                      | bool   | `true`                                                                      |                                                           |
-| hub.worker.waitForApi.maxAttempts                                  | int    | `120`                                                                       | 120 attempts at 5s intervals = 10 minutes.                |
+| hub.worker.waitForApi.maxAttempts                                  | int    | `120`                                                                       | Health requests and retry delays are bounded to 5s each.  |
 | ingress.annotations                                                | object | `{}`                                                                        |                                                           |
 | ingress.enabled                                                    | bool   | `false`                                                                     |                                                           |
 | ingress.hosts[0].host                                              | string | `"k8s.formbricks.com"`                                                      |                                                           |
@@ -254,6 +659,25 @@ Autoscaling is opt-in for Hub API, Hub worker, and the embeddings runtime. If yo
 | ingress.hosts[0].paths[0].pathType                                 | string | `"Prefix"`                                                                  |                                                           |
 | ingress.hosts[0].paths[0].serviceName                              | string | `"formbricks"`                                                              |                                                           |
 | ingress.ingressClassName                                           | string | `"alb"`                                                                     |                                                           |
+| llm.autoConfigureApp                                               | bool   | `true`                                                                      | Inject OpenAI-compatible app env vars when bundled Qwen/vLLM is enabled. |
+| llm.enabled                                                        | bool   | `false`                                                                     | Deploy bundled Qwen/vLLM through the optional vllm-stack dependency. |
+| llm.formbricks.baseUrl                                             | string | `""`                                                                        | Defaults to `http://<release-name>-router-service:<llm.routerSpec.servicePort>/v1`. |
+| llm.formbricks.model                                               | string | `"qwen3-14b-awq"`                                                           | Formbricks `AI_MODEL` value for the bundled runtime.      |
+| llm.formbricks.providerName                                        | string | `"vllm"`                                                                    | Formbricks OpenAI-compatible provider display name.       |
+| llm.formbricks.supportsStructuredOutputs                           | string | `"1"`                                                                       | Enables structured output usage for the bundled runtime.  |
+| llm.routerSpec.enableRouter                                        | bool   | `true`                                                                      | Enable the vLLM router service.                           |
+| llm.routerSpec.k8sServiceDiscoveryType                             | string | `"service-name"`                                                            | vLLM router Kubernetes service discovery mode.            |
+| llm.routerSpec.servicePort                                         | int    | `8000`                                                                      | vLLM router service port used by the app base URL.        |
+| llm.routerSpec.serviceType                                         | string | `"ClusterIP"`                                                               | vLLM router service type.                                 |
+| llm.servingEngineSpec.enableEngine                                 | bool   | `true`                                                                      | Enable the vLLM serving engine.                           |
+| llm.servingEngineSpec.modelSpec[0].modelURL                        | string | `"Qwen/Qwen3-14B-AWQ"`                                                      | Hugging Face model loaded by vLLM.                        |
+| llm.servingEngineSpec.modelSpec[0].name                            | string | `"qwen"`                                                                    | vLLM model spec name.                                     |
+| llm.servingEngineSpec.modelSpec[0].repository                      | string | `"vllm/vllm-openai"`                                                        | vLLM runtime image repository.                            |
+| llm.servingEngineSpec.modelSpec[0].requestGPU                      | int    | `1`                                                                         | GPU request for the Qwen serving pod.                     |
+| llm.servingEngineSpec.modelSpec[0].requestGPUType                  | string | `"nvidia.com/gpu"`                                                          | Kubernetes GPU resource key.                              |
+| llm.servingEngineSpec.modelSpec[0].tag                             | string | `"v0.14.0"`                                                                 | vLLM runtime image tag.                                   |
+| llm.servingEngineSpec.servicePort                                  | int    | `8000`                                                                      | Qwen serving engine service port.                         |
+| llm.servingEngineSpec.strategy.type                                | string | `"Recreate"`                                                                | Avoids requiring a second GPU during model pod upgrades.  |
 | migration.annotations                                              | object | `{}`                                                                        |                                                           |
 | migration.backoffLimit                                             | int    | `3`                                                                         |                                                           |
 | migration.enabled                                                  | bool   | `true`                                                                      |                                                           |
@@ -261,6 +685,10 @@ Autoscaling is opt-in for Hub API, Hub worker, and the embeddings runtime. If yo
 | migration.resources.requests.cpu                                   | string | `"100m"`                                                                    |                                                           |
 | migration.resources.requests.memory                                | string | `"256Mi"`                                                                   |                                                           |
 | migration.ttlSecondsAfterFinished                                  | int    | `300`                                                                       |                                                           |
+| migration.waitForDatabase.connectionTimeoutSeconds                 | int    | `5`                                                                         | Per-attempt TCP connection timeout.                       |
+| migration.waitForDatabase.enabled                                  | bool   | `true`                                                                      | Wait for PostgreSQL before starting migrations.           |
+| migration.waitForDatabase.intervalSeconds                          | int    | `5`                                                                         | Delay between readiness attempts.                         |
+| migration.waitForDatabase.timeoutSeconds                           | int    | `900`                                                                       | Overall readiness timeout for each Job attempt.           |
 | nameOverride                                                       | string | `""`                                                                        |                                                           |
 | partOfOverride                                                     | string | `""`                                                                        |                                                           |
 | pdb.additionalLabels                                               | object | `{}`                                                                        |                                                           |
@@ -272,6 +700,7 @@ Autoscaling is opt-in for Hub API, Hub worker, and the embeddings runtime. If yo
 | postgresql.auth.secretKeys.adminPasswordKey                        | string | `"POSTGRES_ADMIN_PASSWORD"`                                                 |                                                           |
 | postgresql.auth.secretKeys.userPasswordKey                         | string | `"POSTGRES_USER_PASSWORD"`                                                  |                                                           |
 | postgresql.auth.username                                           | string | `"formbricks"`                                                              |                                                           |
+| postgresql.commonAnnotations                                       | object | `{"argocd.argoproj.io/sync-wave":"-2"}`                                   | Order bundled PostgreSQL before migration hooks in Argo.  |
 | postgresql.enabled                                                 | bool   | `true`                                                                      |                                                           |
 | postgresql.externalDatabaseUrl                                     | string | `""`                                                                        |                                                           |
 | postgresql.fullnameOverride                                        | string | `"formbricks-postgresql"`                                                   |                                                           |
@@ -299,7 +728,7 @@ Autoscaling is opt-in for Hub API, Hub worker, and the embeddings runtime. If yo
 | redis.enabled                                                      | bool   | `true`                                                                      |                                                           |
 | redis.externalRedisUrl                                             | string | `""`                                                                        |                                                           |
 | redis.fullnameOverride                                             | string | `"formbricks-redis"`                                                        |                                                           |
-| redis.image.digest                                                 | string | `"sha256:12ba4f45a7c3e1d0f076acd616cb230834e75a77e8516dde382720af32832d6d"` |                                                           |
+| redis.image.digest                                                 | string | `"sha256:e0eb7c480958d32bdc4357a74bdd70653ae15f2f9b4c93c4a5a9fad1dc471c84"` |                                                           |
 | redis.image.pullPolicy                                             | string | `"IfNotPresent"`                                                            |                                                           |
 | redis.image.repository                                             | string | `"valkey/valkey"`                                                           |                                                           |
 | redis.image.tag                                                    | string | `""`                                                                        |                                                           |
@@ -334,3 +763,35 @@ Autoscaling is opt-in for Hub API, Hub worker, and the embeddings runtime. If yo
 | serviceMonitor.endpoints[0].interval                               | string | `"5s"`                                                                      |                                                           |
 | serviceMonitor.endpoints[0].path                                   | string | `"/metrics"`                                                                |                                                           |
 | serviceMonitor.endpoints[0].port                                   | string | `"metrics"`                                                                 |                                                           |
+| taxonomy.autoConfigureHub                                          | bool   | `true`                                                                      | Inject taxonomy service env vars into Hub API when taxonomy is enabled. |
+| taxonomy.enabled                                                   | bool   | `false`                                                                     | Deploy the optional standalone taxonomy service.          |
+| taxonomy.envFrom                                                   | list   | `[]`                                                                          | Secret or ConfigMap sources for Taxonomy runtime environment variables. |
+| taxonomy.heartbeatIntervalSeconds                                  | string | `"30"`                                                                      | Hub heartbeat interval; `0` intentionally disables heartbeats in supporting images. |
+| taxonomy.hubClientMaxAttempts                                      | string | `"3"`                                                                       | Maximum idempotent Hub callback/fetch attempts.            |
+| taxonomy.hubReaperIntervalSeconds                                  | string | `"60"`                                                                      | Interval between Hub stale-run reaper passes.             |
+| taxonomy.hubStaleRunTimeoutSeconds                                 | string | `"1800"`                                                                    | Hub stale-run timeout; lower only with a callback-heartbeating taxonomy image. |
+| taxonomy.image.repository                                          | string | `"ghcr.io/formbricks/taxonomy"`                                             | Taxonomy service image repository.                        |
+| taxonomy.image.tag                                                 | string | `"v0.1.0"`                                                                  | Taxonomy service image tag.                               |
+| taxonomy.llm.baseUrl                                               | string | `""`                                                                        | Defaults to bundled vLLM router URL when `llm.enabled=true`; set for external LLMs. |
+| taxonomy.llm.bedrock.region                                        | string | `""`                                                                        | AWS region for Bedrock; alternatively set `taxonomy.env.AWS_REGION`. |
+| taxonomy.llm.bundledModelSpecName                                  | string | `""`                                                                        | Enabled bundled `modelSpec` used by Taxonomy; required when multiple bundled models are enabled. |
+| taxonomy.llm.contextWindowTokens                                   | string | `""`                                                                        | Exact provider context window; required when taxonomy is enabled. |
+| taxonomy.llm.existingSecret                                        | string | `""`                                                                        | Existing secret containing `TAXONOMY_LLM_API_KEY`.        |
+| taxonomy.llm.labelMaxTokens                                        | string | `"4096"`                                                                    | Maximum cluster-label output tokens.                      |
+| taxonomy.llm.maxAttempts                                           | string | `"4"`                                                                       | Maximum semantic validation/repair attempts.              |
+| taxonomy.llm.model                                                 | string | `"qwen3-14b-awq"`                                                           | LLM model used by taxonomy labeling and tree generation.  |
+| taxonomy.llm.provider                                              | string | `"openai-compatible"`                                                       | Runtime adapter: `openai-compatible`, `bedrock`, or `vertex-gemini`. |
+| taxonomy.llm.providerMaxAttempts                                   | string | `"3"`                                                                       | Maximum timeout, 429, or 5xx provider attempts.            |
+| taxonomy.llm.promptTokenReserve                                    | string | `"4096"`                                                                    | Context safety reserve for bounded prompts.               |
+| taxonomy.llm.structuredOutputMode                                  | string | `"auto"`                                                                    | `auto`, `prompt-only`, `json-object`, or `json-schema`.    |
+| taxonomy.llm.treeMaxTokens                                         | string | `"16384"`                                                                   | Maximum hierarchy output tokens.                          |
+| taxonomy.llm.vertex.credentialsJson                                | string | `""`                                                                        | Inline Vertex service-account JSON used only when no existing secret is set. |
+| taxonomy.llm.vertex.credentialsJsonSecretKey                       | string | `"TAXONOMY_GOOGLE_CLOUD_CREDENTIALS_JSON"`                                  | Secret key containing Vertex service-account JSON.        |
+| taxonomy.llm.vertex.existingSecret                                 | string | `""`                                                                        | Existing secret containing Vertex service-account JSON.   |
+| taxonomy.llm.vertex.location                                       | string | `""`                                                                        | Vertex AI location for Gemini taxonomy calls.             |
+| taxonomy.llm.vertex.project                                        | string | `""`                                                                        | Google Cloud project for Gemini taxonomy calls.           |
+| taxonomy.llm.vertex.thinkingBudget                                 | string | `"0"`                                                                       | Vertex Gemini thinking-token budget for taxonomy calls.   |
+| taxonomy.maxClusters                                               | string | `"80"`                                                                      | Compatibility value; production Taxonomy images enforce 80 at startup. |
+| taxonomy.runDeadlineSeconds                                        | string | `"900"`                                                                     | Total taxonomy run deadline.                              |
+| taxonomy.service.type                                              | string | `"ClusterIP"`                                                               | Internal taxonomy service type.                           |
+| taxonomy.terminationGracePeriodSeconds                             | int    | `930`                                                                         | Recommended pod grace period for the default 900-second run deadline. |

@@ -1,10 +1,11 @@
 import "server-only";
-import { Prisma } from "@prisma/client";
 import { cache as reactCache } from "react";
 import { prisma } from "@formbricks/database";
+import { Prisma } from "@formbricks/database/prisma";
 import { ZId } from "@formbricks/types/common";
 import { DatabaseError } from "@formbricks/types/errors";
 import { TTagsCount, TTagsOnResponses } from "@formbricks/types/tags";
+import { getUniqueConstraintFields, isUniqueConstraintError } from "../utils/prisma-constraint";
 import { validateInputs } from "../utils/validate";
 
 const selectTagsOnResponse = {
@@ -30,6 +31,16 @@ export const addTagToRespone = async (responseId: string, tagId: string): Promis
       tagId,
     };
   } catch (error) {
+    if (isUniqueConstraintError(error)) {
+      const fields = getUniqueConstraintFields(error);
+      if (fields.includes("responseId") && fields.includes("tagId")) {
+        // Idempotent: the tag is already on the response.
+        return {
+          responseId,
+          tagId,
+        };
+      }
+    }
     if (error instanceof Prisma.PrismaClientKnownRequestError) {
       throw new DatabaseError(error.message);
     }

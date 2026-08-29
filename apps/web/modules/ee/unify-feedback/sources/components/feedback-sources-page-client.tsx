@@ -1,27 +1,32 @@
 "use client";
 
+import { PlusIcon } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { toast } from "react-hot-toast";
 import { useTranslation } from "react-i18next";
 import {
+  TFeedbackSourceImportMode,
   TFeedbackSourceType,
   TFeedbackSourceWithMappings,
   THubTargetField,
 } from "@formbricks/types/feedback-source";
-import { SettingsCard } from "@/app/(app)/workspaces/[workspaceId]/settings/components/SettingsCard";
+import { useWorkspace } from "@/app/(app)/workspaces/[workspaceId]/context/workspace-context";
 import {
   createFeedbackSourceWithMappingsAction,
   deleteFeedbackSourceAction,
-  duplicateFeedbackSourceAction,
+  importHistoricalResponsesAction,
   updateFeedbackSourceWithMappingsAction,
 } from "@/lib/feedback-source/actions";
 import { getFormattedErrorMessage } from "@/lib/utils/helper";
 import { Alert, AlertButton, AlertDescription } from "@/modules/ui/components/alert";
+import { Button } from "@/modules/ui/components/button";
 import { PageContentWrapper } from "@/modules/ui/components/page-content-wrapper";
 import { PageHeader } from "@/modules/ui/components/page-header";
+import { UnifyConfigNavigation } from "../../components/unify-config-navigation";
 import { TFieldMapping, TUnifySurvey, getTranslatedFeedbackSourceError } from "../types";
+import { getSelectableQuestionIds, getSuggestedSurveys } from "../utils";
 import { CreateFeedbackSourceModal } from "./create-feedback-source-modal";
 import { CsvImportModal } from "./csv-import-modal";
 import { EditFeedbackSourceModal } from "./edit-feedback-source-modal";
@@ -43,13 +48,33 @@ export function FeedbackSourcesSection({
   isReadOnly,
 }: Readonly<FeedbackSourcesSectionProps>) {
   const { t } = useTranslation();
+  const { workspace } = useWorkspace();
   const router = useRouter();
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  // Survey to prefill the create modal with when opened from a "Select questions for import" suggestion.
+  const [prefillSurveyId, setPrefillSurveyId] = useState<string | null>(null);
   const [editingFeedbackSource, setEditingFeedbackSource] = useState<TFeedbackSourceWithMappings | null>(
     null
   );
   const [csvImportFeedbackSource, setCsvImportFeedbackSource] = useState<TFeedbackSourceWithMappings | null>(
     null
+  );
+  const surveyNameById = useMemo(
+    () => Object.fromEntries(initialSurveys.map((survey) => [survey.id, survey.name])),
+    [initialSurveys]
+  );
+  // A survey can only back one feedback source, so surveys already connected are disabled in the picker.
+  const connectedSurveyIds = useMemo(
+    () =>
+      initialFeedbackSources.flatMap((source) =>
+        source.formbricksMappings.map((mapping) => mapping.surveyId)
+      ),
+    [initialFeedbackSources]
+  );
+  // Surveys that aren't backing a source yet (and aren't drafts) are surfaced as "Suggestions" below the table.
+  const suggestedSurveys = useMemo(
+    () => getSuggestedSurveys(initialSurveys, connectedSurveyIds),
+    [initialSurveys, connectedSurveyIds]
   );
   const directoryNames = directories.map((directory) => directory.name).join(", ");
   const feedbackDirectoryAccessText =
@@ -65,6 +90,7 @@ export function FeedbackSourcesSection({
     name: string;
     type: TFeedbackSourceType;
     feedbackDirectoryId: string;
+    importMode?: TFeedbackSourceImportMode;
     surveyMappings?: { surveyId: string; elementIds: string[] }[];
     fieldMappings?: TFieldMapping[];
   }): Promise<string | undefined> => {
@@ -74,6 +100,7 @@ export function FeedbackSourcesSection({
         name: data.name,
         type: data.type,
         feedbackDirectoryId: data.feedbackDirectoryId,
+        importMode: data.importMode,
       },
       formbricksMappings:
         data.type === "formbricks_survey" && data.surveyMappings?.length ? data.surveyMappings : undefined,
@@ -100,6 +127,7 @@ export function FeedbackSourcesSection({
     feedbackSourceId: string;
     workspaceId: string;
     name: string;
+    importMode?: TFeedbackSourceImportMode;
     surveyMappings?: { surveyId: string; elementIds: string[] }[];
     fieldMappings?: TFieldMapping[];
   }): Promise<boolean> => {
@@ -108,6 +136,7 @@ export function FeedbackSourcesSection({
       workspaceId: workspaceId,
       feedbackSourceInput: {
         name: data.name,
+        importMode: data.importMode,
       },
       formbricksMappings: data.surveyMappings?.length ? data.surveyMappings : undefined,
       fieldMappings: data.fieldMappings?.length
@@ -141,20 +170,66 @@ export function FeedbackSourcesSection({
     router.refresh();
   };
 
-  const handleDuplicateFeedbackSource = async (
-    feedbackSource: TFeedbackSourceWithMappings
-  ): Promise<void> => {
-    const result = await duplicateFeedbackSourceAction({
-      feedbackSourceId: feedbackSource.id,
-      workspaceId: workspaceId,
-    });
+  // "Select questions for import": open the create modal prefilled with the suggested survey.
+  const handleSelectQuestions = (survey: TUnifySurvey): void => {
+    setPrefillSurveyId(survey.id);
+    setIsCreateModalOpen(true);
+  };
 
-    if (!result?.data) {
-      toast.error(getTranslatedFeedbackSourceError(getFormattedErrorMessage(result), t));
+  // "Import responses": one-click create the source (all supported questions) and import historical data.
+  const handleImportResponses = async (survey: TUnifySurvey): Promise<void> => {
+    const feedbackDirectoryId = directories[0]?.id;
+    if (!feedbackDirectoryId) {
+      toast.error(t("workspace.unify.no_feedback_directory_available"));
       return;
     }
 
-    toast.success(t("workspace.unify.source_duplicated_successfully"));
+    const elementIds = getSelectableQuestionIds(survey);
+    if (elementIds.length === 0) {
+      toast.error(t("workspace.unify.error_source_questions_required"));
+      return;
+    }
+
+    // Explicitly completedOnly rather than leaning on the column default: this path imports
+    // immediately with no chance to choose, and "all" pulls in answers respondents never submitted
+    // and sends them to the AI enrichments. A one-click action must not opt someone into that
+    // silently — picking partials is a decision, so it lives on the "Select questions for import"
+    // route beside this button, which opens the modal with the choice.
+    const feedbackSourceId = await handleCreateFeedbackSource({
+      name: t("workspace.unify.source_connector_name", { surveyName: survey.name }),
+      type: "formbricks_survey",
+      feedbackDirectoryId,
+      importMode: "completedOnly",
+      surveyMappings: [{ surveyId: survey.id, elementIds }],
+    });
+
+    if (!feedbackSourceId) {
+      return;
+    }
+
+    try {
+      const importResult = await importHistoricalResponsesAction({
+        feedbackSourceId,
+        workspaceId,
+        surveyId: survey.id,
+      });
+
+      if (importResult?.data) {
+        toast.success(
+          t("workspace.unify.historical_import_complete", {
+            successes: importResult.data.successes,
+            failures: importResult.data.failures,
+            skipped: importResult.data.skipped,
+          })
+        );
+      } else {
+        // The source was created; only the historical import failed.
+        toast.error(getTranslatedFeedbackSourceError(getFormattedErrorMessage(importResult), t));
+      }
+    } catch {
+      toast.error(t("common.something_went_wrong"));
+    }
+
     router.refresh();
   };
 
@@ -177,51 +252,58 @@ export function FeedbackSourcesSection({
 
   return (
     <PageContentWrapper>
-      <PageHeader pageTitle={t("workspace.unify.feedback_sources")} />
-
-      <SettingsCard
-        title={t("workspace.unify.feedback_sources")}
-        description={t("workspace.unify.feedback_sources_settings_description")}
-        buttonInfo={
-          isReadOnly
-            ? undefined
-            : {
-                text: t("workspace.unify.add_source"),
-                onClick: () => setIsCreateModalOpen(true),
-                variant: "default",
-              }
+      <PageHeader
+        pageTitle={t("workspace.unify.feedback_data")}
+        cta={
+          isReadOnly ? undefined : (
+            <Button size="sm" onClick={() => setIsCreateModalOpen(true)}>
+              <PlusIcon className="mr-2 size-4" />
+              {t("workspace.unify.add_feedback_source")}
+            </Button>
+          )
         }>
-        <FeedbackSourcesTable
-          feedbackSources={initialFeedbackSources}
-          onFeedbackSourceClick={setEditingFeedbackSource}
-          onCsvImport={setCsvImportFeedbackSource}
-          onDuplicate={handleDuplicateFeedbackSource}
-          onToggleStatus={handleToggleStatus}
-          onDelete={handleDeleteFeedbackSource}
-          isLoading={false}
-          isReadOnly={isReadOnly}
-        />
-        {directories.length > 0 && (
-          <Alert size="small" className="mt-4">
-            <AlertDescription>{feedbackDirectoryAccessText}</AlertDescription>
-            {!isReadOnly && (
-              <AlertButton asChild>
-                <Link href={`/workspaces/${workspaceId}/settings/organization/feedback-directories`}>
-                  {t("workspace.unify.manage_directories")}
-                </Link>
-              </AlertButton>
-            )}
-          </Alert>
-        )}
-      </SettingsCard>
+        <UnifyConfigNavigation workspaceId={workspaceId} activeId="sources" />
+      </PageHeader>
+
+      <FeedbackSourcesTable
+        feedbackSources={initialFeedbackSources}
+        surveyNameById={surveyNameById}
+        suggestedSurveys={suggestedSurveys}
+        workspaceId={workspaceId}
+        onFeedbackSourceClick={setEditingFeedbackSource}
+        onCsvImport={setCsvImportFeedbackSource}
+        onToggleStatus={handleToggleStatus}
+        onDelete={handleDeleteFeedbackSource}
+        onImportResponses={handleImportResponses}
+        onSelectQuestions={handleSelectQuestions}
+        isLoading={false}
+        isReadOnly={isReadOnly}
+      />
+      {directories.length > 0 && (
+        <Alert size="small" className="mt-4" role="status">
+          <AlertDescription>{feedbackDirectoryAccessText}</AlertDescription>
+          {!isReadOnly && workspace?.organizationId && (
+            <AlertButton asChild>
+              <Link href={`/organizations/${workspace.organizationId}/settings/feedback-directories`}>
+                {t("workspace.unify.manage_directories")}
+              </Link>
+            </AlertButton>
+          )}
+        </Alert>
+      )}
 
       <CreateFeedbackSourceModal
         open={isCreateModalOpen}
-        onOpenChange={setIsCreateModalOpen}
+        onOpenChange={(open) => {
+          setIsCreateModalOpen(open);
+          if (!open) setPrefillSurveyId(null);
+        }}
         onCreateFeedbackSource={handleCreateFeedbackSource}
         surveys={initialSurveys}
+        connectedSurveyIds={connectedSurveyIds}
         workspaceId={workspaceId}
         directories={directories}
+        initialSurveyId={prefillSurveyId}
         showTrigger={false}
       />
 

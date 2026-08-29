@@ -1,6 +1,6 @@
-import { Prisma } from "@prisma/client";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { prisma } from "@formbricks/database";
+import { Prisma } from "@formbricks/database/prisma";
 import { TDisplayCreateInput } from "@formbricks/types/displays";
 import {
   DatabaseError,
@@ -174,7 +174,7 @@ describe("createDisplay", () => {
     expect(prisma.display.create).not.toHaveBeenCalled();
   });
 
-  test("should throw InvalidInputError when survey does not exist (RelatedRecordDoesNotExist)", async () => {
+  test("should throw InvalidInputError when survey does not exist (RecordNotFound)", async () => {
     vi.mocked(getContactByUserId).mockResolvedValue(mockContact);
     vi.mocked(prisma.survey.findUnique).mockResolvedValue(null);
 

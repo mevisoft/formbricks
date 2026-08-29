@@ -1,26 +1,18 @@
-import { Prisma } from "@prisma/client";
+import { createLocalAccountIssuer } from "@better-auth/core/db";
 import bcrypt from "bcryptjs";
 import { Page } from "playwright";
 import { TestInfo } from "playwright/test";
 import { prisma } from "@formbricks/database";
+import { Prisma } from "@formbricks/database/prisma";
 
 export const login = async (user: Prisma.UserGetPayload<{ include: { memberships: true } }>, page: Page) => {
-  const csrfToken = await page
-    .context()
-    .request.get("/api/auth/csrf")
-    .then((response) => response.json())
-    .then((json) => json.csrfToken);
-  const data = {
-    email: user.email,
-    password: user.name,
-    callbackURL: "/",
-    redirect: "true",
-    json: "true",
-    csrfToken,
-  };
-
-  await page.context().request.post("/api/auth/callback/credentials", {
-    data,
+  // Better Auth sign-in (replaces the NextAuth csrf + credentials-callback flow; ENG-1054). The
+  // fixture's plaintext password is the user name (createUsersFixture hashes `name` into the bcrypt
+  // credential account below). Better Auth sets the signed session cookie on the response, which is
+  // shared with the browser through Playwright's request/context cookie jar — so the subsequent
+  // page.goto sends it.
+  await page.context().request.post("/api/auth/sign-in/email", {
+    data: { email: user.email, password: user.name },
   });
 
   await page.goto("/");
@@ -50,6 +42,7 @@ export type UsersFixture = {
     organizationName?: string;
     workspaceName?: string;
     withoutWorkspace?: boolean;
+    skipSurveySeed?: boolean;
   }) => Promise<UserFixture>;
   get: () => UserFixture[];
 };
@@ -66,6 +59,7 @@ export const createUsersFixture = (page: Page, workerInfo: TestInfo): UsersFixtu
       organizationName?: string;
       workspaceName?: string;
       withoutWorkspace?: boolean;
+      skipSurveySeed?: boolean;
     }) => {
       const uname = params?.name ?? `user-${workerInfo.workerIndex}-${Date.now()}`;
       const userEmail = params?.email ?? `${uname}@example.com`;
@@ -76,7 +70,7 @@ export const createUsersFixture = (page: Page, workerInfo: TestInfo): UsersFixtu
           name: uname,
           email: userEmail,
           password: hashedPassword,
-          emailVerified: new Date(),
+          emailVerified: true,
           locale: "en-US",
           memberships: {
             create: {
@@ -106,6 +100,29 @@ export const createUsersFixture = (page: Page, workerInfo: TestInfo): UsersFixtu
         include: { memberships: true },
       });
 
+      // Better Auth verifies credential sign-in against the `account` table (provider "credential"),
+      // not `user.password` — so a Prisma-seeded user needs an explicit credential account for
+      // POST /api/auth/sign-in/email (used by `login` above) to succeed (ENG-1054). The bcrypt hash
+      // of `uname` is the same secret `login` sends as the plaintext password.
+      //
+      // Better Auth 1.7 keys accounts on (issuer, accountId) — sign-in's findCredentialAccount filters
+      // on `issuer === createLocalAccountIssuer("credential")` (node_modules/better-auth/dist/api/routes/
+      // sign-in.mjs), same as the Account.issuer backfill in the ENG-2343 migration. Leaving `issuer`
+      // unset here means every fixture-created user has issuer=NULL, so that filter never matches:
+      // sign-in silently returns INVALID_EMAIL_OR_PASSWORD (no session, no cookie) for a correct
+      // password, and every helper that expects a post-login redirect (loginAndGetApiKey et al.) times
+      // out waiting for a navigation that never happens.
+      await prisma.account.create({
+        data: {
+          userId: user.id,
+          type: "credential",
+          provider: "credential",
+          providerAccountId: user.id,
+          issuer: createLocalAccountIssuer("credential"),
+          password: hashedPassword,
+        },
+      });
+
       // Collect workspace ID for tests
       let ids: { workspaceId: string } | undefined;
       if (!params?.withoutWorkspace) {
@@ -127,6 +144,18 @@ export const createUsersFixture = (page: Page, workerInfo: TestInfo): UsersFixtu
               workspaceId: workspace.id,
             })),
           });
+
+          if (!params?.skipSurveySeed) {
+            await prisma.survey.create({
+              data: {
+                workspaceId: workspace.id,
+                createdBy: user.id,
+                name: "E2E Seed Survey",
+                status: "draft",
+                type: "link",
+              },
+            });
+          }
 
           ids = { workspaceId: workspace.id };
         }

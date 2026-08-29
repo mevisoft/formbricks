@@ -41,6 +41,10 @@ const renderPreviewFragment = async (type?: TSurveyElementTypeEnum) =>
 
 const normalizeStyleAttribute = (style: string) =>
   style
+    // Zero-length values are unit-agnostic in CSS; Tailwind v4 emits a bare `0`
+    // where v3 emitted `0rem`. Collapse them so the comparison ignores the
+    // cosmetic difference while still comparing non-zero values exactly.
+    .replace(/\b0(?:rem|px|em|%)\b/g, "0")
     .split(";")
     .map((declaration) => declaration.trim().replace(/\s*:\s*/g, ":"))
     .filter(Boolean)
@@ -77,7 +81,8 @@ const expectSharedPreviewSignals = (html: string) => {
   expect(html).toContain(
     `${EMBED_SURVEY_PREVIEW_QUESTION_ID}=${encodeURIComponent(EMBED_SURVEY_PREVIEW_CHOICE_IDS.pineapples)}`
   );
-  expect(html).toContain("utm_source=email_branding");
+  expect(html).toContain("utm_source=formbricks-app");
+  expect(html).toContain("utm_campaign=powered_by_badge");
 };
 
 const expectPreviewFragmentBaseSignals = (html: string) => {
@@ -419,7 +424,7 @@ describe("renderEmbedSurveyPreviewEmail", () => {
     expect(longAnswerFragment).not.toMatch(/<a\b[^>]*border:1px solid/i);
   });
 
-  test("renders star ratings with SVG icons instead of emoji", async () => {
+  test("renders star ratings as hosted images instead of inline SVG or emoji", async () => {
     const starRatingSurvey = createEmbedSurveyPreviewEmailSurvey(TSurveyElementTypeEnum.Rating);
     const ratingQuestion = starRatingSurvey.blocks[0].elements[0];
 
@@ -439,7 +444,9 @@ describe("renderEmbedSurveyPreviewEmail", () => {
     );
     const starRatingFragment = extractEmailBodyFragment(starRatingHtml);
 
-    expect(starRatingFragment).toContain("lucide-star");
+    // Gmail and Outlook strip <svg>, so the star glyph must be a hosted image.
+    expect(starRatingFragment).toContain("/star-icons/star.png");
+    expect(starRatingFragment).not.toContain("<svg");
     expect(starRatingFragment).not.toContain("⭐");
   });
 });

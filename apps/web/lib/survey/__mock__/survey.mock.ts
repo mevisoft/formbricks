@@ -1,4 +1,4 @@
-import { Prisma } from "@prisma/client";
+import { Prisma } from "@formbricks/database/prisma";
 import { TActionClass } from "@formbricks/types/action-classes";
 import { TContactAttributeKey } from "@formbricks/types/contact-attribute-key";
 import { TOrganization } from "@formbricks/types/organizations";
@@ -110,7 +110,7 @@ export const mockUser: TUser = {
   id: mockId,
   name: "mock User",
   email: "test@unit.com",
-  emailVerified: currentDate,
+  emailVerified: true,
   createdAt: currentDate,
   updatedAt: currentDate,
   twoFactorEnabled: false,
@@ -196,6 +196,7 @@ const baseSurveyProperties = {
   autoComplete: 7,
   publishOn: null,
   closeOn: null,
+  archivedAt: null,
   redirectUrl: "https://github.com/mevisoft/formbricks",
   recontactDays: 3,
   displayLimit: 3,
@@ -217,7 +218,6 @@ const baseSurveyProperties = {
     enabled: false,
   },
   isVerifyEmailEnabled: false,
-  isSingleResponsePerEmailEnabled: false,
   attributeFilters: [],
   ...commonMockProperties,
 };

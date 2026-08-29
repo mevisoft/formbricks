@@ -7,12 +7,19 @@ export {
   isAiConfigured,
   resetLanguageModelCache,
 } from "./provider";
+export {
+  AIOutputTokenLimitError,
+  type AIOutputTokenLimitErrorDetails,
+  type AIProviderErrorInfo,
+  classifyAIProviderError,
+} from "./errors";
 export { generateText } from "./text";
 export { generateObject } from "./object";
 export type { TAIProvider } from "@formbricks/types/ai";
 export type {
   AIConfigurationStatus,
   AILanguageModel,
+  AIResolvedLanguageModel,
   AIEnvironment,
   AIProviderStatus,
   ActiveAIProvider,

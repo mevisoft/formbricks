@@ -14,6 +14,7 @@ import {
   getWorkspaceIdFromContactId,
 } from "@/lib/utils/helper";
 import { withAuditLogging } from "@/modules/ee/audit-logs/lib/handler";
+import { ensureContactsEnabled } from "@/modules/ee/contacts/lib/contacts-entitlement";
 import { createContactsFromCSV, deleteContact, getContact, getContacts } from "./lib/contacts";
 import { updateContactAttributes } from "./lib/update-contact-attributes";
 import {
@@ -32,10 +33,11 @@ export const getContactsAction = authenticatedActionClient
   .inputSchema(ZGetContactsAction)
   .action(async ({ ctx, parsedInput }) => {
     const workspaceId = parsedInput.workspaceId;
+    const organizationId = await getOrganizationIdFromWorkspaceId(workspaceId);
 
     await checkAuthorizationUpdated({
       userId: ctx.user.id,
-      organizationId: await getOrganizationIdFromWorkspaceId(workspaceId),
+      organizationId,
       access: [
         {
           type: "organization",
@@ -48,6 +50,8 @@ export const getContactsAction = authenticatedActionClient
         },
       ],
     });
+
+    await ensureContactsEnabled(organizationId);
 
     return getContacts(workspaceId, parsedInput.offset, parsedInput.searchValue);
   });
@@ -76,6 +80,8 @@ export const deleteContactAction = authenticatedActionClient.inputSchema(ZContac
         },
       ],
     });
+
+    await ensureContactsEnabled(organizationId);
 
     ctx.auditLoggingCtx.organizationId = organizationId;
     ctx.auditLoggingCtx.contactId = parsedInput.contactId;
@@ -115,6 +121,8 @@ export const createContactsFromCSVAction = authenticatedActionClient
           },
         ],
       });
+
+      await ensureContactsEnabled(organizationId);
 
       ctx.auditLoggingCtx.organizationId = organizationId;
       const existingContactCount = await prisma.contact.count({
@@ -178,6 +186,8 @@ export const updateContactAttributesAction = authenticatedActionClient
           },
         ],
       });
+
+      await ensureContactsEnabled(organizationId);
 
       ctx.auditLoggingCtx.organizationId = organizationId;
       ctx.auditLoggingCtx.contactId = parsedInput.contactId;

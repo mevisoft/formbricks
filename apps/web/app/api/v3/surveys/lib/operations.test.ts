@@ -2,8 +2,9 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 import { DatabaseError, ResourceNotFoundError } from "@formbricks/types/errors";
 import { requireV3WorkspaceAccess } from "@/app/api/v3/lib/auth";
 import { problemForbidden } from "@/app/api/v3/lib/response";
-import { deleteSurvey } from "@/modules/survey/lib/surveys";
-import { getSurveyCount } from "@/modules/survey/list/lib/survey";
+import { capturePostHogEvent } from "@/lib/posthog";
+import { archiveSurvey, deleteSurvey, restoreSurvey } from "@/modules/survey/lib/surveys";
+import { getSurveyCount, hasArchivedSurveys } from "@/modules/survey/list/lib/survey";
 import { getSurveyListPage } from "@/modules/survey/list/lib/survey-page";
 import { getAuthorizedV3Survey } from "../authorization";
 import { V3SurveyCreatePermissionError, createV3Survey } from "../create";
@@ -11,6 +12,7 @@ import { parseV3SurveysListQuery } from "../parse-v3-surveys-list-query";
 import { patchV3Survey } from "../patch";
 import { prepareV3SurveyCreateInput, prepareV3SurveyPatchInput } from "../prepare";
 import { V3SurveyReferenceValidationError } from "../reference-validation";
+import { ZV3CreateSurveyBody } from "../schemas";
 import {
   V3SurveyLanguageError,
   V3SurveyUnsupportedShapeError,
@@ -19,12 +21,16 @@ import {
 } from "../serializers";
 import { V3SurveyWritePermissionError } from "../write-permissions";
 import {
+  archiveV3Survey,
   createV3SurveyResponse,
+  createV3SurveyResponseFromRawInput,
   deleteV3Survey,
   getV3Survey,
   listV3Surveys,
   patchV3SurveyResponse,
+  restoreV3Survey,
   validateV3Survey,
+  validateV3SurveyFromRawInput,
 } from "./operations";
 
 vi.mock("@formbricks/logger", () => ({
@@ -40,12 +46,27 @@ vi.mock("@/app/api/v3/lib/auth", () => ({
   requireV3WorkspaceAccess: vi.fn(),
 }));
 
+vi.mock("@/lib/posthog", () => ({
+  capturePostHogEvent: vi.fn(),
+}));
+
+vi.mock("@formbricks/database", () => ({
+  prisma: {
+    survey: {
+      findUnique: vi.fn(),
+    },
+  },
+}));
+
 vi.mock("@/modules/survey/lib/surveys", () => ({
   deleteSurvey: vi.fn(),
+  archiveSurvey: vi.fn(),
+  restoreSurvey: vi.fn(),
 }));
 
 vi.mock("@/modules/survey/list/lib/survey", () => ({
   getSurveyCount: vi.fn(),
+  hasArchivedSurveys: vi.fn(),
 }));
 
 vi.mock("@/modules/survey/list/lib/survey-page", () => ({
@@ -87,15 +108,22 @@ vi.mock("../serializers", async () => {
 });
 
 const workspaceId = "tz4a98xxat96iws9zmbrgj3a";
+const validSurveyId = "tz4a98xxat96iws9zmbrgj4c";
 const requestId = "req_123";
 const instance = "/api/v3/surveys";
 const authentication = { type: "apiKey", apiKey: { id: "api_key_1" } } as any;
+const sessionAuthentication = {
+  user: { id: "user_1", email: "user@example.com", name: "User" },
+  expires: "2026-05-01",
+} as any;
 const authResult = { workspaceId, organizationId: "org_1" };
 const survey = {
   id: "survey_1",
   workspaceId,
   name: "Customer Survey",
   status: "draft",
+  type: "link",
+  questions: [{ id: "question_1" }],
 };
 const serializedSurvey = {
   id: "survey_1",
@@ -112,14 +140,23 @@ const serializedUpdatedSurvey = {
 const createBody = {
   workspaceId,
   name: "Customer Survey",
-  status: "draft",
-  metadata: {},
-  welcomeCard: { enabled: false },
-  blocks: [],
-  endings: [],
-  hiddenFields: { enabled: false, fieldIds: [] },
-  variables: [],
+  defaultLanguage: "en-US",
+  blocks: [
+    {
+      id: "tz4a98xxat96iws9zmbrgj4b",
+      name: "Main Block",
+      elements: [
+        {
+          id: "feedback",
+          type: "openText",
+          headline: { "en-US": "What should we improve?" },
+          required: true,
+        },
+      ],
+    },
+  ],
 } as any;
+const parsedCreateBody = ZV3CreateSurveyBody.parse(createBody);
 
 function mockListQuery(overrides: Record<string, unknown> = {}) {
   vi.mocked(parseV3SurveysListQuery).mockReturnValue({
@@ -145,6 +182,7 @@ describe("listV3Surveys", () => {
     vi.mocked(requireV3WorkspaceAccess).mockResolvedValue(authResult);
     vi.mocked(getSurveyListPage).mockResolvedValue({ surveys: [survey], nextCursor: "cursor_next" } as any);
     vi.mocked(getSurveyCount).mockResolvedValue(7);
+    vi.mocked(hasArchivedSurveys).mockResolvedValue(false);
     vi.mocked(serializeV3SurveyListItem).mockReturnValue(serializedSurvey as any);
   });
 
@@ -172,11 +210,24 @@ describe("listV3Surveys", () => {
     });
     expect(await readJson(response)).toEqual({
       data: [serializedSurvey],
-      meta: { limit: 20, nextCursor: "cursor_next", totalCount: 7 },
+      meta: { limit: 20, nextCursor: "cursor_next", totalCount: 7, hasArchived: false },
     });
   });
 
-  test("skips total count when it is not requested", async () => {
+  test("reports hasArchived when the workspace has archived surveys", async () => {
+    vi.mocked(hasArchivedSurveys).mockResolvedValue(true);
+
+    const response = await listV3Surveys({
+      searchParams: new URLSearchParams({ workspaceId }),
+      authentication,
+      requestId,
+      instance,
+    });
+
+    expect((await readJson(response)).meta.hasArchived).toBe(true);
+  });
+
+  test("skips total count and hasArchived when they are not requested", async () => {
     mockListQuery({ includeTotalCount: false });
 
     const response = await listV3Surveys({
@@ -188,7 +239,10 @@ describe("listV3Surveys", () => {
 
     expect(response.status).toBe(200);
     expect(vi.mocked(getSurveyCount)).not.toHaveBeenCalled();
-    expect((await readJson(response)).meta.totalCount).toBeNull();
+    expect(vi.mocked(hasArchivedSurveys)).not.toHaveBeenCalled();
+    const body = await readJson(response);
+    expect(body.meta.totalCount).toBeNull();
+    expect(body.meta.hasArchived).toBeNull();
   });
 
   test("returns bad request for invalid query parameters", async () => {
@@ -256,7 +310,7 @@ describe("createV3SurveyResponse", () => {
     const auditLog = {} as any;
 
     const response = await createV3SurveyResponse({
-      body: createBody,
+      body: parsedCreateBody,
       authentication,
       requestId,
       instance,
@@ -265,12 +319,40 @@ describe("createV3SurveyResponse", () => {
 
     expect(response.status).toBe(201);
     expect(response.headers.get("Location")).toBe("/api/v3/surveys/survey_1");
+    // Negative control for the level, not just the check: validateV3Survey was moved across this
+    // same seam from "readWrite" to "read" because it writes nothing. Create does write, so it must
+    // stay at "readWrite" — without this, the same move here would pass the suite.
+    expect(vi.mocked(requireV3WorkspaceAccess)).toHaveBeenCalledWith(
+      authentication,
+      workspaceId,
+      "readWrite",
+      requestId,
+      instance
+    );
     expect(vi.mocked(createV3Survey)).toHaveBeenCalledWith(
-      { ...createBody, workspaceId },
+      expect.objectContaining({
+        workspaceId,
+        name: "Customer Survey",
+        type: "link",
+        status: "draft",
+        defaultLanguage: "en-US",
+        metadata: {},
+        blocks: [
+          expect.objectContaining({
+            elements: [
+              expect.objectContaining({
+                headline: { default: "What should we improve?" },
+              }),
+            ],
+          }),
+        ],
+      }),
       authentication,
       requestId,
-      "org_1"
+      "org_1",
+      undefined
     );
+    expect(capturePostHogEvent).not.toHaveBeenCalled();
     expect(auditLog).toMatchObject({
       organizationId: "org_1",
       targetId: "survey_1",
@@ -279,11 +361,36 @@ describe("createV3SurveyResponse", () => {
     expect(await readJson(response)).toEqual({ data: serializedSurvey });
   });
 
+  test("captures survey_created for session-authenticated product template creates", async () => {
+    const response = await createV3SurveyResponse({
+      body: createBody,
+      authentication: sessionAuthentication,
+      requestId,
+      instance,
+      createdFrom: "template",
+    });
+
+    expect(response.status).toBe(201);
+    expect(capturePostHogEvent).toHaveBeenCalledWith(
+      "user_1",
+      "survey_created",
+      {
+        survey_id: "survey_1",
+        survey_type: "link",
+        organization_id: "org_1",
+        workspace_id: workspaceId,
+        question_count: 1,
+        created_from: "template",
+      },
+      { organizationId: "org_1", workspaceId }
+    );
+  });
+
   test("returns authorization responses from workspace access", async () => {
     vi.mocked(requireV3WorkspaceAccess).mockResolvedValue(problemForbidden(requestId, "nope", instance));
 
     const response = await createV3SurveyResponse({
-      body: createBody,
+      body: parsedCreateBody,
       authentication,
       requestId,
       instance,
@@ -293,6 +400,26 @@ describe("createV3SurveyResponse", () => {
     expect(vi.mocked(createV3Survey)).not.toHaveBeenCalled();
   });
 
+  test("returns bad requests for invalid raw create input", async () => {
+    const response = await createV3SurveyResponseFromRawInput({
+      body: { workspaceId, name: "Customer Survey", blocks: [] },
+      authentication,
+      requestId,
+      instance,
+    });
+
+    expect(response.status).toBe(400);
+    expect(vi.mocked(requireV3WorkspaceAccess)).not.toHaveBeenCalled();
+    expect(vi.mocked(createV3Survey)).not.toHaveBeenCalled();
+    expect(await readJson(response)).toMatchObject({
+      invalid_params: [
+        expect.objectContaining({
+          name: "blocks",
+        }),
+      ],
+    });
+  });
+
   test("maps validation, shape, permission, missing resource, and database errors", async () => {
     vi.mocked(createV3Survey).mockRejectedValueOnce(
       new V3SurveyReferenceValidationError([{ name: "blocks.0", reason: "Unknown element" }])
@@ -300,19 +427,19 @@ describe("createV3SurveyResponse", () => {
     expect(
       (
         await createV3SurveyResponse({
-          body: createBody,
+          body: parsedCreateBody,
           authentication,
           requestId,
           instance,
         })
       ).status
-    ).toBe(400);
+    ).toBe(422);
 
     vi.mocked(createV3Survey).mockRejectedValueOnce(new V3SurveyUnsupportedShapeError("Unsupported"));
     expect(
       (
         await createV3SurveyResponse({
-          body: createBody,
+          body: parsedCreateBody,
           authentication,
           requestId,
           instance,
@@ -324,7 +451,7 @@ describe("createV3SurveyResponse", () => {
     expect(
       (
         await createV3SurveyResponse({
-          body: createBody,
+          body: parsedCreateBody,
           authentication,
           requestId,
           instance,
@@ -336,7 +463,7 @@ describe("createV3SurveyResponse", () => {
     expect(
       (
         await createV3SurveyResponse({
-          body: createBody,
+          body: parsedCreateBody,
           authentication,
           requestId,
           instance,
@@ -348,7 +475,7 @@ describe("createV3SurveyResponse", () => {
     expect(
       (
         await createV3SurveyResponse({
-          body: createBody,
+          body: parsedCreateBody,
           authentication,
           requestId,
           instance,
@@ -450,7 +577,7 @@ describe("deleteV3Survey", () => {
   beforeEach(() => {
     vi.resetAllMocks();
     vi.mocked(getAuthorizedV3Survey).mockResolvedValue({ survey, authResult, response: null } as any);
-    vi.mocked(deleteSurvey).mockResolvedValue(undefined);
+    vi.mocked(deleteSurvey).mockResolvedValue(survey as any);
   });
 
   test("deletes an authorized survey and enriches the audit log", async () => {
@@ -521,6 +648,7 @@ describe("deleteV3Survey", () => {
 describe("patchV3SurveyResponse", () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    // Not archived by default (survey fixture has no archivedAt) so the read-only guard lets patches through.
     vi.mocked(getAuthorizedV3Survey).mockResolvedValue({ survey, authResult, response: null } as any);
     vi.mocked(patchV3Survey).mockResolvedValue(updatedSurvey as any);
     vi.mocked(serializeV3SurveyResource).mockImplementation((input) => {
@@ -580,6 +708,26 @@ describe("patchV3SurveyResponse", () => {
     expect(vi.mocked(patchV3Survey)).not.toHaveBeenCalled();
   });
 
+  test("rejects patches to an archived survey with 422 and does not patch", async () => {
+    // archivedAt is read from the survey already loaded by getAuthorizedV3Survey — no extra query.
+    vi.mocked(getAuthorizedV3Survey).mockResolvedValue({
+      survey: { ...survey, archivedAt: new Date() },
+      authResult,
+      response: null,
+    } as any);
+
+    const response = await patchV3SurveyResponse({
+      surveyId: "survey_1",
+      body: { status: "inProgress" },
+      authentication,
+      requestId,
+      instance,
+    });
+
+    expect(response.status).toBe(422);
+    expect(vi.mocked(patchV3Survey)).not.toHaveBeenCalled();
+  });
+
   test("maps validation, shape, permission, missing resource, and database errors", async () => {
     vi.mocked(patchV3Survey).mockRejectedValueOnce(
       new V3SurveyReferenceValidationError([{ name: "blocks.0", reason: "Unknown element" }])
@@ -594,7 +742,7 @@ describe("patchV3SurveyResponse", () => {
           instance,
         })
       ).status
-    ).toBe(400);
+    ).toBe(422);
 
     vi.mocked(patchV3Survey).mockRejectedValueOnce(new V3SurveyUnsupportedShapeError("Unsupported"));
     expect(
@@ -650,6 +798,106 @@ describe("patchV3SurveyResponse", () => {
   });
 });
 
+describe("archiveV3Survey", () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+    vi.mocked(getAuthorizedV3Survey).mockResolvedValue({ survey, authResult, response: null } as any);
+    vi.mocked(archiveSurvey).mockResolvedValue({
+      id: "survey_1",
+      status: "paused",
+      archivedAt: new Date(),
+    } as any);
+  });
+
+  test("archives an authorized survey and enriches the audit log", async () => {
+    const auditLog = {} as any;
+
+    const response = await archiveV3Survey({
+      surveyId: "survey_1",
+      authentication,
+      requestId,
+      instance,
+      auditLog,
+    });
+
+    expect(response.status).toBe(200);
+    expect(vi.mocked(getAuthorizedV3Survey)).toHaveBeenCalledWith({
+      surveyId: "survey_1",
+      authentication,
+      access: "readWrite",
+      requestId,
+      instance,
+    });
+    expect(vi.mocked(archiveSurvey)).toHaveBeenCalledWith("survey_1");
+    expect(auditLog).toMatchObject({ organizationId: "org_1", targetId: "survey_1", oldObject: survey });
+  });
+
+  test("returns authorization responses from survey access", async () => {
+    vi.mocked(getAuthorizedV3Survey).mockResolvedValue({
+      survey: null,
+      authResult: null,
+      response: problemForbidden(requestId, "nope", instance),
+    } as any);
+
+    const response = await archiveV3Survey({ surveyId: "survey_1", authentication, requestId, instance });
+
+    expect(response.status).toBe(403);
+    expect(vi.mocked(archiveSurvey)).not.toHaveBeenCalled();
+  });
+
+  test("maps missing resource and database failures", async () => {
+    vi.mocked(archiveSurvey).mockRejectedValueOnce(new ResourceNotFoundError("Survey", "survey_1"));
+    expect(
+      (await archiveV3Survey({ surveyId: "survey_1", authentication, requestId, instance })).status
+    ).toBe(403);
+
+    vi.mocked(archiveSurvey).mockRejectedValueOnce(new DatabaseError("db down"));
+    expect(
+      (await archiveV3Survey({ surveyId: "survey_1", authentication, requestId, instance })).status
+    ).toBe(500);
+  });
+});
+
+describe("restoreV3Survey", () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+    vi.mocked(getAuthorizedV3Survey).mockResolvedValue({ survey, authResult, response: null } as any);
+    vi.mocked(restoreSurvey).mockResolvedValue({
+      id: "survey_1",
+      status: "paused",
+      archivedAt: null,
+    } as any);
+  });
+
+  test("restores an authorized survey and enriches the audit log", async () => {
+    const auditLog = {} as any;
+
+    const response = await restoreV3Survey({
+      surveyId: "survey_1",
+      authentication,
+      requestId,
+      instance,
+      auditLog,
+    });
+
+    expect(response.status).toBe(200);
+    expect(vi.mocked(restoreSurvey)).toHaveBeenCalledWith("survey_1");
+    expect(auditLog).toMatchObject({ organizationId: "org_1", targetId: "survey_1", oldObject: survey });
+  });
+
+  test("maps missing resource and database failures", async () => {
+    vi.mocked(restoreSurvey).mockRejectedValueOnce(new ResourceNotFoundError("Survey", "survey_1"));
+    expect(
+      (await restoreV3Survey({ surveyId: "survey_1", authentication, requestId, instance })).status
+    ).toBe(403);
+
+    vi.mocked(restoreSurvey).mockRejectedValueOnce(new DatabaseError("db down"));
+    expect(
+      (await restoreV3Survey({ surveyId: "survey_1", authentication, requestId, instance })).status
+    ).toBe(500);
+  });
+});
+
 describe("validateV3Survey", () => {
   beforeEach(() => {
     vi.resetAllMocks();
@@ -674,10 +922,12 @@ describe("validateV3Survey", () => {
     } as any);
 
     expect(response.status).toBe(200);
+    // "read", not "readWrite": validation writes nothing, and the MCP validate_survey tool is
+    // registered surveys:read. Raising this back to readWrite re-breaks that tool (ENG-2179).
     expect(vi.mocked(requireV3WorkspaceAccess)).toHaveBeenCalledWith(
       authentication,
       workspaceId,
-      "readWrite",
+      "read",
       requestId,
       instance
     );
@@ -707,17 +957,18 @@ describe("validateV3Survey", () => {
 
   test("validates patch input against the authorized survey", async () => {
     const response = await validateV3Survey({
-      body: { operation: "patch", surveyId: "survey_1", data: { name: "" } },
+      body: { operation: "patch", surveyId: validSurveyId, data: { name: "" } },
       authentication,
       requestId,
       instance,
     } as any);
 
     expect(response.status).toBe(200);
+    // See the create-branch note above: the patch dry run is gated at "read" too.
     expect(vi.mocked(getAuthorizedV3Survey)).toHaveBeenCalledWith({
-      surveyId: "survey_1",
+      surveyId: validSurveyId,
       authentication,
-      access: "readWrite",
+      access: "read",
       requestId,
       instance,
     });
@@ -739,7 +990,7 @@ describe("validateV3Survey", () => {
     } as any);
 
     const response = await validateV3Survey({
-      body: { operation: "patch", surveyId: "survey_1", data: {} },
+      body: { operation: "patch", surveyId: validSurveyId, data: {} },
       authentication,
       requestId,
       instance,
@@ -749,11 +1000,31 @@ describe("validateV3Survey", () => {
     expect(vi.mocked(prepareV3SurveyPatchInput)).not.toHaveBeenCalled();
   });
 
+  test("returns bad requests for invalid validation input", async () => {
+    const response = await validateV3SurveyFromRawInput({
+      body: { operation: "patch", data: {} },
+      authentication,
+      requestId,
+      instance,
+    });
+
+    expect(response.status).toBe(400);
+    expect(vi.mocked(getAuthorizedV3Survey)).not.toHaveBeenCalled();
+    expect(vi.mocked(prepareV3SurveyPatchInput)).not.toHaveBeenCalled();
+    expect(await readJson(response)).toMatchObject({
+      invalid_params: [
+        expect.objectContaining({
+          name: "surveyId",
+        }),
+      ],
+    });
+  });
+
   test("maps database errors during validation", async () => {
     vi.mocked(getAuthorizedV3Survey).mockRejectedValue(new DatabaseError("db down"));
 
     const response = await validateV3Survey({
-      body: { operation: "patch", surveyId: "survey_1", data: {} },
+      body: { operation: "patch", surveyId: validSurveyId, data: {} },
       authentication,
       requestId,
       instance,

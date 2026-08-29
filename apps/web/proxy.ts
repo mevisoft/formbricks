@@ -3,11 +3,13 @@ import { v4 as uuidv4 } from "uuid";
 import { logger } from "@formbricks/logger";
 import { isPublicDomainConfigured, isRequestFromPublicDomain } from "@/app/middleware/domain-utils";
 import { isAuthProtectedRoute, isRouteAllowedForDomain } from "@/app/middleware/endpoint-validator";
-import { WEBAPP_URL } from "@/lib/constants";
+import { TRUSTED_PROXY_HOP_COUNT, WEBAPP_URL } from "@/lib/constants";
+import { FORMBRICKS_WORKSPACE_ID_COOKIE } from "@/lib/localStorage";
+import { FORMBRICKS_CLIENT_IP_HEADER, resolveClientIp } from "@/lib/utils/client-ip";
 import { getValidatedCallbackUrl } from "@/lib/utils/url";
 import { getProxySession } from "@/modules/auth/lib/proxy-session";
 
-const handleAuth = async (request: NextRequest): Promise<Response | null> => {
+const handleAuth = async (request: NextRequest): Promise<NextResponse | null> => {
   const session = await getProxySession(request);
 
   if (isAuthProtectedRoute(request.nextUrl.pathname) && !session) {
@@ -32,7 +34,7 @@ const handleAuth = async (request: NextRequest): Promise<Response | null> => {
 /**
  * Handle domain-aware routing based on PUBLIC_URL and WEBAPP_URL
  */
-const handleDomainAwareRouting = (request: NextRequest): Response | null => {
+const handleDomainAwareRouting = (request: NextRequest): NextResponse | null => {
   try {
     const publicDomainConfigured = isPublicDomainConfigured();
 
@@ -67,6 +69,15 @@ export const proxy = async (originalRequest: NextRequest) => {
     headers: new Headers(originalRequest.headers),
   });
 
+  const clientIp = resolveClientIp(request.headers, TRUSTED_PROXY_HOP_COUNT);
+  if (clientIp) {
+    request.headers.set(FORMBRICKS_CLIENT_IP_HEADER, clientIp);
+  } else {
+    // A caller may send this private header directly. Removing it on failure is what makes Proxy the
+    // trust boundary; downstream code must never see an identity Proxy did not establish itself.
+    request.headers.delete(FORMBRICKS_CLIENT_IP_HEADER);
+  }
+
   request.headers.set("x-request-id", uuidv4());
   request.headers.set("x-start-time", Date.now().toString());
 
@@ -81,11 +92,31 @@ export const proxy = async (originalRequest: NextRequest) => {
   const authResponse = await handleAuth(request);
   if (authResponse) return authResponse;
 
+  // Remember the active workspace so the workspace-agnostic org-settings shell can resolve it
+  // server-side (localStorage is browser-only). Mirrors the /workspaces/[workspaceId] path segment.
+  // Only set the cookie when the value actually changes: a Set-Cookie on a server-action POST makes
+  // Next.js treat the action as revalidated, forcing a router refresh after every action — on pages
+  // that call an action on mount this becomes an infinite POST/refresh loop.
+  const workspaceMatch = /^\/workspaces\/([^/]+)/.exec(request.nextUrl.pathname);
+  if (
+    workspaceMatch?.[1] &&
+    request.cookies.get(FORMBRICKS_WORKSPACE_ID_COOKIE)?.value !== workspaceMatch[1]
+  ) {
+    nextResponseWithCustomHeader.cookies.set(FORMBRICKS_WORKSPACE_ID_COOKIE, workspaceMatch[1], {
+      path: "/",
+      sameSite: "lax",
+      httpOnly: true,
+      maxAge: 60 * 60 * 24 * 365,
+    });
+  }
+
   return nextResponseWithCustomHeader;
 };
 
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|sitemap.xml|robots.txt|js|css|images|fonts|icons|public|animated-bgs).*)",
+    // Keep asset exclusions segment-bound: every dynamic route must traverse Proxy so callers cannot
+    // bypass the private client-IP header overwrite by choosing an asset-like route prefix.
+    "/((?!_next/(?:static|image)(?:/|$)|(?:favicon\\.ico|sitemap\\.xml|robots\\.txt)$|(?:js|css|images|fonts|icons|public|animated-bgs)(?:/|$)).*)",
   ],
 };

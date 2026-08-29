@@ -1,6 +1,6 @@
 import "server-only";
-import { Prisma } from "@prisma/client";
 import { prisma } from "@formbricks/database";
+import { Prisma } from "@formbricks/database/prisma";
 import { logger } from "@formbricks/logger";
 import { ZId } from "@formbricks/types/common";
 import { DatabaseError, ResourceNotFoundError } from "@formbricks/types/errors";
@@ -9,6 +9,9 @@ import {
   TJsWorkspaceStateSurvey,
   TJsWorkspaceStateWorkspaceSetting,
 } from "@formbricks/types/js";
+import { PUBLIC_API_SURVEY_NAME_PLACEHOLDER } from "@formbricks/types/js-constants";
+import { type TBaseFilters, buildSurveyInteractionRefreshMap } from "@formbricks/types/segment";
+import { toLegacyLanguageCodes } from "@/lib/i18n/utils";
 import { validateInputs } from "@/lib/utils/validate";
 import { resolveStorageUrlsInObject } from "@/modules/storage/utils";
 import { transformPrismaSurvey } from "@/modules/survey/lib/utils";
@@ -27,6 +30,46 @@ export interface WorkspaceStateData {
   surveys: TJsWorkspaceStateSurvey[];
   actionClasses: TJsWorkspaceStateActionClass[];
 }
+
+/**
+ * Transitional back-compat (ENG-1067). SDK clients pick a survey's display language by matching the
+ * user's language against `survey.languages` by exact code/alias — they do not canonicalize. After
+ * codes were canonicalized to region-tagged BCP-47 (e.g. `de` → `de-DE`), an SDK still holding a
+ * pre-canonicalization code (common for anonymous users, whose language lives only in local storage and
+ * never round-trips through the server) would stop matching, and the survey would be hidden.
+ *
+ * So alongside each region-tagged language we expose a duplicate entry under its bare legacy code
+ * (`de-DE` → `de`). The legacy entry only exists to satisfy the SDK's exact match; the survey renderer
+ * canonicalizes whatever it receives, so content lookup still resolves to the canonical key. Canonical
+ * entries are kept first so the renderer resolves to the canonical code.
+ *
+ * Applied to multi-language surveys only: a single-language survey skips language matching in the SDK,
+ * and adding an entry would flip it to "multi-language" and could hide it. Remove once SDK clients
+ * holding legacy codes have drained.
+ */
+const appendLegacyLanguageCodes = <
+  T extends { default: boolean; enabled: boolean; language: { code: string } },
+>(
+  languages: T[] | undefined
+): T[] | undefined => {
+  if (!languages || languages.length <= 1) return languages;
+
+  const seenCodes = new Set(languages.map((sl) => sl.language.code.toLowerCase()));
+  const legacyEntries: T[] = [];
+
+  for (const surveyLanguage of languages) {
+    // Expose every known legacy alias of this language (reverse of the canonical map), skipping any
+    // real language in this survey already uses, so older clients keep matching whichever code they hold.
+    for (const legacyCode of toLegacyLanguageCodes(surveyLanguage.language.code)) {
+      const legacyKey = legacyCode.toLowerCase();
+      if (seenCodes.has(legacyKey)) continue;
+      seenCodes.add(legacyKey);
+      legacyEntries.push({ ...surveyLanguage, language: { ...surveyLanguage.language, code: legacyCode } });
+    }
+  }
+
+  return [...languages, ...legacyEntries];
+};
 
 /**
  * Single optimized query that fetches all required data
@@ -65,6 +108,10 @@ export const getWorkspaceStateData = async (workspaceId: string): Promise<Worksp
           where: {
             type: "app",
             status: "inProgress",
+            // Never ship archived surveys to SDK clients (belt-and-suspenders: archiving forces a
+            // survey out of "inProgress", so this can't currently match, but keep it explicit so an
+            // archived app survey can never be synced or triggered by a code action).
+            archivedAt: null,
           },
           orderBy: {
             createdAt: "desc",
@@ -161,6 +208,36 @@ export const getWorkspaceStateData = async (workspaceId: string): Promise<Worksp
       },
     };
 
+    // Per-survey gate for the SDK's post-interaction segment refresh. Reverse-indexes every
+    // `surveyInteraction` filter used by a live app survey onto the survey(s) it references, so the SDK
+    // learns — per survey, per event (display / response / finish) — whether interacting with it can
+    // change any live survey's membership, and skips the heavy `/user` refetch otherwise.
+    const surveysWithFilters = workspaceData.surveys.map((survey) => ({
+      id: survey.id,
+      segmentFilters: (Array.isArray(survey.segment?.filters)
+        ? (survey.segment.filters as unknown as TBaseFilters)
+        : null) as TBaseFilters | null,
+    }));
+
+    // Nested `userIsIn` / `userIsNotIn` filters can hide an interaction filter inside a referenced
+    // segment, and those affect membership at runtime too — so resolve them. Load the workspace's
+    // segments once (a small, indexed query behind the 60s workspace-state cache) only when some
+    // survey actually has filters; the common no-targeting case pays nothing.
+    let segmentFiltersById: Map<string, TBaseFilters> | null = null;
+    if (surveysWithFilters.some((survey) => (survey.segmentFilters?.length ?? 0) > 0)) {
+      const workspaceSegments = await prisma.segment.findMany({
+        where: { workspaceId },
+        select: { id: true, filters: true },
+      });
+      segmentFiltersById = new Map(
+        workspaceSegments.map((segment) => [segment.id, segment.filters as unknown as TBaseFilters])
+      );
+    }
+
+    const { refreshBySurveyId, hasAny } = buildSurveyInteractionRefreshMap(surveysWithFilters, (segmentId) =>
+      segmentFiltersById?.get(segmentId)
+    );
+
     const transformedSurveys = workspaceData.surveys.map((survey) => {
       const realHasFilters =
         Array.isArray(survey.segment?.filters) && (survey.segment.filters as unknown[]).length > 0;
@@ -182,15 +259,34 @@ export const getWorkspaceStateData = async (workspaceId: string): Promise<Worksp
         : null;
 
       const { segment: _segment, ...surveyWithoutSegment } = survey;
+
+      // Older SDKs (e.g. Android ≤ v1.2.0) decode `language.projectId` as a
+      // required field. The column was renamed to `workspaceId` in v5, so
+      // mirror its value under `projectId` to keep those clients deserializing.
+      const languagesWithProjectId = surveyWithoutSegment.languages?.map((sl) => ({
+        ...sl,
+        language: { ...sl.language, projectId: sl.language.workspaceId },
+      }));
+
+      // Expose bare legacy language codes alongside the canonical ones so SDK clients still holding a
+      // pre-canonicalization code keep matching (see appendLegacyLanguageCodes).
+      const languagesWithLegacyCodes = appendLegacyLanguageCodes(languagesWithProjectId);
+
       const transformed = transformPrismaSurvey<TJsWorkspaceStateSurvey>({
         ...surveyWithoutSegment,
+        languages: languagesWithLegacyCodes,
         segment: null,
       });
 
+      // Only attach the per-survey refresh gate when the workspace actually uses interaction
+      // targeting — otherwise it's dead weight on every survey in the response.
+      const interactionRefresh = hasAny ? refreshBySurveyId[survey.id] : undefined;
+
       return {
         ...transformed,
-        name: "[deprecated] survey name omitted from public API - will be removed soon",
+        name: PUBLIC_API_SURVEY_NAME_PLACEHOLDER,
         segment: sanitizedSegment,
+        ...(interactionRefresh ? { interactionRefresh } : {}),
       };
     });
 

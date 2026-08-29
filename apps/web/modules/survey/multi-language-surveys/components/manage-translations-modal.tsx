@@ -109,7 +109,6 @@ export const ManageTranslationsModal = ({
       if (!aEmpty && bEmpty) return 1;
       return 0;
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [strings, missingFirst]);
 
   // Merge draft translations into localSurvey so that the recall dropdown
@@ -119,7 +118,7 @@ export const ManageTranslationsModal = ({
     for (const s of strings) {
       const val = draftTranslations[s.path] ?? "";
       if (val) {
-        setTranslationAtPathMutable(clone, s.path, languageCode, val);
+        setTranslationAtPathMutable(clone, s.path, languageCode, val, s.value.default);
       }
     }
     return clone;
@@ -146,8 +145,10 @@ export const ManageTranslationsModal = ({
         ai_features_not_enabled: t("workspace.surveys.edit.ai_features_not_enabled"),
         ai_smart_tools_disabled: t("workspace.surveys.edit.ai_smart_tools_disabled"),
         ai_instance_not_configured: t("workspace.surveys.edit.ai_instance_not_configured"),
+        ai_quota_exceeded: t("workspace.surveys.edit.ai_translation_quota_exceeded"),
       };
-      return errorMessages[errorCode] ?? errorCode;
+      // Fall back to the generic failure message rather than leaking a raw error code to the user.
+      return errorMessages[errorCode] ?? t("workspace.surveys.edit.ai_translation_failed");
     },
     [t]
   );
@@ -185,6 +186,9 @@ export const ManageTranslationsModal = ({
       setDraftTranslations((prev) => ({ ...prev, ...result.data?.translations }));
       toast.success(t("workspace.surveys.edit.ai_translation_complete"), { id: toastId });
     } catch {
+      // The action surfaces server-side failures via result.serverError (handled above). This catch
+      // only fires on genuine client-side throws (e.g. network) whose messages aren't error codes,
+      // so show the generic failure message.
       toast.error(t("workspace.surveys.edit.ai_translation_failed"), { id: toastId });
     } finally {
       setIsTranslating(false);
@@ -195,8 +199,12 @@ export const ManageTranslationsModal = ({
   const handleSave = () => {
     const updatedSurvey = structuredClone(localSurvey);
     for (const s of strings) {
-      const val = draftTranslations[s.path] ?? "";
-      setTranslationAtPathMutable(updatedSurvey, s.path, languageCode, val);
+      const draft = draftTranslations[s.path] ?? "";
+      // Rich-text editors keep an empty wrapper like "<p><br></p>" in the draft. That's
+      // visually empty but a non-empty string, so without normalization it would survive
+      // save and downstream checks would treat the field as translated.
+      const val = s.isRichText && getTextContent(draft).trim() === "" ? "" : draft;
+      setTranslationAtPathMutable(updatedSurvey, s.path, languageCode, val, s.value.default);
     }
     setLocalSurvey(updatedSurvey);
     setOpen(false);
@@ -211,7 +219,7 @@ export const ManageTranslationsModal = ({
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogContent width="wide" className="max-h-[85dvh]">
+      <DialogContent width="wide" className="max-h-[85dvh]" disableCloseOnOutsideClick>
         <DialogHeader>
           <DialogTitle>{t("workspace.surveys.edit.manage_translations")}</DialogTitle>
           <div className="mt-2 flex items-center justify-between">

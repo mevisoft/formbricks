@@ -1,4 +1,3 @@
-// @vitest-environment happy-dom
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/preact";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { TJsWorkspaceStateSurvey } from "@formbricks/types/js";
@@ -32,8 +31,11 @@ vi.mock("@/lib/api-client", () => ({
 vi.mock("@/lib/offline-storage", () => ({
   addPendingResponse: offlineStorageMocks.addPendingResponse,
   countPendingResponses: offlineStorageMocks.countPendingResponses,
+  countPendingResponsesStrict: offlineStorageMocks.countPendingResponses,
   getPendingResponses: offlineStorageMocks.getPendingResponses,
+  getPendingResponsesStrict: offlineStorageMocks.getPendingResponses,
   removePendingResponse: offlineStorageMocks.removePendingResponse,
+  removePendingResponseStrict: offlineStorageMocks.removePendingResponse,
   clearSurveyProgress: offlineStorageMocks.clearSurveyProgress,
   getSurveyProgress: offlineStorageMocks.getSurveyProgress,
   patchSurveyProgressSnapshot: offlineStorageMocks.patchSurveyProgressSnapshot,
@@ -334,6 +336,23 @@ describe("Survey offline restore", () => {
 
     expect(offlineStorageMocks.patchSurveyProgressSnapshot).toHaveBeenCalledWith(baseSurvey.id, {
       displayId: "display-created",
+    });
+  });
+
+  test("sends the first ending id when the survey falls off the last block without a jump target", async () => {
+    offlineStorageMocks.getSurveyProgress.mockResolvedValue(makeProgress());
+
+    renderSurvey();
+
+    fireEvent.click(await screen.findByTestId("submit-block-2"));
+
+    await waitFor(() => {
+      expect(apiClientMocks.createResponse).toHaveBeenCalledWith(
+        expect.objectContaining({
+          finished: true,
+          endingId: "ending-1",
+        })
+      );
     });
   });
 

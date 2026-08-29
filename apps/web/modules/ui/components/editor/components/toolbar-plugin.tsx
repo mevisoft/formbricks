@@ -22,7 +22,17 @@ import {
   FORMAT_TEXT_COMMAND,
   SELECTION_CHANGE_COMMAND,
 } from "lexical";
-import { AtSign, Bold, ChevronDownIcon, Italic, Link, PencilIcon, Underline } from "lucide-react";
+import {
+  AtSign,
+  Bold,
+  ChevronDownIcon,
+  Italic,
+  Link,
+  List,
+  ListOrdered,
+  PencilIcon,
+  Underline,
+} from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/modules/ui/components/button";
@@ -89,6 +99,7 @@ const ToolbarButton = ({ icon: Icon, active, onClick, tooltipText, disabled }: T
           variant="ghost"
           size="icon"
           type="button"
+          aria-label={tooltipText}
           tabIndex={-1}
           onClick={onClick}
           disabled={disabled}
@@ -249,7 +260,6 @@ export const ToolbarPlugin = (
         }
       });
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [props.updateTemplate, props.firstRender]);
 
   useEffect(() => {
@@ -265,8 +275,6 @@ export const ToolbarPlugin = (
         root.append(...nodes);
       });
     }
-
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Register text-saving update listener - always active for each editor instance
@@ -352,6 +360,22 @@ export const ToolbarPlugin = (
       onClick: () => editor.dispatchCommand(FORMAT_TEXT_COMMAND, "underline"),
       active: isUnderline,
       tooltipText: t("workspace.surveys.edit.underline"),
+      disabled: !props.editable,
+    },
+    {
+      key: "bulletList",
+      icon: List,
+      onClick: formatBulletList,
+      active: blockType === "ul",
+      tooltipText: t("workspace.surveys.edit.bulleted_list"),
+      disabled: !props.editable,
+    },
+    {
+      key: "orderedList",
+      icon: ListOrdered,
+      onClick: formatNumberedList,
+      active: blockType === "ol",
+      tooltipText: t("workspace.surveys.edit.numbered_list"),
       disabled: !props.editable,
     },
     {
