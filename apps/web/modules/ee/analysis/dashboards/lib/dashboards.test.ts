@@ -5,7 +5,7 @@ import { PrismaErrorType } from "@formbricks/database/types/error";
 
 vi.mock("server-only", () => ({}));
 
-var mockTxDashboard: {
+let mockTxDashboard: {
   // NOSONAR / test code
   findFirst: ReturnType<typeof vi.fn>;
   create: ReturnType<typeof vi.fn>;
@@ -13,9 +13,9 @@ var mockTxDashboard: {
   delete: ReturnType<typeof vi.fn>;
 };
 
-var mockTxChart: { findFirst: ReturnType<typeof vi.fn> }; // NOSONAR / test code
+let mockTxChart: { findFirst: ReturnType<typeof vi.fn> }; // NOSONAR / test code
 
-var mockTxWidget: {
+let mockTxWidget: {
   // NOSONAR / test code
   aggregate: ReturnType<typeof vi.fn>;
   findFirst: ReturnType<typeof vi.fn>;

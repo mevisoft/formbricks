@@ -35,7 +35,7 @@ export const NotificationSwitch = ({
   const handleSwitchChange = async () => {
     setIsLoading(true);
 
-    let updatedNotificationSettings = { ...notificationSettings };
+    const updatedNotificationSettings = { ...notificationSettings };
     if (notificationType === "unsubscribedOrganizationIds") {
       const unsubscribedOrganizationIds = updatedNotificationSettings.unsubscribedOrganizationIds ?? [];
       if (unsubscribedOrganizationIds.includes(surveyOrWorkspaceOrOrganizationId)) {

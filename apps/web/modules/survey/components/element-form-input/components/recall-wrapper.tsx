@@ -109,7 +109,7 @@ export const RecallWrapper = ({
         return;
       }
 
-      let recallItemTemp = structuredClone(recallItem);
+      const recallItemTemp = structuredClone(recallItem);
       recallItemTemp.label = replaceRecallInfoWithUnderline(recallItem.label);
 
       const updatedRecallItems = [...recallItems, recallItemTemp];
@@ -125,7 +125,7 @@ export const RecallWrapper = ({
 
       setShowRecallItemSelect(false);
 
-      let modifiedHeadlineWithId = { [usedLanguageCode]: internalValue };
+      const modifiedHeadlineWithId = { [usedLanguageCode]: internalValue };
       modifiedHeadlineWithId[usedLanguageCode] = modifiedHeadlineWithId[usedLanguageCode].replace(
         /@(\b|$)/g,
         `#recall:${recallItem.id}/fallback:# `
@@ -144,7 +144,7 @@ export const RecallWrapper = ({
       const recallInfo = findRecallInfoById(newVal, item.id);
       if (recallInfo) {
         const fallbackValue = (fallbacks[item.id]?.trim() || "").replace(/ /g, "nbsp");
-        let updatedFallbacks = { ...fallbacks };
+        const updatedFallbacks = { ...fallbacks };
         updatedFallbacks[item.id] = fallbackValue;
         setFallbacks(updatedFallbacks);
         newVal = newVal.replace(recallInfo, `#recall:${item.id}/fallback:${fallbackValue}#`);
@@ -160,7 +160,7 @@ export const RecallWrapper = ({
 
   const filterRecallItems = useCallback(
     (remainingText: string) => {
-      let includedRecallItems: TSurveyRecallItem[] = [];
+      const includedRecallItems: TSurveyRecallItem[] = [];
 
       recallItems.forEach((recallItem) => {
         if (remainingText.includes(`@${recallItem.label}`)) {
@@ -172,7 +172,7 @@ export const RecallWrapper = ({
           setInternalValue(newInternalValue);
           onChange(newInternalValue, recallItems, fallbacks);
 
-          let updatedFallback = { ...fallbacks };
+          const updatedFallback = { ...fallbacks };
           delete updatedFallback[recallItem.id];
           setFallbacks(updatedFallback);
           setRecallItems(includedRecallItems);

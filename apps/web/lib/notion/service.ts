@@ -37,7 +37,7 @@ export const getNotionDatabases = async (workspaceId: string): Promise<TIntegrat
 
 export const writeData = async (
   databaseId: string,
-  properties: Record<string, Object>,
+  properties: Record<string, object>,
   config: TIntegrationNotionConfig
 ) => {
   try {

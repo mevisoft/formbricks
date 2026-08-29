@@ -68,7 +68,7 @@ export const SingleResponseCard = ({
 
     const processFinishedResponse = () => {
       const result: string[][] = [];
-      let temp: string[] = [];
+      const temp: string[] = [];
 
       for (const question of questions) {
         if (isValidValue(response.data[question.id])) {
@@ -83,7 +83,7 @@ export const SingleResponseCard = ({
 
     const processUnfinishedResponse = () => {
       const result: string[][] = [];
-      let temp: string[] = [];
+      const temp: string[] = [];
 
       for (let index = questions.length - 1; index >= 0; index--) {
         const question = questions[index];

@@ -5,11 +5,11 @@ import { TActor, TAuditAction, TAuditStatus, TAuditTarget } from "../types/audit
 import * as OriginalHandler from "./handler";
 
 // Use 'var' for all mock handles used in vi.mock factories to avoid hoisting/TDZ issues
-var serviceLogAuditEventMockHandle: ReturnType<typeof vi.fn>; // NOSONAR / test code
-var loggerErrorMockHandle: ReturnType<typeof vi.fn>; // NOSONAR / test code
+let serviceLogAuditEventMockHandle: ReturnType<typeof vi.fn>; // NOSONAR / test code
+let loggerErrorMockHandle: ReturnType<typeof vi.fn>; // NOSONAR / test code
 
 // Use 'var' for mutableConstants due to hoisting issues with vi.mock factories
-var mutableConstants: { AUDIT_LOG_ENABLED: boolean }; // NOSONAR / test code
+let mutableConstants: { AUDIT_LOG_ENABLED: boolean }; // NOSONAR / test code
 // Initialize mutableConstants here, after its declaration, but before vi.mock calls if possible,
 // or ensure factories handle potential undefined state if initialization is further down.
 // For safety with hoisted mocks, initialize immediately.

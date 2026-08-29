@@ -128,7 +128,7 @@ export const HowToSendCard = ({ localSurvey, setLocalSurvey, appSetupCompleted }
             onValueChange={setSurveyType}
             className="flex flex-col gap-y-3">
             {options
-              .filter((option) => !Boolean(option.hide))
+              .filter((option) => !option.hide)
               .map((option) => (
                 <Label
                   key={option.id}

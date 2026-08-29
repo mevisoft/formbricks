@@ -31,7 +31,7 @@ type TPipelineIntegrationSurvey = Pick<TSurvey, "blocks" | "hiddenFields" | "var
 const NOTION_PERSON_ATTRIBUTE_PREFIX = "person.";
 
 const convertMetaObjectToString = (metadata: TResponseMeta): string => {
-  let result: string[] = [];
+  const result: string[] = [];
   if (metadata.source) result.push(`Source: ${metadata.source}`);
   if (metadata.url) result.push(`URL: ${metadata.url}`);
   if (metadata.userAgent?.browser) result.push(`Browser: ${metadata.userAgent.browser}`);

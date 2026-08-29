@@ -49,7 +49,7 @@ export const HiddenFieldsCard = ({
   const elements = useMemo(() => getElementsFromBlocks(localSurvey.blocks), [localSurvey.blocks]);
 
   const updateSurvey = (data: TSurveyHiddenFields, currentFieldId?: string) => {
-    let updatedSurvey = { ...localSurvey };
+    const updatedSurvey = { ...localSurvey };
 
     if (currentFieldId) {
       updatedSurvey.blocks = updatedSurvey.blocks.map((block) => ({

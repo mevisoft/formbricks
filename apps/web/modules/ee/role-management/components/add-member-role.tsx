@@ -34,7 +34,7 @@ export function AddMemberRole({
   const { t } = useTranslation();
 
   const roles = useMemo(() => {
-    let rolesArray = ["member"];
+    const rolesArray = ["member"];
 
     if (isOwner) {
       rolesArray.push("manager", "owner");

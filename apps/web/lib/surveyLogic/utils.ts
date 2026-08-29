@@ -256,7 +256,7 @@ const evaluateSingleCondition = (
   selectedLanguage: string
 ): boolean => {
   try {
-    let leftValue = getLeftOperandValue(
+    const leftValue = getLeftOperandValue(
       localSurvey,
       data,
       variablesData,
@@ -544,7 +544,7 @@ const getLeftOperandValue = (
 
           return choice.id;
         } else if (Array.isArray(responseValue)) {
-          let choices: string[] = [];
+          const choices: string[] = [];
           responseValue.forEach((value) => {
             const foundChoice = currentElement.choices.find((choice) => {
               return getLocalizedValue(choice.label, selectedLanguage) === value;

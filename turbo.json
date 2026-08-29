@@ -244,6 +244,7 @@
       ],
       "outputs": ["dist/**", ".next/**", "!.next/cache/**", "!.next/dev/**"],
       "passThroughEnv": [
+        "ENTERPRISE_LICENSE_ENDPOINT",
         "DATABASE_URL",
         "DEBUG",
         "ENCRYPTION_KEY",

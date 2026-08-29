@@ -5,7 +5,7 @@ import { PrismaErrorType } from "@formbricks/database/types/error";
 
 vi.mock("server-only", () => ({}));
 
-var mockTxChart: {
+let mockTxChart: {
   // NOSONAR S1135 - var required for vi.mock hoisting
   findFirst: ReturnType<typeof vi.fn>;
   update: ReturnType<typeof vi.fn>;

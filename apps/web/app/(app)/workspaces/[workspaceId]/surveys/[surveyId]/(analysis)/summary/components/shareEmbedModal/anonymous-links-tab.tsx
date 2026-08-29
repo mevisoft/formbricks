@@ -175,7 +175,7 @@ export const AnonymousLinksTab = ({
         count,
       });
 
-      if (!!response?.data?.length) {
+      if (response?.data?.length) {
         const singleUseLinkParams = response.data;
         const surveyLinks = singleUseLinkParams.map(({ suId, suToken }) => {
           const url = new URL(surveyUrl);

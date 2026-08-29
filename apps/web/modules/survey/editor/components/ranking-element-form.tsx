@@ -64,7 +64,7 @@ export const RankingElementForm = ({
   };
 
   const addChoice = (choiceIdx: number) => {
-    let newChoices = !element.choices ? [] : element.choices;
+    const newChoices = !element.choices ? [] : element.choices;
 
     const newChoice = {
       id: createId(),

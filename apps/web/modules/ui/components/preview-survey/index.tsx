@@ -157,7 +157,7 @@ export const PreviewSurvey = ({
   }, [survey]);
 
   const resetProgress = () => {
-    let storePreviewMode = previewMode;
+    const storePreviewMode = previewMode;
     setPreviewMode("null");
     setTimeout(() => {
       setPreviewMode(storePreviewMode);

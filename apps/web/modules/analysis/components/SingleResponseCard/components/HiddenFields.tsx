@@ -15,7 +15,7 @@ export const HiddenFields = ({ hiddenFields, responseData }: HiddenFieldsProps) 
   const { t } = useTranslation();
   const fieldIds = hiddenFields.fieldIds ?? [];
 
-  let hiddenFieldsData: { field: string; value: string }[] = [];
+  const hiddenFieldsData: { field: string; value: string }[] = [];
 
   fieldIds.forEach((field) => {
     if (responseData[field]) {

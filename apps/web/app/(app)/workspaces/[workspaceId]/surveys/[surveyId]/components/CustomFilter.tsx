@@ -166,7 +166,7 @@ export const CustomFilter = ({ survey }: CustomFilterProps) => {
   const extractMetadataKeys = useCallback((obj: Record<string, unknown>, parentKey = "") => {
     let keys: string[] = [];
 
-    for (let key in obj) {
+    for (const key in obj) {
       if (typeof obj[key] === "object" && obj[key] !== null) {
         keys = keys.concat(extractMetadataKeys(obj[key] as Record<string, unknown>, parentKey + key + " - "));
       } else {

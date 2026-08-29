@@ -91,7 +91,7 @@ export function EditMembershipRole({
   };
 
   const getMembershipRoles = () => {
-    let roles: string[] = ["member"];
+    const roles: string[] = ["member"];
 
     if (isOwner) {
       roles.push("manager", "owner");

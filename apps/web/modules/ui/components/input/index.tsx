@@ -1,8 +1,10 @@
 import * as React from "react";
 import { cn } from "@/lib/cn";
 
-export interface InputProps
-  extends Omit<React.InputHTMLAttributes<HTMLInputElement>, "crossOrigin" | "dangerouslySetInnerHTML"> {
+export interface InputProps extends Omit<
+  React.InputHTMLAttributes<HTMLInputElement>,
+  "crossOrigin" | "dangerouslySetInnerHTML"
+> {
   crossOrigin?: "" | "anonymous" | "use-credentials" | undefined;
   dangerouslySetInnerHTML?: {
     __html: string;

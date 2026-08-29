@@ -141,12 +141,12 @@ export const getSurveySummaryDropOff = (
     return acc;
   }, {});
 
-  let totalTtc = { ...initialTtc };
-  let responseCounts = { ...initialTtc };
+  const totalTtc = { ...initialTtc };
+  const responseCounts = { ...initialTtc };
 
-  let dropOffArr = new Array(elements.length).fill(0) as number[];
-  let impressionsArr = new Array(elements.length).fill(0) as number[];
-  let dropOffPercentageArr = new Array(elements.length).fill(0) as number[];
+  const dropOffArr = new Array(elements.length).fill(0) as number[];
+  const impressionsArr = new Array(elements.length).fill(0) as number[];
+  const dropOffPercentageArr = new Array(elements.length).fill(0) as number[];
   const elementIdToBlockId = getElementIdToBlockIdMap(survey);
 
   responses.forEach((response) => {
@@ -240,7 +240,7 @@ const checkForI18n = (
     element?.type === TSurveyElementTypeEnum.Ranking
   ) {
     // Initialize an array to hold the choice values
-    let choiceValues = [] as string[];
+    const choiceValues = [] as string[];
 
     // Type guard: both element types have choices property
     const hasChoices = "choices" in element;
@@ -321,7 +321,7 @@ export const getElementSummary = async (
   dropOff: TSurveySummary["dropOff"]
 ): Promise<TSurveySummary["summary"]> => {
   const VALUES_LIMIT = 50;
-  let summary: TSurveySummary["summary"] = [];
+  const summary: TSurveySummary["summary"] = [];
 
   for (const element of elements) {
     switch (element.type) {
@@ -906,7 +906,7 @@ export const getElementSummary = async (
         break;
       }
       case TSurveyElementTypeEnum.Ranking: {
-        let values: TSurveyElementSummaryRanking["choices"] = [];
+        const values: TSurveyElementSummaryRanking["choices"] = [];
         const elementChoices = element.choices.map((choice) => getLocalizedValue(choice.label, "default"));
         let totalResponseCount = 0;
         const choiceRankSums: Record<string, number> = {};

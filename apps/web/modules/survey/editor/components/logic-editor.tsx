@@ -37,7 +37,7 @@ export function LogicEditor({
   const blockLogicFallback = block.logicFallback;
 
   const fallbackOptions = useMemo(() => {
-    let options: {
+    const options: {
       label: string;
       value: string;
     }[] = [];

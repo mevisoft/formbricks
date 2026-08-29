@@ -222,7 +222,11 @@ const forbiddenResponse = (
   );
 };
 
-const successResponse = (data: Object, cors: boolean = false, cache: string = "private, no-store") => {
+const successResponse = (
+  data: object | string,
+  cors: boolean = false,
+  cache: string = "private, no-store"
+) => {
   const headers = {
     ...(cors && corsHeaders),
     "Cache-Control": cache,

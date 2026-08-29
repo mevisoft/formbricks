@@ -140,7 +140,7 @@ export const ElementsView = ({
     };
 
     const updateSingleCondition = (condition: TSingleCondition): TSingleCondition => {
-      let updatedCondition = { ...condition };
+      const updatedCondition = { ...condition };
 
       if (condition.leftOperand.value === compareId) {
         updatedCondition.leftOperand = { ...condition.leftOperand, value: updatedId };
@@ -155,7 +155,7 @@ export const ElementsView = ({
 
     const updateActions = (actions: TSurveyBlockLogicAction[]): TSurveyBlockLogicAction[] => {
       return actions.map((action) => {
-        let updatedAction = { ...action };
+        const updatedAction = { ...action };
 
         // Handle jumpToBlock actions (blocks model)
         if (updatedAction.objective === "jumpToBlock" && updatedAction.target === compareId) {
@@ -172,7 +172,7 @@ export const ElementsView = ({
 
     const updatedBlocks = survey.blocks.map((block) => {
       const updatedElements = block.elements.map((element) => {
-        let updatedElement = { ...element };
+        const updatedElement = { ...element };
 
         if (element.headline[selectedLanguageCode]?.includes(`recall:${compareId}`)) {
           updatedElement.headline = {

@@ -102,7 +102,7 @@ export const Uploader = ({
               return;
             }
 
-            let selectedFiles = Array.from(e.target?.files || []);
+            const selectedFiles = Array.from(e.target?.files || []);
             handleUpload(selectedFiles);
           }}
         />

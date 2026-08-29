@@ -81,7 +81,7 @@ export const recallToHeadline = <T extends TSurvey>(
   withSlash: boolean,
   languageCode: string
 ): TI18nString => {
-  let newHeadline = structuredClone(headline);
+  const newHeadline = structuredClone(headline);
   const localizedHeadline = newHeadline[languageCode];
 
   if (!localizedHeadline?.includes("#recall:")) return headline;
@@ -159,7 +159,7 @@ export const getRecallItems = (text: string, survey: TSurvey, languageCode: stri
   if (!text.includes("#recall:")) return [];
 
   const ids = extractIds(text);
-  let recallItems: TSurveyRecallItem[] = [];
+  const recallItems: TSurveyRecallItem[] = [];
   ids.forEach((recallItemId) => {
     const isHiddenField = survey.hiddenFields.fieldIds?.includes(recallItemId);
     const questions = getElementsFromBlocks(survey.blocks);

@@ -120,7 +120,7 @@ export const getResponsesFileName = (surveyName: string, extension: string) => {
 };
 
 export const extracMetadataKeys = (obj: TResponse["meta"]) => {
-  let keys: string[] = [];
+  const keys: string[] = [];
 
   Object.entries(obj ?? {}).forEach(([key, value]) => {
     if (typeof value === "object" && value !== null) {
@@ -279,7 +279,7 @@ export const getResponseContactAttributes = (
   responses: Pick<TResponse, "contactAttributes" | "data" | "meta">[]
 ): TSurveyContactAttributes => {
   try {
-    let attributes: TSurveyContactAttributes = {};
+    const attributes: TSurveyContactAttributes = {};
 
     responses.forEach((response) => {
       Object.keys(response.contactAttributes ?? {}).forEach((key) => {
